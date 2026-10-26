@@ -10,4 +10,5 @@ var (
 	ErrForbidden       = errors.New("forbidden")
 	ErrConflict        = errors.New("conflict")
 	ErrInvalid         = errors.New("invalid input")
+	ErrTooLarge        = errors.New("too large")
 )

@@ -97,6 +97,12 @@ func (f *Fixture) RealDerived() bool {
 	return f.Source == SourceAnonymised
 }
 
+// Shareable reports whether the fixture may be copied out of its dataset:
+// anything not real-derived, and real-derived fixtures once approved.
+func (f *Fixture) Shareable() bool {
+	return !f.RealDerived() || f.ReviewState == ReviewApproved
+}
+
 // CreateInput describes a new fixture. Format, Kind and MimeType are inferred
 // from Name when empty; Source defaults to uploaded.
 type CreateInput struct {
@@ -140,17 +146,20 @@ type Service struct {
 	blobs    *blob.Store
 	datasets *dataset.Service
 	audit    *audit.Service
+	maxSize  int64
 	now      func() time.Time
 }
 
-// NewService returns a fixture service. Dataset access is delegated to datasets.
-func NewService(db xdal.DBInterface, blobs *blob.Store, datasets *dataset.Service, auditService *audit.Service) *Service {
+// NewService returns a fixture service. Dataset access is delegated to
+// datasets. maxSize caps a fixture's content in bytes; 0 means no limit.
+func NewService(db xdal.DBInterface, blobs *blob.Store, datasets *dataset.Service, auditService *audit.Service, maxSize int64) *Service {
 	return &Service{
 		db:       db,
 		storage:  NewStorage(db.NewQueryBuilder()),
 		blobs:    blobs,
 		datasets: datasets,
 		audit:    auditService,
+		maxSize:  maxSize,
 		now:      time.Now,
 	}
 }
@@ -175,9 +184,17 @@ func (s *Service) Create(ctx context.Context, actor principal.Principal, in Crea
 		return nil, err
 	}
 
+	content := in.Content
+	if s.maxSize > 0 {
+		content = &capReader{r: content, left: s.maxSize}
+	}
+
 	release := s.blobs.Acquire()
 	defer release()
-	f.BlobHash, f.Size, err = s.blobs.Put(in.Content)
+	f.BlobHash, f.Size, err = s.blobs.Put(content)
+	if errors.Is(err, errTooLarge) {
+		return nil, fmt.Errorf("%w: fixture content is over %d bytes", apperr.ErrTooLarge, s.maxSize)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -336,6 +353,62 @@ func (s *Service) Review(ctx context.Context, actor principal.Principal, id stri
 	return f, nil
 }
 
+// CopyShareable copies srcID's fixtures into dstID inside exec's transaction,
+// keeping their content, provenance and review state. Real-derived fixtures
+// that are not approved are skipped. It implements dataset.FixtureCopier;
+// the dataset service has already checked access to both datasets.
+func (s *Service) CopyShareable(ctx context.Context, exec xdal.DBExecutor, srcID, dstID, actorID string) (copied, skipped int, err error) {
+	fixtures, err := s.storage.ListAll(ctx, exec, srcID)
+	if err != nil {
+		return 0, 0, err
+	}
+	now := s.now()
+	for _, f := range fixtures {
+		if !f.Shareable() {
+			skipped++
+			continue
+		}
+		f.ID, f.DatasetID, f.CreatedBy, f.CreatedAt = storeutil.NewID(), dstID, actorID, now
+		if err := s.storage.Insert(ctx, exec, &f); err != nil {
+			return 0, 0, fmt.Errorf("copying fixture %s: %w", f.Name, err)
+		}
+		copied++
+	}
+	return copied, skipped, nil
+}
+
+// PurgeBatch deletes every fixture from an ingest batch, in every dataset it
+// was copied to, frozen or not, then any blob nothing else uses. It is how
+// real-derived data is removed on request. Admin only.
+func (s *Service) PurgeBatch(ctx context.Context, actor principal.Principal, batch string) (int64, error) {
+	if !actor.IsAdmin() {
+		return 0, fmt.Errorf("%w: purging needs an admin key", apperr.ErrForbidden)
+	}
+	batch = strings.TrimSpace(batch)
+	if batch == "" {
+		return 0, fmt.Errorf("%w: ingest batch is required", apperr.ErrInvalid)
+	}
+	var n int64
+	err := s.db.WithTx(ctx, nil, func(tx *xdal.Tx) error {
+		var err error
+		n, err = s.storage.DeleteBatch(ctx, tx, batch)
+		if err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, tx, audit.Event{
+			AccountID: actor.AccountID, Action: audit.ActionFixturePurge, TargetType: "ingest_batch", TargetID: batch,
+			Details: map[string]any{"fixtures": n},
+		})
+	})
+	if err != nil {
+		return 0, err
+	}
+	if _, err := s.blobs.Collect(ctx, s.db); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 // prepare validates the input and fills in inferred fields.
 func (s *Service) prepare(actor principal.Principal, in CreateInput) (*Fixture, error) {
 	name := strings.TrimSpace(in.Name)
@@ -429,4 +502,31 @@ func normaliseTags(tags []string) []string {
 		}
 	}
 	return out
+}
+
+var errTooLarge = errors.New("content over size limit")
+
+// capReader passes through at most left bytes and fails if the source has
+// more, so an oversized upload stops before it is stored.
+type capReader struct {
+	r    io.Reader
+	left int64
+}
+
+// Read implements io.Reader.
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		var probe [1]byte
+		n, err := c.r.Read(probe[:])
+		if n > 0 {
+			return 0, errTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }

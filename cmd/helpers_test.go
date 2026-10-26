@@ -13,15 +13,17 @@ import (
 // and returns what they wrote to stdout.
 func runCLI(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	oldArgs, oldOut := os.Args, stdout
-	var out bytes.Buffer
+	oldArgs, oldOut, oldErr := os.Args, stdout, stderr
+	var out, errOut bytes.Buffer
 	os.Args = append([]string{"exemplar"}, args...)
-	stdout = &out
-	t.Cleanup(func() { os.Args, stdout = oldArgs, oldOut })
+	stdout, stderr = &out, &errOut
+	t.Cleanup(func() { os.Args, stdout, stderr = oldArgs, oldOut, oldErr })
 
 	// Fresh command values each run: cli keeps parsed flag state on them.
 	root := &cli.Command{Name: "exemplar", Commands: []*cli.Command{
 		bootstrapCmd(), completionCmd(), initCmd(), serveCmd(),
+		accountsCmd(), keysCmd(), datasetsCmd(), fixturesCmd(),
+		uploadCmd(), forkCmd(), promoteCmd(), purgeCmd(),
 	}}
 	err := root.Execute(context.Background())
 	return out.String(), err

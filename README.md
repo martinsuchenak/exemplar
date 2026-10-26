@@ -61,8 +61,14 @@ go run . bootstrap --recover --name admin
 # Run the service
 go run . serve
 
-# Call the API with the key
-curl -H "X-API-Key: exm_..." http://localhost:8080/api/v1/me
+# Use the CLI against it
+export EXEMPLAR_API_KEY=exm_...
+go run . datasets create --name replies
+go run . upload <dataset-id> ./samples --scenario outlook-reply
+go run . fixtures list <dataset-id>
+
+# Or the API
+curl -H "X-API-Key: $EXEMPLAR_API_KEY" http://localhost:8080/api/v1/me
 ```
 
 `bootstrap` opens the database directly, so it only works on the host or inside
@@ -80,6 +86,9 @@ Configuration is loaded from `exemplar-config.toml` and can be overridden via en
 | `server.port` | `SERVER_PORT` | `8080` | HTTP server port |
 | `database.path` | `DB_PATH` | `data/exemplar.db` | SQLite database file (created with mode 600) |
 | `storage.blob_dir` | `BLOB_DIR` | `data/blobs` | Fixture contents, stored once per SHA-256 |
+| `storage.max_fixture_mb` | `MAX_FIXTURE_MB` | `100` | Largest fixture accepted (0 for no limit) |
+| `client.server` | `EXEMPLAR_SERVER` | `http://localhost:8080` | Server the remote CLI commands call |
+| (none) | `EXEMPLAR_API_KEY` | | API key for remote CLI commands |
 
 ## Dependencies
 

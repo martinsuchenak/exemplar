@@ -406,3 +406,72 @@ func TestValidValues(t *testing.T) {
 		t.Error("public corpus counted as real-derived")
 	}
 }
+
+func TestPurgeBatch(t *testing.T) {
+	a := testutil.NewApp(t)
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	q := newDataset(t, a, admin, "inbox", dataset.ScopeQuarantine)
+
+	for i, name := range []string{"one.eml", "two.eml"} {
+		f, err := a.Fixtures.Create(ctx, admin, fixture.CreateInput{DatasetID: q.ID, Name: name, Source: fixture.SourceAnonymised, IngestBatch: "batch-1", Content: strings.NewReader(name)})
+		if err != nil {
+			t.Fatalf("add: %v", err)
+		}
+		if i == 0 {
+			if _, err := a.Fixtures.Review(ctx, admin, f.ID, true); err != nil {
+				t.Fatalf("approve: %v", err)
+			}
+		}
+	}
+	other, err := a.Fixtures.Create(ctx, admin, fixture.CreateInput{DatasetID: q.ID, Name: "other.eml", Source: fixture.SourceAnonymised, IngestBatch: "batch-2", Content: strings.NewReader("other")})
+	if err != nil {
+		t.Fatalf("add other: %v", err)
+	}
+	// The approved one is copied into a frozen global dataset; purge must reach it too.
+	promoted, err := a.Datasets.Promote(ctx, admin, q.ID, dataset.PromoteInput{Name: "lib"})
+	if err != nil || promoted.Copied != 1 {
+		t.Fatalf("promote = %+v, %v", promoted, err)
+	}
+
+	if _, err := a.Fixtures.PurgeBatch(ctx, alice, "batch-1"); !errors.Is(err, apperr.ErrForbidden) {
+		t.Errorf("member purge err = %v, want ErrForbidden", err)
+	}
+	if _, err := a.Fixtures.PurgeBatch(ctx, admin, "  "); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("empty batch err = %v, want ErrInvalid", err)
+	}
+	n, err := a.Fixtures.PurgeBatch(ctx, admin, "batch-1")
+	if err != nil || n != 3 {
+		t.Fatalf("purge = %d, %v; want 3 (two in quarantine, one copy)", n, err)
+	}
+	if left, _ := a.Fixtures.List(ctx, admin, promoted.Dataset.ID, fixture.ListFilter{}); len(left) != 0 {
+		t.Errorf("frozen dataset still holds %d purged fixtures", len(left))
+	}
+	if _, err := a.Fixtures.Get(ctx, admin, other.ID); err != nil {
+		t.Errorf("fixture from another batch was purged: %v", err)
+	}
+	if n, err := a.Fixtures.PurgeBatch(ctx, admin, "batch-1"); err != nil || n != 0 {
+		t.Errorf("second purge = %d, %v; want 0", n, err)
+	}
+	events, _ := a.Audit.List(ctx, admin, audit.Filter{Action: audit.ActionFixturePurge})
+	if len(events) != 2 || events[0].TargetID != "batch-1" || events[0].Details["fixtures"] != float64(3) {
+		t.Errorf("purge audit = %+v", events)
+	}
+}
+
+func TestSizeLimit(t *testing.T) {
+	a := testutil.NewAppWith(t, func(c *app.Config) { c.MaxFixtureBytes = 10 })
+	admin := testutil.Admin(t, a)
+	ws := newDataset(t, a, admin, "mine", dataset.ScopeWorkspace)
+
+	if _, err := a.Fixtures.Create(ctx, admin, fixture.CreateInput{DatasetID: ws.ID, Name: "ok.txt", Content: strings.NewReader("0123456789")}); err != nil {
+		t.Errorf("content at the limit: %v", err)
+	}
+	_, err := a.Fixtures.Create(ctx, admin, fixture.CreateInput{DatasetID: ws.ID, Name: "big.txt", Content: strings.NewReader("0123456789x")})
+	if !errors.Is(err, apperr.ErrTooLarge) {
+		t.Errorf("content over the limit err = %v, want ErrTooLarge", err)
+	}
+	if list, _ := a.Fixtures.List(ctx, admin, ws.ID, fixture.ListFilter{}); len(list) != 1 {
+		t.Errorf("dataset holds %d fixtures, want only the one at the limit", len(list))
+	}
+}

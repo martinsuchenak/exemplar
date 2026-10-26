@@ -43,6 +43,10 @@ path = "data/exemplar.db"
 
 [storage]
 blob_dir = "data/blobs"
+max_fixture_mb = 100
+
+[client]
+server = "http://localhost:8080"
 `
 			if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
 				return fmt.Errorf("writing config file: %w", err)

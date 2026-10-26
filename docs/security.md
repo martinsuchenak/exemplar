@@ -55,6 +55,12 @@ are audit-logged.
 A dataset a key cannot read is reported as not found. A **frozen** dataset's
 contents cannot change; it can still be deleted by someone allowed to change it.
 
+**Fork** copies a dataset the key can read into a new workspace owned by the
+key's account (write key). **Promote** copies a dataset into the global
+library as the next version of its name, frozen (admin key). Both skip
+real-derived fixtures that are not approved, so unreviewed real data never
+leaves quarantine. Members cannot promote yet; a proposal workflow may follow.
+
 ## Real-derived data
 
 Only fixtures with source `anonymised` are derived from real data.
@@ -64,6 +70,8 @@ Only fixtures with source `anonymised` are derived from real data.
 - Unapproved real-derived content is served only to admins, so they can review it.
 - Every read of real-derived content is audit-logged (`fixture.download`).
 - Uploads through the API or CLI are declared as containing no real data; real data must come through ingest.
+- Copies made by fork or promote keep the source's provenance (`ingest_batch`, review state, reviewer).
+- `exemplar purge <batch>` (admin) deletes a batch's fixtures from every dataset, frozen ones included, for removal on request.
 
 ## Audit log
 
@@ -77,15 +85,24 @@ Only admin keys can read the log.
 | `account.create`, `account.disable` | An admin creates or disables an account |
 | `key.create`, `key.revoke` | A key is issued or revoked |
 | `dataset.create`, `dataset.freeze`, `dataset.delete` | Dataset lifecycle |
+| `dataset.fork`, `dataset.promote` | A dataset is copied; details record the source and counts |
 | `fixture.create`, `fixture.delete` | Fixture lifecycle |
 | `fixture.download` | Real-derived content is read |
 | `fixture.approve`, `fixture.reject` | A real-derived fixture is reviewed |
+| `fixture.purge` | An ingest batch is purged; details record how many fixtures |
 
 ## Files on disk
 
 - The database file is created with mode 600, its directory 700.
 - Blob directories are 700 and blob files 600.
 - Blob paths are derived only from validated SHA-256 hashes, so no request can reach other paths.
+- Fixture content is capped (`storage.max_fixture_mb`, default 100 MiB); larger uploads stop before they are stored.
+
+## HTTP
+
+- Downloads are attachments with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so fixture HTML or scripts never run in a browser.
+- Key creation responses carry `Cache-Control: no-store`.
+- The CLI reads the API key from `--api-key` or `EXEMPLAR_API_KEY`, never from the config file, so keys are not committed with config.
 
 ## SOC 2 good practice
 

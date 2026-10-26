@@ -47,6 +47,8 @@ func (s *Storage) Insert(ctx context.Context, exec xdal.DBExecutor, f *Fixture) 
 		Set("anon_key_id", f.AnonKeyID).
 		Set("ingest_batch", f.IngestBatch).
 		Set("review_state", string(f.ReviewState)).
+		Set("reviewed_by", nullString(f.ReviewedBy)).
+		Set("reviewed_at", storeutil.TimeArg(f.ReviewedAt)).
 		Set("created_by", f.CreatedBy).
 		Set("created_at", storeutil.FormatTime(f.CreatedAt)).
 		Build()
@@ -95,6 +97,10 @@ func (s *Storage) List(ctx context.Context, exec xdal.DBExecutor, datasetID stri
 	if err != nil {
 		return nil, err
 	}
+	return s.query(ctx, exec, query, args)
+}
+
+func (s *Storage) query(ctx context.Context, exec xdal.DBExecutor, query string, args []interface{}) ([]Fixture, error) {
 	rows, err := exec.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -109,6 +115,28 @@ func (s *Storage) List(ctx context.Context, exec xdal.DBExecutor, datasetID stri
 		out = append(out, *f)
 	}
 	return out, rows.Err()
+}
+
+// ListAll returns every fixture in a dataset, ordered by name.
+func (s *Storage) ListAll(ctx context.Context, exec xdal.DBExecutor, datasetID string) ([]Fixture, error) {
+	query, args, err := s.qb.Select(columns...).From("fixtures").Where("dataset_id = ?", datasetID).OrderBy("name").Build()
+	if err != nil {
+		return nil, err
+	}
+	return s.query(ctx, exec, query, args)
+}
+
+// DeleteBatch removes every fixture from an ingest batch and returns how many.
+func (s *Storage) DeleteBatch(ctx context.Context, exec xdal.DBExecutor, batch string) (int64, error) {
+	query, args, err := s.qb.Delete("fixtures").Where("ingest_batch = ?", batch).Build()
+	if err != nil {
+		return 0, err
+	}
+	res, err := exec.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // Delete removes a fixture row; its blob is collected separately.
@@ -134,6 +162,13 @@ func (s *Storage) SetReview(ctx context.Context, exec xdal.DBExecutor, id string
 	}
 	_, err = exec.Exec(ctx, query, args...)
 	return err
+}
+
+func nullString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 type scanner interface {

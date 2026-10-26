@@ -107,6 +107,20 @@ func (s *Storage) List(ctx context.Context, exec xdal.DBExecutor, f ListFilter, 
 	return out, rows.Err()
 }
 
+// MaxGlobalVersion returns the highest version of the global dataset name, or 0.
+func (s *Storage) MaxGlobalVersion(ctx context.Context, exec xdal.DBExecutor, name string) (int, error) {
+	query, args, err := s.qb.Select("COALESCE(MAX(version), 0)").From("datasets").
+		Where("scope = ?", string(ScopeGlobal)).
+		Where("name = ?", name).
+		Build()
+	if err != nil {
+		return 0, err
+	}
+	var v int
+	err = exec.QueryRow(ctx, query, args...).Scan(&v)
+	return v, err
+}
+
 // SetFrozen marks a dataset frozen at at.
 func (s *Storage) SetFrozen(ctx context.Context, exec xdal.DBExecutor, id string, at time.Time) error {
 	query, args, err := s.qb.Update("datasets").

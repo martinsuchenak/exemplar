@@ -24,7 +24,21 @@ MCP tool     ─┘                    │
 
 A service that needs another resource's rules asks that resource's service. For
 example, the fixture service calls `dataset.Service.Authorize` and never reads
-the datasets table itself.
+the datasets table itself. In the other direction, fork and promote need
+fixtures copied inside the dataset service's transaction: the dataset service
+calls a `dataset.FixtureCopier`, which `fixture.Service` implements and
+`app.Open` wires in with `UseFixtures`.
+
+## CLI and API
+
+Host commands (`serve`, `bootstrap`, `init`) open the app directly. All other
+commands are remote: they call the REST API through `internal/client`, so a
+local instance and a shared server are used the same way and the server's
+services make every access decision.
+
+```
+exemplar upload ─> internal/client ─HTTP─> cmd/routes ─> fixture.Handler ─> fixture.Service
+```
 
 ## Packages
 
@@ -42,6 +56,7 @@ the datasets table itself.
 | `internal/auth` | `X-API-Key` middleware; resolves keys through the account service. |
 | `internal/db` | SQLite connection (pragmas, file permissions) and migrations. |
 | `internal/storeutil` | IDs (UUIDv7), timestamp and JSON column helpers for storage code. |
+| `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
 | `internal/testutil` | Builds a real app in a temp directory plus admin and member principals for tests. |
 
 ## Errors

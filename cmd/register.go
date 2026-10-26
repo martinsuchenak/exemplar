@@ -9,8 +9,12 @@ import (
 	"github.com/paularlott/cli"
 )
 
-// stdout receives command output meant for the user; tests replace it.
-var stdout io.Writer = os.Stdout
+// stdout receives command output meant for the user and stderr per-item
+// problems; tests replace both.
+var (
+	stdout io.Writer = os.Stdout
+	stderr io.Writer = os.Stderr
+)
 
 var registry []*cli.Command
 

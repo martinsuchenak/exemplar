@@ -26,11 +26,14 @@ const (
 	ActionDatasetCreate   = "dataset.create"
 	ActionDatasetFreeze   = "dataset.freeze"
 	ActionDatasetDelete   = "dataset.delete"
+	ActionDatasetFork     = "dataset.fork"
+	ActionDatasetPromote  = "dataset.promote"
 	ActionFixtureCreate   = "fixture.create"
 	ActionFixtureDelete   = "fixture.delete"
 	ActionFixtureDownload = "fixture.download"
 	ActionFixtureApprove  = "fixture.approve"
 	ActionFixtureReject   = "fixture.reject"
+	ActionFixturePurge    = "fixture.purge"
 )
 
 // Event is one audit log entry. Seq orders events and pages through them.

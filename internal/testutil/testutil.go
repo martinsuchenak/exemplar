@@ -14,12 +14,21 @@ import (
 
 // NewApp opens an app on a SQLite file and blob directory in t.TempDir().
 func NewApp(t *testing.T) *app.App {
+	return NewAppWith(t, nil)
+}
+
+// NewAppWith is NewApp with a chance to change the config (paths are set).
+func NewAppWith(t *testing.T, configure func(*app.Config)) *app.App {
 	t.Helper()
 	dir := t.TempDir()
-	a, err := app.Open(context.Background(), nil, app.Config{
+	cfg := app.Config{
 		DBPath:  filepath.Join(dir, "exemplar.db"),
 		BlobDir: filepath.Join(dir, "blobs"),
-	})
+	}
+	if configure != nil {
+		configure(&cfg)
+	}
+	a, err := app.Open(context.Background(), nil, cfg)
 	if err != nil {
 		t.Fatalf("opening app: %v", err)
 	}

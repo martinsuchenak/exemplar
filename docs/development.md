@@ -44,10 +44,22 @@ go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cov
 
 - **CLI tests** run real commands through `runCLI(t, args...)` in
   `cmd/helpers_test.go`, which returns stdout. It builds fresh command values for
-  each run because the CLI library keeps parsed flags on them.
+  each run because the CLI library keeps parsed flags on them; add new
+  commands' constructors to its list.
 
 - **HTTP tests** register routes on a mux with `routes.RegisterRoutes(mux, app)`
-  and drive it with `httptest`.
+  and drive it with `httptest`. `cmd/routes/resources_test.go` covers what the
+  client never sends: missing keys on every route, malformed bodies and query
+  parameters, and response headers.
+
+- **Client tests** (`internal/client`) run the real routes in an
+  `httptest.Server` and exercise every client method, including how each
+  status maps back to an `apperr` kind.
+
+- **Remote CLI tests** start the same server with `startServer(t)` in
+  `cmd/remote_test.go` and run commands with `s.run(t, key, args...)` or decode
+  `--json` output with `s.runJSON`. `s.member(t, name)` creates a member and
+  returns its key.
 
 Not covered by tests: `main`, the blocking listener in `serve`, and the
 scaffold's sample MCP tool (to be replaced by the read-only MCP tools).

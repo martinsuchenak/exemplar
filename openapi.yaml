@@ -2,29 +2,28 @@ openapi: "3.1.0"
 info:
   title: exemplar
   version: "1.0.0"
-  description: API for exemplar service
+  description: |
+    Test fixture library. Every /api/v1 route needs an API key in X-API-Key.
+    Errors are {"error": "<message>"}; see docs/api.md for status codes.
 servers:
   - url: http://localhost:8080
     description: Local development
+security:
+  - apiKey: []
 paths:
   /health:
     get:
       summary: Health check
       operationId: healthCheck
+      security: []
       responses:
         "200":
           description: Service is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
   /metrics:
     get:
       summary: Application metrics
       operationId: getMetrics
+      security: []
       responses:
         "200":
           description: Current metrics
@@ -32,16 +31,474 @@ paths:
     get:
       summary: The calling account and key
       operationId: getMe
-      security:
-        - apiKey: []
       responses:
         "200":
-          description: The account and the principal the key acts as
-        "401":
-          description: Missing, unknown or revoked key
+          description: Account and principal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account: { $ref: "#/components/schemas/Account" }
+                  principal: { $ref: "#/components/schemas/Principal" }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/accounts:
+    get:
+      summary: List accounts (all for admins, own otherwise)
+      operationId: listAccounts
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Account" } }
+    post:
+      summary: Create an account (admin)
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind]
+              properties:
+                name: { type: string }
+                kind: { type: string, enum: [developer, team, app] }
+                role: { type: string, enum: [member, admin], default: member }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get an account (self or admin)
+      operationId: getAccount
+      responses:
+        "200":
+          description: Account
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/accounts/{id}/disable:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Disable an account and revoke its keys (admin)
+      operationId: disableAccount
+      responses:
+        "204": { description: Disabled }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/keys:
+    get:
+      summary: List keys
+      operationId: listKeys
+      parameters:
+        - { name: account_id, in: query, schema: { type: string }, description: "Another account's keys (admin)" }
+      responses:
+        "200":
+          description: Keys
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/APIKey" } }
+    post:
+      summary: Create a key; the secret is returned once
+      operationId: createKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                account_id: { type: string }
+                name: { type: string }
+                scopes: { type: array, items: { type: string, enum: [read, write, admin] } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { $ref: "#/components/schemas/APIKey" }
+                  secret: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/keys/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    delete:
+      summary: Revoke a key
+      operationId: revokeKey
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/datasets:
+    get:
+      summary: List datasets the key can read
+      operationId: listDatasets
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [global, workspace, quarantine] } }
+        - { name: name, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Datasets
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Dataset" } }
+    post:
+      summary: Create a dataset
+      operationId: createDataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                scope: { type: string, enum: [global, workspace, quarantine], default: workspace }
+                tags: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dataset" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/datasets/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get a dataset
+      operationId: getDataset
+      responses:
+        "200":
+          description: Dataset
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dataset" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete a dataset and its fixtures
+      operationId: deleteDataset
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/datasets/{id}/freeze:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Make a dataset's contents read-only
+      operationId: freezeDataset
+      responses:
+        "200":
+          description: Frozen dataset
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dataset" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/datasets/{id}/fork:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Copy a dataset into a new workspace of the caller's
+      operationId: forkDataset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/CopyResult" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/datasets/{id}/promote:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Copy a dataset into the global library as a frozen version (admin)
+      operationId: promoteDataset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/CopyResult" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/datasets/{id}/fixtures:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: List a dataset's fixtures
+      operationId: listFixtures
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [email, file, record] } }
+        - { name: format, in: query, schema: { type: string } }
+        - { name: scenario, in: query, schema: { type: string } }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: review_state, in: query, schema: { type: string, enum: [not-required, unreviewed, approved, rejected] } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 1000 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Fixtures by name
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Fixture" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Upload a fixture (raw content body)
+      operationId: uploadFixture
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string, enum: [email, file, record] } }
+        - { name: format, in: query, schema: { type: string } }
+        - { name: mime_type, in: query, schema: { type: string } }
+        - { name: scenario, in: query, schema: { type: string } }
+        - { name: tags, in: query, schema: { type: string }, description: Comma-separated or repeated }
+        - { name: source, in: query, schema: { type: string, enum: [uploaded, synthetic, public-corpus, anonymised], default: uploaded } }
+        - { name: generator, in: query, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Fixture" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+  /api/v1/fixtures/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get a fixture's metadata
+      operationId: getFixture
+      responses:
+        "200":
+          description: Fixture
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Fixture" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Delete a fixture
+      operationId: deleteFixture
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/fixtures/{id}/content:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Download a fixture's content
+      operationId: downloadFixture
+      responses:
+        "200":
+          description: Content, as an attachment named after the fixture
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/fixtures/{id}/review:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Approve or reject a real-derived fixture (admin)
+      operationId: reviewFixture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve]
+              properties:
+                approve: { type: boolean }
+      responses:
+        "200":
+          description: Reviewed fixture
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Fixture" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/purge:
+    post:
+      summary: Delete every fixture from an ingest batch (admin)
+      operationId: purgeBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ingest_batch]
+              properties:
+                ingest_batch: { type: string }
+      responses:
+        "200":
+          description: Purged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ingest_batch: { type: string }
+                  deleted: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/audit:
+    get:
+      summary: List audit events (admin)
+      operationId: listAudit
+      parameters:
+        - { name: account_id, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: target_type, in: query, schema: { type: string } }
+        - { name: target_id, in: query, schema: { type: string } }
+        - { name: after_seq, in: query, schema: { type: integer }, description: Paging cursor }
+        - { name: limit, in: query, schema: { type: integer, maximum: 1000 } }
+      responses:
+        "200":
+          description: Events in order
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }
+        "403": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     apiKey:
       type: apiKey
       in: header
       name: X-API-Key
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+    CopyResult:
+      description: The dataset created and what was copied into it
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              dataset: { $ref: "#/components/schemas/Dataset" }
+              copied: { type: integer }
+              skipped: { type: integer, description: Real-derived fixtures not approved }
+  schemas:
+    Account:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [developer, team, app] }
+        role: { type: string, enum: [member, admin] }
+        created_at: { type: string, format: date-time }
+        disabled_at: { type: string, format: date-time }
+    Principal:
+      type: object
+      properties:
+        account_id: { type: string }
+        account_name: { type: string }
+        role: { type: string }
+        key_id: { type: string }
+        scopes: { type: array, items: { type: string } }
+    APIKey:
+      type: object
+      properties:
+        id: { type: string }
+        account_id: { type: string }
+        name: { type: string }
+        prefix: { type: string }
+        scopes: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+    Dataset:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        scope: { type: string, enum: [global, workspace, quarantine] }
+        owner_account_id: { type: string }
+        parent_id: { type: string }
+        version: { type: integer }
+        tags: { type: array, items: { type: string } }
+        frozen_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Fixture:
+      type: object
+      properties:
+        id: { type: string }
+        dataset_id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [email, file, record] }
+        format: { type: string }
+        mime_type: { type: string }
+        blob_hash: { type: string }
+        size: { type: integer }
+        scenario: { type: string }
+        tags: { type: array, items: { type: string } }
+        source: { type: string, enum: [synthetic, uploaded, public-corpus, anonymised] }
+        generator: { type: string }
+        anon_profile: { type: string }
+        anon_key_id: { type: string }
+        ingest_batch: { type: string }
+        review_state: { type: string, enum: [not-required, unreviewed, approved, rejected] }
+        reviewed_by: { type: string }
+        reviewed_at: { type: string, format: date-time }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+    AuditEvent:
+      type: object
+      properties:
+        seq: { type: integer }
+        id: { type: string }
+        at: { type: string, format: date-time }
+        account_id: { type: string }
+        action: { type: string }
+        target_type: { type: string }
+        target_id: { type: string }
+        details: { type: object }

@@ -71,14 +71,15 @@ func serveCmd() *cli.Command {
 }
 
 // newHTTPServer applies the timeouts every exemplar listener uses, so slow
-// clients cannot hold connections open indefinitely.
+// clients cannot hold connections open indefinitely. Body timeouts allow
+// fixture uploads and downloads of the default 100 MiB limit on slow links.
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 	}
 }

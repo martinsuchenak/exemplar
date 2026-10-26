@@ -80,21 +80,56 @@ const (
 	AccessDelete
 )
 
+// ForkInput names a fork. Name defaults to the source dataset's name.
+type ForkInput struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// PromoteInput names the global dataset a promotion creates. Name defaults to
+// the source dataset's name; the version is the next free one for that name.
+type PromoteInput struct {
+	Name string `json:"name"`
+}
+
+// CopyResult is a dataset created by Fork or Promote and what was copied into it.
+type CopyResult struct {
+	Dataset *Dataset `json:"dataset"`
+	// Copied fixtures share their content with the source.
+	Copied int `json:"copied"`
+	// Skipped fixtures are real-derived and not approved, so they stay behind.
+	Skipped int `json:"skipped"`
+}
+
+// FixtureCopier copies a dataset's shareable fixtures into another dataset
+// inside the caller's transaction. fixture.Service implements it, so the
+// dataset service never touches the fixtures table itself.
+type FixtureCopier interface {
+	CopyShareable(ctx context.Context, exec xdal.DBExecutor, srcID, dstID, actorID string) (copied, skipped int, err error)
+}
+
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,127}$`)
 
 // Service manages datasets and decides who may use them.
 type Service struct {
-	db      xdal.DBInterface
-	storage *Storage
-	blobs   *blob.Store
-	audit   *audit.Service
-	now     func() time.Time
+	db       xdal.DBInterface
+	storage  *Storage
+	blobs    *blob.Store
+	audit    *audit.Service
+	fixtures FixtureCopier
+	now      func() time.Time
 }
 
 // NewService returns a dataset service. blobs is used to collect contents
 // left unused when a dataset is deleted.
 func NewService(db xdal.DBInterface, blobs *blob.Store, auditService *audit.Service) *Service {
 	return &Service{db: db, storage: NewStorage(db.NewQueryBuilder()), blobs: blobs, audit: auditService, now: time.Now}
+}
+
+// UseFixtures sets the fixture copier for Fork and Promote. app.Open wires it,
+// because the fixture service itself depends on this service.
+func (s *Service) UseFixtures(c FixtureCopier) {
+	s.fixtures = c
 }
 
 // Create makes a dataset owned by the caller. Global and quarantine datasets
@@ -208,6 +243,109 @@ func (s *Service) Freeze(ctx context.Context, actor principal.Principal, id stri
 		return nil, err
 	}
 	return d, nil
+}
+
+// Fork copies a dataset the caller can read into a new workspace the caller
+// owns. Fixtures share their content with the source; real-derived fixtures
+// that are not approved are skipped.
+func (s *Service) Fork(ctx context.Context, actor principal.Principal, srcID string, in ForkInput) (*CopyResult, error) {
+	if !actor.CanWrite() {
+		return nil, fmt.Errorf("%w: forking needs a write key", apperr.ErrForbidden)
+	}
+	return s.copyDataset(ctx, actor, srcID, func(src *Dataset) (*Dataset, error) {
+		name := strings.TrimSpace(in.Name)
+		if name == "" {
+			name = src.Name
+		}
+		desc := in.Description
+		if desc == "" {
+			desc = src.Description
+		}
+		return s.derive(src, name, desc, ScopeWorkspace, 1, actor), nil
+	}, audit.ActionDatasetFork)
+}
+
+// Promote copies a dataset into the global library as a new frozen version.
+// Admin only. Real-derived fixtures that are not approved are skipped.
+func (s *Service) Promote(ctx context.Context, actor principal.Principal, srcID string, in PromoteInput) (*CopyResult, error) {
+	if !actor.IsAdmin() {
+		return nil, fmt.Errorf("%w: promoting needs an admin key", apperr.ErrForbidden)
+	}
+	return s.copyDataset(ctx, actor, srcID, func(src *Dataset) (*Dataset, error) {
+		name := strings.TrimSpace(in.Name)
+		if name == "" {
+			name = src.Name
+		}
+		d := s.derive(src, name, src.Description, ScopeGlobal, 0, actor)
+		frozen := d.CreatedAt
+		d.FrozenAt = &frozen
+		return d, nil
+	}, audit.ActionDatasetPromote)
+}
+
+// copyDataset creates the dataset build returns, copies the source's shareable
+// fixtures into it and records action, all in one transaction.
+func (s *Service) copyDataset(ctx context.Context, actor principal.Principal, srcID string, build func(*Dataset) (*Dataset, error), action string) (*CopyResult, error) {
+	if s.fixtures == nil {
+		return nil, fmt.Errorf("dataset service has no fixture copier")
+	}
+	res := &CopyResult{}
+	err := s.db.WithTx(ctx, nil, func(tx *xdal.Tx) error {
+		src, err := s.Authorize(ctx, tx, actor, srcID, AccessRead)
+		if err != nil {
+			return err
+		}
+		d, err := build(src)
+		if err != nil {
+			return err
+		}
+		if !nameRe.MatchString(d.Name) {
+			return fmt.Errorf("%w: dataset name must be 1-128 letters, digits, spaces, '.', '_' or '-'", apperr.ErrInvalid)
+		}
+		if d.Scope == ScopeGlobal {
+			latest, err := s.storage.MaxGlobalVersion(ctx, tx, d.Name)
+			if err != nil {
+				return err
+			}
+			d.Version = latest + 1
+		}
+		if err := s.storage.Insert(ctx, tx, d); err != nil {
+			if errors.Is(err, apperr.ErrConflict) {
+				return fmt.Errorf("%w: a %s dataset named %q already exists", apperr.ErrConflict, d.Scope, d.Name)
+			}
+			return err
+		}
+		res.Dataset = d
+		res.Copied, res.Skipped, err = s.fixtures.CopyShareable(ctx, tx, src.ID, d.ID, actor.AccountID)
+		if err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, tx, audit.Event{
+			AccountID: actor.AccountID, Action: action, TargetType: "dataset", TargetID: d.ID,
+			Details: map[string]any{"source_id": src.ID, "name": d.Name, "version": d.Version, "copied": res.Copied, "skipped": res.Skipped},
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// derive makes a new dataset based on src, owned by actor.
+func (s *Service) derive(src *Dataset, name, desc string, scope Scope, version int, actor principal.Principal) *Dataset {
+	now := s.now()
+	return &Dataset{
+		ID:             storeutil.NewID(),
+		Name:           name,
+		Description:    desc,
+		Scope:          scope,
+		OwnerAccountID: actor.AccountID,
+		ParentID:       src.ID,
+		Version:        version,
+		Tags:           src.Tags,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
 }
 
 // Delete removes a dataset with all its fixtures, then any blobs nothing else uses.

@@ -23,6 +23,8 @@ type Config struct {
 	DBPath string
 	// BlobDir holds fixture contents.
 	BlobDir string
+	// MaxFixtureBytes caps one fixture's content; 0 means no limit.
+	MaxFixtureBytes int64
 }
 
 // App holds the services every entry point uses.
@@ -51,12 +53,14 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 	}
 	auditService := audit.NewService(conn.DB)
 	datasets := dataset.NewService(conn.DB, blobs, auditService)
+	fixtures := fixture.NewService(conn.DB, blobs, datasets, auditService, cfg.MaxFixtureBytes)
+	datasets.UseFixtures(fixtures)
 	return &App{
 		conn:     conn,
 		Audit:    auditService,
 		Accounts: account.NewService(conn.DB, auditService),
 		Datasets: datasets,
-		Fixtures: fixture.NewService(conn.DB, blobs, datasets, auditService),
+		Fixtures: fixtures,
 	}, nil
 }
 

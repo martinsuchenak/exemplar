@@ -26,13 +26,21 @@ func storageFlags() []cli.Flag {
 			ConfigPath:   []string{"storage.blob_dir"},
 			EnvVars:      []string{"BLOB_DIR"},
 		},
+		&cli.IntFlag{
+			Name:         "max-fixture-mb",
+			DefaultValue: 100,
+			Usage:        "Largest fixture content accepted, in MiB (0 for no limit)",
+			ConfigPath:   []string{"storage.max_fixture_mb"},
+			EnvVars:      []string{"MAX_FIXTURE_MB"},
+		},
 	}
 }
 
 // openApp opens the database and blob store named by storageFlags.
 func openApp(ctx context.Context, cmd *cli.Command, log logger.Logger) (*app.App, error) {
 	return app.Open(ctx, log, app.Config{
-		DBPath:  cmd.GetString("db-path"),
-		BlobDir: cmd.GetString("blob-dir"),
+		DBPath:          cmd.GetString("db-path"),
+		BlobDir:         cmd.GetString("blob-dir"),
+		MaxFixtureBytes: int64(cmd.GetInt("max-fixture-mb")) << 20,
 	})
 }

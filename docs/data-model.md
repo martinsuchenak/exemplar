@@ -34,7 +34,8 @@ arrays. Foreign keys are enforced.
 | `id`, `name`, `description` | Name: 1–128 letters, digits, spaces, `.`, `_`, `-` |
 | `scope` | `global`, `workspace` or `quarantine` |
 | `owner_account_id` | The creator |
-| `parent_id`, `version` | For forks and promoted versions (later) |
+| `parent_id` | The dataset a fork or promotion was copied from |
+| `version` | 1 for new datasets and forks; promotion takes the next free version of the global name |
 | `tags` | JSON array, lower-cased and de-duplicated |
 | `frozen_at` | Contents read-only once set |
 | `created_at`, `updated_at` | |
@@ -64,7 +65,9 @@ Names are unique per `(name, version)` for global datasets and per
 | `reviewed_by`, `reviewed_at` | Set by an admin's review |
 | `created_by`, `created_at` | |
 
-Deleting a dataset deletes its fixtures (`ON DELETE CASCADE`).
+Deleting a dataset deletes its fixtures (`ON DELETE CASCADE`). Fork and
+promote insert new fixture rows pointing at the same blobs, keeping
+provenance and review fields.
 
 ### audit_events
 
