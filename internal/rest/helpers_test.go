@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -76,7 +77,22 @@ func TestDecodeJSON(t *testing.T) {
 	}
 	big := `{"name":"` + strings.Repeat("a", MaxBodyBytes) + `"}`
 	r = httptest.NewRequest("POST", "/", strings.NewReader(big))
-	if err := DecodeJSON(r, &v); err == nil {
-		t.Error("body over MaxBodyBytes decoded without error")
+	if err := DecodeJSON(r, &v); !errors.Is(err, apperr.ErrTooLarge) {
+		t.Errorf("body over MaxBodyBytes err = %v", err)
+	}
+	r = httptest.NewRequest("POST", "/", strings.NewReader(`{"name":"x"} {"name":"y"}`))
+	if err := DecodeJSON(r, &v); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("trailing data err = %v", err)
+	}
+	r = httptest.NewRequest("POST", "/", strings.NewReader(""))
+	if err := DecodeJSON(r, &v); !errors.Is(err, io.EOF) || !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("empty body err = %v (optional bodies test for io.EOF)", err)
+	}
+	for err, want := range map[error]int{apperr.ErrTooLarge: http.StatusRequestEntityTooLarge, apperr.ErrInvalid: http.StatusBadRequest} {
+		w := httptest.NewRecorder()
+		RespondBodyError(w, err, "bad body")
+		if w.Code != want {
+			t.Errorf("RespondBodyError(%v) = %d", err, w.Code)
+		}
 	}
 }

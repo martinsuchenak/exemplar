@@ -29,7 +29,9 @@ Two kinds of command:
 ### `serve`
 
 Opens the database (running pending migrations) and starts the HTTP API and the
-MCP server.
+MCP server. If either cannot listen (a port in use), `serve` stops with an
+error. On SIGTERM (`docker stop`) or Ctrl-C it stops accepting requests, lets
+those in flight finish for up to 30 seconds, and closes the database.
 
 | Flag | Env var | Config | Default |
 |------|---------|--------|---------|
@@ -184,8 +186,8 @@ headers added at the top:
 | Flag | Env var | Config | Description |
 |------|---------|--------|-------------|
 | `--smtp` | `MAILPIT_SMTP` | `mailpit.smtp` | SMTP address, default `localhost:1025` |
-| `--smtp-user`, `--smtp-password` | `MAILPIT_SMTP_USER`, `MAILPIT_SMTP_PASSWORD` | | AUTH PLAIN, if Mailpit requires it |
-| `--run` | | | Run ID; default a new one such as `20261027-091502-3fa1`, printed |
+| `--smtp-user`, `--smtp-password` | `MAILPIT_SMTP_USER`, `MAILPIT_SMTP_PASSWORD` | | AUTH PLAIN, if Mailpit requires it. Sent without TLS, also to a non-local server such as `mailpit:1025` in CI (Mailpit needs `MP_SMTP_AUTH_ALLOW_INSECURE=true` for that); use test credentials only |
+| `--run` | | | Run ID, 1–64 letters, digits, `.`, `_` or `-`; default a new one such as `20261027-091502-3fa1`, printed |
 | `--to` | | | Deliver every message to these addresses instead of its own To, Cc and Bcc. Headers are unchanged; Mailpit lists the address as Bcc |
 | `--scenario`, `--tag`, `--limit` | | | Which emails to send |
 | `--raw` | | | Send the stored bytes exactly, without the added headers |
@@ -194,6 +196,9 @@ headers added at the top:
 The envelope sender is the message's From address. Each message is sent on its
 own connection; failures are listed per message and make the command exit
 non-zero. Only `.eml` fixtures are sent (`.msg` cannot be sent over SMTP).
+Real-derived emails that are not approved are never sent, even with an admin
+key (which may read them only to review them); the command says how many it
+skipped.
 
 ```bash
 exemplar generate <dataset-id> --kind emails --count 24

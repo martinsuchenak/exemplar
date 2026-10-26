@@ -78,6 +78,10 @@ const (
 	AccessWrite
 	// AccessDelete removes the whole dataset, frozen or not.
 	AccessDelete
+	// AccessManage changes the dataset's state or its fixtures' review, not
+	// their contents, so frozen datasets allow it: a frozen quarantine can
+	// still be reviewed.
+	AccessManage
 )
 
 // ForkInput names a fork. Name defaults to the source dataset's name.
@@ -226,7 +230,7 @@ func (s *Service) Freeze(ctx context.Context, actor principal.Principal, id stri
 	var d *Dataset
 	err := s.db.WithTx(ctx, nil, func(tx *xdal.Tx) error {
 		var err error
-		d, err = s.Authorize(ctx, tx, actor, id, AccessDelete)
+		d, err = s.Authorize(ctx, tx, actor, id, AccessManage)
 		if err != nil || d.Frozen() {
 			return err
 		}

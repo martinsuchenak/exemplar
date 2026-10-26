@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/martinsuchenak/exemplar/internal/dataset"
+	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/mailpit"
 	"github.com/martinsuchenak/exemplar/internal/mailpit/mailpittest"
 )
@@ -84,5 +86,32 @@ func TestPushMailpitCommand(t *testing.T) {
 	}
 	if _, err := s.run(t, member, "push-mailpit", d.ID, "--smtp", "no-port"); err == nil {
 		t.Error("bad SMTP address accepted")
+	}
+}
+
+func TestPushMailpitSkipsUnapprovedRealData(t *testing.T) {
+	s, dsID, dir := anonymisingServer(t)
+	var res ingest.Result
+	s.runJSON(t, s.adminKey, &res, "ingest", dsID, filepath.Join(dir, "a.eml"), "--batch", "q")
+	smtpSrv := mailpittest.Start(t)
+
+	// Even an admin key, which may read it for review, does not send it.
+	if _, err := s.run(t, s.adminKey, "push-mailpit", dsID, "--smtp", smtpSrv.Addr); err == nil || !strings.Contains(err.Error(), "may be sent") {
+		t.Errorf("unapproved push err = %v", err)
+	}
+	if n := len(smtpSrv.Received()); n != 0 {
+		t.Fatalf("%d unapproved emails reached the SMTP server", n)
+	}
+	if _, err := s.run(t, s.adminKey, "approve", res.Files[0].FixtureID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.run(t, s.adminKey, "push-mailpit", dsID, "--smtp", smtpSrv.Addr, "--run", "ok-1"); err != nil {
+		t.Fatalf("approved push: %v", err)
+	}
+	if n := len(smtpSrv.Received()); n != 1 {
+		t.Errorf("approved emails sent = %d", n)
+	}
+	if _, err := s.run(t, s.adminKey, "push-mailpit", dsID, "--smtp", smtpSrv.Addr, "--run", "a,b"); err == nil || !strings.Contains(err.Error(), "run ID") {
+		t.Errorf("bad run err = %v", err)
 	}
 }

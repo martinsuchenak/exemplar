@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/principal"
@@ -55,7 +56,32 @@ func RespondServiceError(w http.ResponseWriter, err error) {
 // DecodeJSON decodes the request body into v, reading at most MaxBodyBytes.
 func DecodeJSON(r *http.Request, v interface{}) error {
 	defer func() { _ = r.Body.Close() }()
-	return json.NewDecoder(io.LimitReader(r.Body, MaxBodyBytes)).Decode(v)
+	body := &io.LimitedReader{R: r.Body, N: MaxBodyBytes + 1}
+	dec := json.NewDecoder(body)
+	err := dec.Decode(v)
+	if err == nil {
+		// One JSON value only: trailing data is a malformed request.
+		if _, terr := dec.Token(); !errors.Is(terr, io.EOF) {
+			err = errors.New("unexpected data after the JSON value")
+		}
+	}
+	if body.N <= 0 {
+		return fmt.Errorf("%w: the request body is over %d bytes", apperr.ErrTooLarge, MaxBodyBytes)
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %w", apperr.ErrInvalid, err)
+	}
+	return nil
+}
+
+// RespondBodyError answers a DecodeJSON failure: 413 for a body over
+// MaxBodyBytes, otherwise 400 with msg.
+func RespondBodyError(w http.ResponseWriter, err error, msg string) {
+	if errors.Is(err, apperr.ErrTooLarge) {
+		RespondError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("the request body is over %d bytes", MaxBodyBytes))
+		return
+	}
+	RespondError(w, http.StatusBadRequest, msg)
 }
 
 // Caller returns the authenticated principal, or writes 401 and returns false.
@@ -94,4 +120,21 @@ func QueryList(r *http.Request, name string) []string {
 		}
 	}
 	return out
+}
+
+// LongTransfer is how long one large upload or download may take. The
+// server's own read and write timeouts stay short so slow clients cannot hold
+// ordinary requests open; handlers that move fixture contents, ingests and
+// archives extend their connection's deadline to this instead.
+const LongTransfer = time.Hour
+
+// AllowLongUpload lets the request body take up to LongTransfer to arrive.
+// Size limits still apply separately.
+func AllowLongUpload(w http.ResponseWriter) {
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(LongTransfer))
+}
+
+// AllowLongDownload lets the response take up to LongTransfer to send.
+func AllowLongDownload(w http.ResponseWriter) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(LongTransfer))
 }

@@ -378,7 +378,7 @@ func TestToolErrorMapping(t *testing.T) {
 
 func TestHTTPServerServesMCPBehindAuth(t *testing.T) {
 	a := testutil.NewApp(t)
-	srv := newHTTPServer(a, "127.0.0.1:0")
+	srv := NewHTTPServer(a, "127.0.0.1:0")
 	if srv.Addr != "127.0.0.1:0" || srv.ReadHeaderTimeout == 0 || srv.WriteTimeout == 0 {
 		t.Errorf("server = %+v", srv)
 	}

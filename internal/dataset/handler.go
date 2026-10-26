@@ -42,7 +42,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	var in CreateInput
 	if err := rest.DecodeJSON(r, &in); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	d, err := h.service.Create(r.Context(), p, in)
@@ -102,7 +102,7 @@ func (h *Handler) Fork(w http.ResponseWriter, r *http.Request) {
 	}
 	var in ForkInput
 	if err := decodeOptional(r, &in); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	res, err := h.service.Fork(r.Context(), p, r.PathValue("id"), in)
@@ -121,7 +121,7 @@ func (h *Handler) Promote(w http.ResponseWriter, r *http.Request) {
 	}
 	var in PromoteInput
 	if err := decodeOptional(r, &in); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	res, err := h.service.Promote(r.Context(), p, r.PathValue("id"), in)

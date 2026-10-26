@@ -56,17 +56,22 @@ func pushMailpitCmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			emails, err := listEmails(ctx, c, id, cmd.GetString("scenario"), cmd.GetString("tag"), cmd.GetInt("limit"))
-			if err != nil {
-				return err
-			}
-			if len(emails) == 0 {
-				return fmt.Errorf("dataset %s has no matching .eml fixtures", id)
-			}
-
 			run := cmd.GetString("run")
 			if run == "" {
 				run = mailpit.NewRunID(time.Now())
+			}
+			if !mailpit.ValidRun(run) {
+				return fmt.Errorf("run ID %q must be 1-64 letters, digits, '.', '_' or '-'", run)
+			}
+			emails, skipped, err := listEmails(ctx, c, id, cmd.GetString("scenario"), cmd.GetString("tag"), cmd.GetInt("limit"))
+			if err != nil {
+				return err
+			}
+			if skipped > 0 {
+				_, _ = fmt.Fprintf(stderr, "Skipping %d real-derived emails that are not approved; they stay in quarantine.\n", skipped)
+			}
+			if len(emails) == 0 {
+				return fmt.Errorf("dataset %s has no matching .eml fixtures that may be sent", id)
 			}
 			opts := mailpit.Options{
 				Addr:     cmd.GetString("smtp"),
@@ -108,21 +113,29 @@ func pushMailpitCmd() *cli.Command {
 }
 
 // listEmails pages through a dataset's .eml fixtures matching the filters.
-func listEmails(ctx context.Context, c *client.Client, datasetID, scenario, tag string, limit int) ([]fixture.Fixture, error) {
-	var out []fixture.Fixture
+// Real-derived emails that are not approved are left out and counted: an
+// admin key may read them to review them, but sending them to Mailpit would
+// take them out of quarantine.
+func listEmails(ctx context.Context, c *client.Client, datasetID, scenario, tag string, limit int) (out []fixture.Fixture, skipped int, err error) {
 	for offset := 0; ; offset += pageSize {
 		page, err := c.ListFixtures(ctx, datasetID, fixture.ListFilter{
 			Kind: fixture.KindEmail, Format: "eml", Scenario: scenario, Tag: tag, Limit: pageSize, Offset: offset,
 		})
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		out = append(out, page...)
+		for _, f := range page {
+			if !f.Shareable() {
+				skipped++
+				continue
+			}
+			out = append(out, f)
+		}
 		if limit > 0 && len(out) >= limit {
-			return out[:limit], nil
+			return out[:limit], skipped, nil
 		}
 		if len(page) < pageSize {
-			return out, nil
+			return out, skipped, nil
 		}
 	}
 }

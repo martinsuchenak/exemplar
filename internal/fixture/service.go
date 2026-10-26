@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/martinsuchenak/xdal/pkg/xdal"
 
@@ -280,6 +281,8 @@ func (s *Service) List(ctx context.Context, actor principal.Principal, datasetID
 	if lf.ReviewState != "" && !lf.ReviewState.Valid() {
 		return nil, fmt.Errorf("%w: unknown review state %q", apperr.ErrInvalid, lf.ReviewState)
 	}
+	// Tags are stored normalised (see normaliseTags), so the filter is too.
+	lf.Tag = strings.ToLower(strings.TrimSpace(lf.Tag))
 	if lf.Limit <= 0 {
 		lf.Limit = defaultListLim
 	}
@@ -373,7 +376,8 @@ func (s *Service) Review(ctx context.Context, actor principal.Principal, id stri
 		if f.ReviewState != ReviewUnreviewed {
 			return fmt.Errorf("%w: fixture %s is %s, not unreviewed", apperr.ErrConflict, id, f.ReviewState)
 		}
-		if _, err := s.datasets.Authorize(ctx, tx, actor, f.DatasetID, dataset.AccessWrite); err != nil {
+		// Reviewing changes no content, so a frozen quarantine can be reviewed.
+		if _, err := s.datasets.Authorize(ctx, tx, actor, f.DatasetID, dataset.AccessManage); err != nil {
 			return err
 		}
 		state, action := ReviewApproved, audit.ActionFixtureApprove
@@ -535,10 +539,11 @@ func (s *Service) prepare(actor principal.Principal, in CreateInput) (*Fixture, 
 }
 
 // validName reports whether a (trimmed) fixture name is allowed: 1 to
-// maxNameLen characters, no slashes, not "." or "..", so it is always safe as
-// a file name.
+// maxNameLen characters, no slashes or control characters, not "." or "..",
+// so it is always safe as a file name and in a header.
 func validName(name string) bool {
-	return name != "" && len(name) <= maxNameLen && !strings.ContainsAny(name, `/\`) && name != "." && name != ".."
+	return name != "" && len(name) <= maxNameLen && !strings.ContainsAny(name, `/\`) && name != "." && name != ".." &&
+		!strings.ContainsFunc(name, unicode.IsControl)
 }
 
 // uniqueLinks drops repeated person/role pairs and never returns nil, so the

@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -63,6 +64,15 @@ func NewRunID(now time.Time) string {
 	return now.UTC().Format("20060102-150405") + "-" + hex.EncodeToString(b[:])
 }
 
+var runRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// ValidRun reports whether run is a usable run ID: it goes into message
+// headers and a Mailpit tag, where a comma would split the tag and a line
+// break would start a new header.
+func ValidRun(run string) bool {
+	return runRe.MatchString(run)
+}
+
 // Tag is the Mailpit tag a run's messages carry.
 func Tag(run string) string {
 	return "exemplar-run-" + run
@@ -77,6 +87,9 @@ func Push(ctx context.Context, opts Options, msgs []Message) ([]Result, error) {
 	}
 	if _, _, err := net.SplitHostPort(opts.Addr); err != nil {
 		return nil, fmt.Errorf("SMTP address must be host:port: %w", err)
+	}
+	if opts.Run != "" && !ValidRun(opts.Run) {
+		return nil, fmt.Errorf("run ID %q must be 1-64 letters, digits, '.', '_' or '-'", opts.Run)
 	}
 	if opts.Timeout == 0 {
 		opts.Timeout = 30 * time.Second
@@ -125,6 +138,9 @@ func Prepare(m Message, opts Options) (from string, to []string, data []byte, er
 	if len(to) == 0 {
 		return from, nil, nil, errors.New("no recipients: the message has no To, Cc or Bcc; use --to")
 	}
+	if opts.Run != "" && !ValidRun(opts.Run) {
+		return from, to, nil, fmt.Errorf("run ID %q must be 1-64 letters, digits, '.', '_' or '-'", opts.Run)
+	}
 	data = m.Data
 	if !opts.Raw {
 		var b bytes.Buffer
@@ -157,7 +173,7 @@ func send(ctx context.Context, opts Options, from string, to []string, data []by
 		return fmt.Errorf("EHLO: %w", err)
 	}
 	if opts.Username != "" {
-		if err := c.Auth(smtp.PlainAuth("", opts.Username, opts.Password, host)); err != nil {
+		if err := c.Auth(plainAuth{username: opts.Username, password: opts.Password}); err != nil {
 			return fmt.Errorf("AUTH: %w", err)
 		}
 	}
@@ -181,6 +197,27 @@ func send(ctx context.Context, opts Options, from string, to []string, data []by
 		return fmt.Errorf("sending message: %w", err)
 	}
 	return c.Quit()
+}
+
+// plainAuth is AUTH PLAIN without net/smtp's refusal to send credentials
+// over an unencrypted connection to anything but localhost. Mailpit in CI is
+// typically a container (mailpit:1025) without TLS; its credentials are a
+// test server's, passed explicitly with --smtp-user.
+type plainAuth struct {
+	username, password string
+}
+
+// Start implements smtp.Auth.
+func (a plainAuth) Start(*smtp.ServerInfo) (string, []byte, error) {
+	return "PLAIN", []byte("\x00" + a.username + "\x00" + a.password), nil
+}
+
+// Next implements smtp.Auth; PLAIN needs no further exchange.
+func (a plainAuth) Next(_ []byte, more bool) ([]byte, error) {
+	if more {
+		return nil, errors.New("unexpected AUTH PLAIN challenge")
+	}
+	return nil, nil
 }
 
 // headerValue keeps a value on one header line.

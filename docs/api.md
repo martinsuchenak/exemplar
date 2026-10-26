@@ -24,7 +24,7 @@ Errors are JSON: `{"error": "<message>"}`.
 | 403 | `ErrForbidden` | The key may see the resource but not do this (scope or role) |
 | 404 | `ErrNotFound` | Missing, or not visible to this key |
 | 409 | `ErrConflict` | Name taken, dataset frozen, already reviewed, last admin |
-| 413 | `ErrTooLarge` | Fixture content over the server's limit (`storage.max_fixture_mb`) |
+| 413 | `ErrTooLarge` | Fixture content over the server's limit (`storage.max_fixture_mb`), a JSON body over 1 MiB, or an ingest or import over its limit |
 | 500 | anything else | Internal error; details are logged, not returned |
 
 ## Endpoints
@@ -81,6 +81,10 @@ is used.
 
 A Fixture includes `record_schema` (records only) and `people`: the registry
 people it mentions, as `{"person_id", "role"}`.
+
+Fixture names are 1–255 characters without slashes or control characters, and
+not `.` or `..`. Uploads, ingests, imports and content downloads may take up
+to an hour; other requests time out after five minutes.
 
 Uploads stream to disk; kind, format and MIME type are inferred from the name
 when not given; `record_schema` makes the upload a record. `tags` may be comma-separated or repeated. Uploading declares

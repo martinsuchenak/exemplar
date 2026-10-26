@@ -60,7 +60,7 @@ func (h *Handler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	var in CreateAccountInput
 	if err := rest.DecodeJSON(r, &in); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	acc, err := h.service.CreateAccount(r.Context(), p, in)
@@ -121,7 +121,7 @@ func (h *Handler) CreateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	var in CreateKeyInput
 	if err := rest.DecodeJSON(r, &in); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	issued, err := h.service.CreateKey(r.Context(), p, in)

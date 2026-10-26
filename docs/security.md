@@ -73,7 +73,8 @@ write key, and generating into a dataset needs the right to change it.
 Only fixtures with source `anonymised` are derived from real data.
 
 - They can only be added to a quarantine dataset, and quarantine accepts nothing else.
-- They start `unreviewed`; an admin key approves or rejects them (`fixture.approve` / `fixture.reject`).
+- They start `unreviewed`; an admin key approves or rejects them (`fixture.approve` / `fixture.reject`). Freezing a quarantine dataset stops new content, not reviews.
+- `push-mailpit` never sends real-derived emails that are not approved, even with an admin key.
 - Unapproved real-derived content is served only to admins, so they can review it.
 - Every read of real-derived content is audit-logged (`fixture.download`).
 - Uploads through the API or CLI are declared as containing no real data; real data must come through ingest.

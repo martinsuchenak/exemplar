@@ -25,7 +25,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req Request
 	if err := rest.DecodeJSON(r, &req); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	res, err := h.service.Generate(r.Context(), p, r.PathValue("id"), req)

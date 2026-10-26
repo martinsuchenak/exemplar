@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/paularlott/cli"
+	"github.com/paularlott/logger"
 	logslog "github.com/paularlott/logger/slog"
 
 	"github.com/martinsuchenak/exemplar/cmd/routes"
@@ -69,8 +73,9 @@ func serveCmd() *cli.Command {
 			}
 			defer func() { _ = services.Close() }()
 
+			var servers []namedServer
 			if port := cmd.GetInt("mcp-port"); port != 0 {
-				mcpserver.StartMCPServer(log, services, fmt.Sprintf("%s:%d", cmd.GetString("mcp-host"), port))
+				servers = append(servers, namedServer{"MCP", mcpserver.NewHTTPServer(services, fmt.Sprintf("%s:%d", cmd.GetString("mcp-host"), port))})
 			}
 			// go-scaffolder:serve-init
 
@@ -78,17 +83,60 @@ func serveCmd() *cli.Command {
 			routes.RegisterRoutes(mux, services)
 
 			addr := fmt.Sprintf("%s:%d", cmd.GetString("server-host"), cmd.GetInt("server-port"))
-			log.Info("starting HTTP server", "addr", addr)
 			// go-scaffolder:serve-start
-			srv := newHTTPServer(addr, mux)
-			return srv.ListenAndServe()
+			servers = append(servers, namedServer{"HTTP", newHTTPServer(addr, mux)})
+			// SIGTERM (docker stop) and Ctrl-C shut down gracefully: requests in
+			// flight finish and the database is closed.
+			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runServers(ctx, log, servers, shutdownGrace)
 		},
 	}
 }
 
+// shutdownGrace is how long requests in flight get to finish on shutdown.
+const shutdownGrace = 30 * time.Second
+
+// namedServer is a listener serve runs, named for logs and errors.
+type namedServer struct {
+	name string
+	srv  *http.Server
+}
+
+// runServers runs every server until ctx ends (a signal) or one of them fails,
+// for example because its port is taken; then it shuts all of them down,
+// letting requests in flight finish for up to grace. A failure is returned,
+// so serve never keeps running without a listener it was asked for.
+func runServers(ctx context.Context, log logger.Logger, servers []namedServer, grace time.Duration) error {
+	errs := make(chan error, len(servers))
+	for _, s := range servers {
+		go func() {
+			log.Info("starting "+s.name+" server", "addr", s.srv.Addr)
+			if err := s.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errs <- fmt.Errorf("%s server on %s: %w", s.name, s.srv.Addr, err)
+			}
+		}()
+	}
+	var failed error
+	select {
+	case <-ctx.Done():
+		log.Info("shutting down")
+	case failed = <-errs:
+	}
+	shutdown, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	for _, s := range servers {
+		if err := s.srv.Shutdown(shutdown); err != nil && failed == nil {
+			failed = fmt.Errorf("shutting down the %s server: %w", s.name, err)
+		}
+	}
+	return failed
+}
+
 // newHTTPServer applies the timeouts every exemplar listener uses, so slow
-// clients cannot hold connections open indefinitely. Body timeouts allow
-// fixture uploads and downloads of the default 100 MiB limit on slow links.
+// clients cannot hold connections open indefinitely. Handlers that move large
+// bodies (fixture content, ingest, export, import) extend their own deadline
+// to rest.LongTransfer.
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,

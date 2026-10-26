@@ -51,7 +51,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 	}
 	var req ExportRequest
 	if err := rest.DecodeJSON(r, &req); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	export, err := h.service.PrepareExport(r.Context(), p, req)
@@ -60,7 +60,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Archives can take longer than the server's usual write timeout.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	rest.AllowLongDownload(w)
 	name := fmt.Sprintf("exemplar-export-%s.tar.gz", time.Now().UTC().Format("20060102-150405"))
 	hdr := w.Header()
 	hdr.Set("Content-Type", "application/gzip")
@@ -84,7 +84,7 @@ func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
+	rest.AllowLongUpload(w)
 	body := io.Reader(r.Body)
 	if limit := h.service.MaxImportBytes(); limit > 0 {
 		body = capped{r: http.MaxBytesReader(w, r.Body, limit), limit: limit}

@@ -5,7 +5,9 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/rest"
 )
 
@@ -65,6 +67,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	rest.AllowLongUpload(w)
 	q := r.URL.Query()
 	f, err := h.service.Create(r.Context(), p, CreateInput{
 		DatasetID:    r.PathValue("id"),
@@ -106,6 +109,7 @@ func (h *Handler) Content(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	rest.AllowLongDownload(w)
 	body, f, err := h.service.Open(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		rest.RespondServiceError(w, err)
@@ -115,7 +119,7 @@ func (h *Handler) Content(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", f.MimeType)
 	w.Header().Set("Content-Length", strconv.FormatInt(f.Size, 10))
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": f.Name}))
+	w.Header().Set("Content-Disposition", attachment(f.Name))
 	// Fixtures are test data, often HTML or email; never let a browser run them.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox")
@@ -148,8 +152,12 @@ func (h *Handler) Review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in ReviewInput
-	if err := rest.DecodeJSON(r, &in); err != nil || in.Approve == nil {
-		rest.RespondError(w, http.StatusBadRequest, `body must be {"approve": true} or {"approve": false}`)
+	err := rest.DecodeJSON(r, &in)
+	if err == nil && in.Approve == nil {
+		err = apperr.ErrInvalid
+	}
+	if err != nil {
+		rest.RespondBodyError(w, err, `body must be {"approve": true} or {"approve": false}`)
 		return
 	}
 	f, err := h.service.Review(r.Context(), p, r.PathValue("id"), *in.Approve)
@@ -179,7 +187,7 @@ func (h *Handler) Purge(w http.ResponseWriter, r *http.Request) {
 	}
 	var in PurgeInput
 	if err := rest.DecodeJSON(r, &in); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	n, err := h.service.PurgeBatch(r.Context(), p, in.IngestBatch)
@@ -188,4 +196,23 @@ func (h *Handler) Purge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest.RespondJSON(w, http.StatusOK, PurgeResult{IngestBatch: in.IngestBatch, Deleted: n})
+}
+
+// attachment is a Content-Disposition that always says attachment, so a
+// browser saves fixture content instead of rendering it. A name the header
+// cannot carry is simplified, or left out.
+func attachment(name string) string {
+	if v := mime.FormatMediaType("attachment", map[string]string{"filename": name}); v != "" {
+		return v
+	}
+	safe := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == '"' || r == '\\' || r > 0x7e {
+			return '_'
+		}
+		return r
+	}, name)
+	if v := mime.FormatMediaType("attachment", map[string]string{"filename": safe}); v != "" {
+		return v
+	}
+	return "attachment"
 }

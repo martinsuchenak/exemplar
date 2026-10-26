@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/paularlott/logger"
 	mcplib "github.com/paularlott/mcp"
 
 	"github.com/martinsuchenak/exemplar/build"
@@ -50,20 +49,9 @@ func Handler(a *app.App) http.Handler {
 	return auth.APIKeyMiddleware(a.Accounts)(http.HandlerFunc(server.HandleRequest))
 }
 
-// StartMCPServer serves the MCP endpoint at addr under /mcp in the
-// background. It logs, rather than returns, a listener failure.
-func StartMCPServer(log logger.Logger, a *app.App, addr string) {
-	srv := newHTTPServer(a, addr)
-	go func() {
-		log.Info("starting MCP server", "addr", addr)
-		if err := srv.ListenAndServe(); err != nil {
-			log.Error("MCP server error", "error", err)
-		}
-	}()
-}
-
-// newHTTPServer serves Handler at /mcp with timeouts that suit tool calls.
-func newHTTPServer(a *app.App, addr string) *http.Server {
+// NewHTTPServer serves Handler at /mcp on addr, with timeouts that suit
+// tool calls. serve runs and shuts it down with the REST server.
+func NewHTTPServer(a *app.App, addr string) *http.Server {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", Handler(a))
 	return &http.Server{

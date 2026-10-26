@@ -13,6 +13,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/account"
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/archive"
+	"github.com/martinsuchenak/exemplar/internal/rest"
 	"github.com/martinsuchenak/exemplar/internal/testutil"
 )
 
@@ -73,5 +74,22 @@ func TestImportSizeLimit(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("oversized import = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestOversizedJSONIs413(t *testing.T) {
+	mux, key, datasetID := testServer(t)
+	big := `{"name":"` + strings.Repeat("a", rest.MaxBodyBytes) + `"}`
+	for _, path := range []string{"/api/v1/datasets", "/api/v1/datasets/" + datasetID + "/fork", "/api/v1/export"} {
+		if w := call(mux, "POST", path, key, big); w.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("%s = %d %s", path, w.Code, w.Body)
+		}
+	}
+	if w := call(mux, "POST", "/api/v1/datasets", key, `{"name":"a"} {"name":"b"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("trailing data = %d", w.Code)
+	}
+	// Optional bodies may still be empty (the fork then clashes on its default name).
+	if w := call(mux, "POST", "/api/v1/datasets/"+datasetID+"/fork", key, ""); w.Code != http.StatusConflict {
+		t.Errorf("empty fork body = %d %s", w.Code, w.Body)
 	}
 }

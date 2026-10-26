@@ -248,3 +248,24 @@ func TestIngestRules(t *testing.T) {
 		t.Error("unconfigured server lists profiles")
 	}
 }
+
+func TestReviewInFrozenQuarantine(t *testing.T) {
+	a := newApp(t, 0)
+	admin := testutil.Admin(t, a)
+	dsID := quarantine(t, a, admin)
+	res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{}, emails()[:1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Datasets.Freeze(ctx, admin, dsID); err != nil {
+		t.Fatal(err)
+	}
+	f, err := a.Fixtures.Review(ctx, admin, res.Files[0].FixtureID, true)
+	if err != nil || f.ReviewState != fixture.ReviewApproved {
+		t.Errorf("review in a frozen quarantine = %+v, %v", f, err)
+	}
+	if _, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{}, emails()[:1]); err == nil {
+		// Ingest into a frozen dataset must still fail.
+		t.Error("ingest into a frozen quarantine succeeded")
+	}
+}

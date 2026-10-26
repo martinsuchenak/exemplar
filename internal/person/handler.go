@@ -69,7 +69,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	}
 	var in GenerateInput
 	if err := rest.DecodeJSON(r, &in); err != nil {
-		rest.RespondError(w, http.StatusBadRequest, "invalid request body")
+		rest.RespondBodyError(w, err, "invalid request body")
 		return
 	}
 	people, seed, err := h.service.Generate(r.Context(), p, in)

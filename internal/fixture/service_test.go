@@ -75,9 +75,11 @@ func TestCreateInfersAndServesContent(t *testing.T) {
 		t.Errorf("duplicate name err = %v, want ErrConflict", err)
 	}
 
-	tagged, err := a.Fixtures.List(ctx, alice, ws.ID, fixture.ListFilter{Tag: "reply"})
-	if err != nil || len(tagged) != 1 || tagged[0].ID != f.ID {
-		t.Errorf("tag filter = %+v, %v", tagged, err)
+	for _, tag := range []string{"reply", " Reply ", "REPLY"} {
+		tagged, err := a.Fixtures.List(ctx, alice, ws.ID, fixture.ListFilter{Tag: tag})
+		if err != nil || len(tagged) != 1 || tagged[0].ID != f.ID {
+			t.Errorf("tag filter %q = %+v, %v", tag, tagged, err)
+		}
 	}
 }
 
