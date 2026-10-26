@@ -15,7 +15,14 @@ and keys of disabled accounts, all get `401`. The first admin key comes from
 
 ## Errors
 
-Errors are JSON: `{"error": "<message>"}`.
+Errors are JSON: `{"error": "<message>"}`, including `404` for paths that
+do not exist. A `401` carries `WWW-Authenticate: Bearer realm="exemplar"`
+(plus `error="invalid_token"` when a key was sent but rejected). OAuth
+discovery and registration paths (`/.well-known/oauth-*`,
+`/.well-known/openid-configuration`, `/register`, `/authorize`, `/token`)
+answer `404` with `{"error": "invalid_request", "error_description": …}`
+explaining that exemplar takes API keys, so OAuth-first clients such as MCP
+clients report something useful.
 
 | Status | Service error | Meaning |
 |--------|---------------|---------|

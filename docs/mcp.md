@@ -34,6 +34,17 @@ For Claude Code, add the server to `.mcp.json`:
 }
 ```
 
+`EXEMPLAR_API_KEY` must be set in the environment Claude Code starts from.
+Create a key with `exemplar keys create --scopes read`, or the first one with
+`exemplar bootstrap` on the host.
+
+exemplar does not use OAuth. A request without a valid key gets `401` with
+`WWW-Authenticate: Bearer realm="exemplar"`, and many MCP clients then try
+OAuth discovery and client registration. Those paths answer `404` with an
+OAuth-style error saying to send an API key, which is what the client shows:
+if you see an OAuth error, the client is not sending the key (check the
+header and that the variable is set).
+
 ## Tools
 
 ### `list_datasets`

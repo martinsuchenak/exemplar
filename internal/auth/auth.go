@@ -29,12 +29,12 @@ func APIKeyMiddleware(authn Authenticator) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := apiKey(r)
 			if authn == nil || key == "" {
-				rest.RespondError(w, http.StatusUnauthorized, "unauthorized")
+				unauthorized(w, false)
 				return
 			}
 			p, err := authn.Authenticate(r.Context(), key)
 			if errors.Is(err, apperr.ErrUnauthenticated) {
-				rest.RespondError(w, http.StatusUnauthorized, "unauthorized")
+				unauthorized(w, true)
 				return
 			}
 			if err != nil {
@@ -44,6 +44,22 @@ func APIKeyMiddleware(authn Authenticator) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(principal.WithContext(r.Context(), p)))
 		})
 	}
+}
+
+// NoKeyMessage tells a caller without a usable key how to authenticate.
+const NoKeyMessage = "unauthorized: send an exemplar API key as \"Authorization: Bearer exm_…\" or \"X-API-Key: exm_…\""
+
+// unauthorized answers 401 with a Bearer challenge (RFC 6750), so clients
+// (MCP clients in particular) can tell they need a bearer token. A request
+// with no key gets no error code, as the RFC asks; a rejected key gets
+// invalid_token.
+func unauthorized(w http.ResponseWriter, badKey bool) {
+	challenge := `Bearer realm="exemplar"`
+	if badKey {
+		challenge += `, error="invalid_token", error_description="unknown, revoked or disabled API key"`
+	}
+	w.Header().Set("WWW-Authenticate", challenge)
+	rest.RespondError(w, http.StatusUnauthorized, NoKeyMessage)
 }
 
 // apiKey returns the request's API key. Bearer tokens count only when they
