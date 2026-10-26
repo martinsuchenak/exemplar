@@ -1,0 +1,82 @@
+version: '3'
+
+vars:
+  APP_NAME: exemplar
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  DATE:
+    sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
+  GO_CACHE_DIR:
+    sh: pwd
+  LDFLAGS: -s -w -X github.com/martinsuchenak/exemplar/build.Version={{.VERSION}} -X github.com/martinsuchenak/exemplar/build.Date={{.DATE}}
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the application
+    cmds:
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-linux-amd64 .
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-linux-arm64 .
+      - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-darwin-amd64 .
+      - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-darwin-arm64 .
+
+  build-local:
+    desc: Build for local platform
+    cmds:
+      - CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}} .
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./... -v -count=1
+
+  test:race:
+    desc: Run tests with race detector
+    cmds:
+      - go test ./... -v -count=1 -race
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf bin/
+      - go clean
+
+  lint:
+    desc: Run linter
+    cmds:
+      - GOCACHE={{.GO_CACHE_DIR}}/.cache/go-build golangci-lint run .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Tidy and verify go modules
+    cmds:
+      - go mod tidy
+      - go mod verify
+
+  check:
+    desc: Full CI gate — vet + lint + unit tests with race detector
+    cmds:
+      - task: vet
+      - task: lint
+      - task: test:race
+
+  release:
+    desc: 'Create a version tag and push it (usage: task release -- v0.1.0)'
+    deps: [check, build]
+    preconditions:
+      - sh: 'test -n "{{.CLI_ARGS}}"'
+        msg: 'version tag required (e.g. task release -- v0.1.0)'
+      - sh: 'git diff --quiet'
+        msg: 'working tree has uncommitted changes'
+    cmds:
+      - git tag {{.CLI_ARGS}}
+      - git push origin {{.CLI_ARGS}}
+      - echo "Tagged and pushed {{.CLI_ARGS}}"
+  # go-scaffolder:taskfile-tasks
