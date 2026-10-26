@@ -176,16 +176,35 @@ func TestPairs(t *testing.T) {
 	b := synth.Person{FirstName: "Bo", LastName: "Lee", Email: "bo@acme.example", Company: "Acme Pty Ltd"}
 	x := synth.Person{FirstName: "Xi", LastName: "Kent", Email: "xi@zeta.example", Company: "Zeta Group"}
 	y := synth.Person{FirstName: "Yu", LastName: "Moss", Email: "yu@omega.example", Company: "Omega Group"}
-	p := Pairs([]Swap{{a, x}, {b, y}, {a, a}})
-	if p["Lee"] != "Kent" || p["acme.example"] != "zeta.example" || p["Acme"] != "Zeta" || p["acme"] != "zeta" || p["Lee, Ann"] != "Kent, Xi" {
-		t.Errorf("first swap should win: %v", p)
+	anyCase, exact := Pairs([]Swap{{a, x}, {b, y}, {a, a}})
+	if exact["Lee"] != "Kent" || anyCase["acme.example"] != "zeta.example" || exact["Acme"] != "Zeta" || anyCase["acme"] != "zeta" || exact["Lee, Ann"] != "Kent, Xi" {
+		t.Errorf("first swap should win: %v %v", anyCase, exact)
 	}
-	if _, ok := p["ann@acme.example"]; !ok {
+	if _, ok := anyCase["ann@acme.example"]; !ok {
 		t.Error("email missing")
 	}
-	for k, v := range p {
-		if strings.EqualFold(k, v) {
-			t.Errorf("unchanged pair %q", k)
+	for _, m := range []map[string]string{anyCase, exact} {
+		for k, v := range m {
+			if strings.EqualFold(k, v) {
+				t.Errorf("unchanged pair %q", k)
+			}
+		}
+	}
+}
+
+func TestNamesThatAreWords(t *testing.T) {
+	grace := synth.Person{FirstName: "Grace", LastName: "Price", Email: "grace.price@acme.example", JobTitle: "Manager"}
+	ann := synth.Person{FirstName: "Ann", LastName: "Lee", Email: "ann.lee@zeta.example", JobTitle: "Director"}
+	msg := "From: Grace Price <grace.price@acme.example>\r\nTo: ops@acme.example\r\nSubject: Price check from GRACE\r\n\r\n" +
+		"Within the grace period the price is fixed; the manager agreed.\r\nRegards, Grace PRICE, Manager\r\n"
+	r, err := Render([]byte(msg), []Swap{{grace, ann}}, synth.New(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(r.Data)
+	for _, want := range []string{"Within the grace period the price is fixed; the manager agreed.", "Regards, Ann LEE, Director", "Subject: Lee check from ANN", "To: ops@zeta.example"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
 }

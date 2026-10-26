@@ -48,12 +48,19 @@ type Service struct {
 	persons    *person.Service
 	audit      *audit.Service
 	appVersion string
+	maxImport  int64
 }
 
 // NewService returns an exchange service built on the other services.
-// appVersion is written into export manifests.
-func NewService(dbi xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, appVersion string) *Service {
-	return &Service{db: dbi, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, appVersion: appVersion}
+// appVersion is written into export manifests; maxImport caps one import
+// archive's size (0 means no limit).
+func NewService(dbi xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, appVersion string, maxImport int64) *Service {
+	return &Service{db: dbi, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, appVersion: appVersion, maxImport: maxImport}
+}
+
+// MaxImportBytes is the largest import archive accepted; 0 means no limit.
+func (s *Service) MaxImportBytes() int64 {
+	return s.maxImport
 }
 
 // ExportRequest names the datasets to export.
@@ -300,9 +307,21 @@ func (s *Service) Import(ctx context.Context, actor principal.Principal, r io.Re
 		return nil, err
 	}
 
-	release := s.fixtures.HoldContent()
-	defer release()
+	// Contents are stored without holding off garbage collection: the upload
+	// can take any time, and holding it would stall every other write. They
+	// are registered under the hold, just before the records commit; if the
+	// import fails they are registered anyway, so collection removes them.
 	sizes := map[string]int64{}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		cleanup := context.WithoutCancel(ctx)
+		for hash, size := range sizes {
+			_ = s.fixtures.AbandonContent(cleanup, hash, size)
+		}
+	}()
 	blobsSeen := 0
 	for entry != nil {
 		if !entry.IsBlob() {
@@ -336,6 +355,14 @@ func (s *Service) Import(ctx context.Context, actor principal.Principal, r io.Re
 	for hash := range plan.needed {
 		if _, ok := sizes[hash]; !ok {
 			return nil, fmt.Errorf("%w: archive: content %s is missing", apperr.ErrInvalid, hash)
+		}
+	}
+
+	release := s.fixtures.HoldContent()
+	defer release()
+	for hash, size := range sizes {
+		if err := s.fixtures.EnsureContent(ctx, hash, size); err != nil {
+			return nil, err
 		}
 	}
 
@@ -398,6 +425,7 @@ func (s *Service) Import(ctx context.Context, actor principal.Principal, r io.Re
 	if err != nil {
 		return nil, err
 	}
+	committed = true
 	return res, nil
 }
 
@@ -429,8 +457,8 @@ func (s *Service) planImport(ctx context.Context, actor principal.Principal, dat
 			return nil, err
 		}
 		byID[d.ID] = d
-		plan.datasets = append(plan.datasets, *d)
 	}
+	plan.datasets = parentsFirst(datasets)
 	people := map[string]person.Person{}
 	for _, p := range persons {
 		people[p.ID] = p
@@ -469,6 +497,38 @@ func (s *Service) planImport(ctx context.Context, actor principal.Principal, dat
 		plan.persons = append(plan.persons, people[id])
 	}
 	return plan, nil
+}
+
+// parentsFirst orders datasets so that one whose parent (fork source,
+// promoted quarantine) is also in the archive comes after it, and the parent
+// link survives the import. Otherwise the archive's order is kept.
+func parentsFirst(datasets []dataset.Dataset) []dataset.Dataset {
+	inArchive := map[string]bool{}
+	for _, d := range datasets {
+		inArchive[d.ID] = true
+	}
+	placed := map[string]bool{}
+	out := make([]dataset.Dataset, 0, len(datasets))
+	for len(out) < len(datasets) {
+		progress := false
+		for _, d := range datasets {
+			if placed[d.ID] || (inArchive[d.ParentID] && !placed[d.ParentID] && d.ParentID != d.ID) {
+				continue
+			}
+			placed[d.ID], progress = true, true
+			out = append(out, d)
+		}
+		if !progress {
+			// A parent cycle (only in a hand-made archive): keep the rest as they are.
+			for _, d := range datasets {
+				if !placed[d.ID] {
+					placed[d.ID] = true
+					out = append(out, d)
+				}
+			}
+		}
+	}
+	return out
 }
 
 func unique(ids []string) []string {

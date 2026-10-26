@@ -462,7 +462,7 @@ func (s *Service) PurgeBatch(ctx context.Context, actor principal.Principal, bat
 // prepare validates the input and fills in inferred fields.
 func (s *Service) prepare(actor principal.Principal, in CreateInput) (*Fixture, error) {
 	name := strings.TrimSpace(in.Name)
-	if name == "" || len(name) > maxNameLen || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+	if !validName(name) {
 		return nil, fmt.Errorf("%w: fixture name must be 1-%d characters without slashes", apperr.ErrInvalid, maxNameLen)
 	}
 	format := strings.ToLower(strings.TrimPrefix(in.Format, "."))
@@ -532,6 +532,13 @@ func (s *Service) prepare(actor principal.Principal, in CreateInput) (*Fixture, 
 		RecordSchema: in.RecordSchema,
 		People:       uniqueLinks(in.People),
 	}, nil
+}
+
+// validName reports whether a (trimmed) fixture name is allowed: 1 to
+// maxNameLen characters, no slashes, not "." or "..", so it is always safe as
+// a file name.
+func validName(name string) bool {
+	return name != "" && len(name) <= maxNameLen && !strings.ContainsAny(name, `/\`) && name != "." && name != ".."
 }
 
 // uniqueLinks drops repeated person/role pairs and never returns nil, so the

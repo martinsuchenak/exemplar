@@ -34,6 +34,8 @@ type Config struct {
 	MaxFixtureBytes int64
 	// MaxIngestBytes caps one ingest request's input; 0 means no limit.
 	MaxIngestBytes int64
+	// MaxImportBytes caps one import archive; 0 means no limit.
+	MaxImportBytes int64
 	// AnonKey is the anonymisation secret; with PresidioURL (or
 	// AnonDetector) it enables ingest of real emails.
 	AnonKey []byte
@@ -41,6 +43,10 @@ type Config struct {
 	PresidioURL string
 	// AnonDetector replaces Presidio; tests use it.
 	AnonDetector anonymise.Detector
+	// NoMigrate opens an existing database without migrating it, and fails
+	// unless its schema matches this build. For commands that run beside a
+	// live server.
+	NoMigrate bool
 	// AnonProfilesDir holds extra anonymisation profiles (*.toml).
 	AnonProfilesDir string
 }
@@ -66,7 +72,11 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 	if cfg.DBPath == "" || cfg.BlobDir == "" {
 		return nil, fmt.Errorf("database path and blob directory are required")
 	}
-	conn, err := db.Open(ctx, log, cfg.DBPath)
+	open := db.Open
+	if cfg.NoMigrate {
+		open = db.OpenCurrent
+	}
+	conn, err := open(ctx, log, cfg.DBPath)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +104,7 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 		Persons:  persons,
 		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService),
 		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes),
-		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version),
+		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version, cfg.MaxImportBytes),
 		Backup:   backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),
 	}, nil
 }

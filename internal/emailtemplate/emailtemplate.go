@@ -52,12 +52,12 @@ func Render(src []byte, swaps []Swap, g *synth.Gen) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the template: %w", err)
 	}
-	pairs := Pairs(swaps)
-	rep, err := textswap.New(pairs)
+	anyCase, exact := Pairs(swaps)
+	rep, err := textswap.NewCased(anyCase, exact)
 	if err != nil {
 		return nil, err
 	}
-	r := &renderer{rep: rep, pairs: pairs, g: g, ids: map[string]string{}}
+	r := &renderer{rep: rep, domains: anyCase, g: g, ids: map[string]string{}}
 	if err := r.message(root); err != nil {
 		return nil, err
 	}
@@ -67,40 +67,45 @@ func Render(src []byte, swaps []Swap, g *synth.Gen) (*Result, error) {
 // Pairs lists the text replacements for swaps: each person's name forms,
 // address, domain, phone, job title and street, and their company's name,
 // stem, domain, ABN and phone. A value that would not change is left out.
-func Pairs(swaps []Swap) map[string]string {
-	pairs := map[string]string{}
-	add := func(from, to string) {
+//
+// exact holds the proper nouns (names, job titles, company names, streets),
+// matched only as written or in all capitals, since many names are also
+// words: "Grace Price" must not turn "the grace period" into "the Ann
+// period". anyCase holds addresses, domains and numbers.
+func Pairs(swaps []Swap) (anyCase, exact map[string]string) {
+	anyCase, exact = map[string]string{}, map[string]string{}
+	add := func(m map[string]string, from, to string) {
 		from, to = strings.TrimSpace(from), strings.TrimSpace(to)
 		if len(from) < 2 || to == "" || strings.EqualFold(from, to) {
 			return
 		}
-		if _, ok := pairs[from]; !ok {
-			pairs[from] = to
+		if _, ok := m[from]; !ok {
+			m[from] = to
 		}
 	}
 	for _, s := range swaps {
 		f, t := s.From, s.To
-		add(f.Email, t.Email)
-		add(f.Name(), t.Name())
-		add(f.LastName+", "+f.FirstName, t.LastName+", "+t.FirstName)
-		add(f.FirstName, t.FirstName)
-		add(f.LastName, t.LastName)
-		add(domain(f.Email), domain(t.Email))
-		add(f.Phone, t.Phone)
-		add(f.JobTitle, t.JobTitle)
-		add(f.Address.Street, t.Address.Street)
+		add(anyCase, f.Email, t.Email)
+		add(exact, f.Name(), t.Name())
+		add(exact, f.LastName+", "+f.FirstName, t.LastName+", "+t.FirstName)
+		add(exact, f.FirstName, t.FirstName)
+		add(exact, f.LastName, t.LastName)
+		add(anyCase, domain(f.Email), domain(t.Email))
+		add(anyCase, f.Phone, t.Phone)
+		add(exact, f.JobTitle, t.JobTitle)
+		add(exact, f.Address.Street, t.Address.Street)
 		if f.Company == "" || t.Company == "" {
 			continue
 		}
 		fc, tc := synth.CompanyFor(f.Company), synth.CompanyFor(t.Company)
-		add(f.Company, t.Company)
-		add(synth.CompanyStem(f.Company), synth.CompanyStem(t.Company))
-		add(compact(f.Company), compact(t.Company))
-		add(fc.Domain, tc.Domain)
-		add(fc.ABN, tc.ABN)
-		add(fc.Phone, tc.Phone)
+		add(exact, f.Company, t.Company)
+		add(exact, synth.CompanyStem(f.Company), synth.CompanyStem(t.Company))
+		add(anyCase, compact(f.Company), compact(t.Company))
+		add(anyCase, fc.Domain, tc.Domain)
+		add(anyCase, fc.ABN, tc.ABN)
+		add(anyCase, fc.Phone, tc.Phone)
 	}
-	return pairs
+	return anyCase, exact
 }
 
 func domain(addr string) string {
@@ -117,9 +122,10 @@ func compact(company string) string {
 }
 
 type renderer struct {
-	rep   *textswap.Replacer
-	pairs map[string]string
-	g     *synth.Gen
+	rep *textswap.Replacer
+	// domains maps old domains (among other any-case pairs) to new ones.
+	domains map[string]string
+	g       *synth.Gen
 	// ids maps each old Message-ID to its new one, so threading headers
 	// inside the email still agree.
 	ids map[string]string
@@ -202,7 +208,7 @@ func (r *renderer) newID(id string) string {
 	}
 	m := idRe.FindStringSubmatch(id)
 	d := strings.ToLower(m[2])
-	if to, ok := r.pairs[d]; ok {
+	if to, ok := r.domains[d]; ok {
 		d = to
 	}
 	v := fmt.Sprintf("<%08x%08x@%s>", r.g.Intn(1<<31), r.g.Intn(1<<31), d)

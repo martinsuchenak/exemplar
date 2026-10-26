@@ -38,9 +38,9 @@ func storageFlags() []cli.Flag {
 	}
 }
 
-// anonymiserFlags configure ingest of real emails. Only serve takes them:
-// ingest runs on the server, which holds the key.
-func anonymiserFlags() []cli.Flag {
+// serverFlags are the settings only serve takes: ingest of real emails
+// (which runs on the server, holding the key) and request size limits.
+func serverFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:       "anon-key-file",
@@ -67,6 +67,13 @@ func anonymiserFlags() []cli.Flag {
 			ConfigPath:   []string{"storage.max_ingest_mb"},
 			EnvVars:      []string{"MAX_INGEST_MB"},
 		},
+		&cli.IntFlag{
+			Name:         "max-import-mb",
+			DefaultValue: 2048,
+			Usage:        "Largest archive one import accepts, in MiB (0 for no limit)",
+			ConfigPath:   []string{"storage.max_import_mb"},
+			EnvVars:      []string{"MAX_IMPORT_MB"},
+		},
 	}
 }
 
@@ -90,6 +97,7 @@ func openServerApp(ctx context.Context, cmd *cli.Command, log logger.Logger) (*a
 		BlobDir:         cmd.GetString("blob-dir"),
 		MaxFixtureBytes: int64(cmd.GetInt("max-fixture-mb")) << 20,
 		MaxIngestBytes:  int64(cmd.GetInt("max-ingest-mb")) << 20,
+		MaxImportBytes:  int64(cmd.GetInt("max-import-mb")) << 20,
 		AnonKey:         key,
 		PresidioURL:     cmd.GetString("presidio-url"),
 		AnonProfilesDir: cmd.GetString("anon-profiles-dir"),

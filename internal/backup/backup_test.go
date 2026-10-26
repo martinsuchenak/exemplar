@@ -247,3 +247,57 @@ func TestBackupHoldsGarbageCollection(t *testing.T) {
 		t.Error("backup left its lock behind")
 	}
 }
+
+func TestRestoreHandlesLeftoverWAL(t *testing.T) {
+	a, _, _ := instance(t)
+	var buf bytes.Buffer
+	if _, err := a.Backup.Backup(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+
+	// A server killed before its first checkpoint: empty main file, data in the log.
+	crashed := target(t)
+	if err := os.MkdirAll(filepath.Dir(crashed.DBPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for p, data := range map[string]string{crashed.DBPath: "", crashed.DBPath + "-wal": "frames", crashed.DBPath + "-shm": "index"} {
+		if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := backup.Restore(ctx, bytes.NewReader(buf.Bytes()), crashed, false); !errors.Is(err, backup.ErrNotEmpty) {
+		t.Errorf("restore over a log-only instance err = %v", err)
+	}
+	sum, err := backup.Restore(ctx, bytes.NewReader(buf.Bytes()), crashed, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sum.MovedAside) != 3 {
+		t.Errorf("moved aside = %v", sum.MovedAside)
+	}
+	for _, p := range []string{crashed.DBPath + "-wal", crashed.DBPath + "-shm"} {
+		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s left beside the restored database", p)
+		}
+	}
+
+	// Empty leftovers are cleared for a fresh restore.
+	fresh := target(t)
+	_ = os.MkdirAll(filepath.Dir(fresh.DBPath), 0o700)
+	for _, p := range []string{fresh.DBPath + "-wal", fresh.DBPath + "-shm"} {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := backup.Restore(ctx, bytes.NewReader(buf.Bytes()), fresh, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fresh.DBPath + "-wal"); !errors.Is(err, os.ErrNotExist) {
+		t.Error("empty -wal left beside the restored database")
+	}
+	b, err := app.Open(ctx, nil, app.Config{DBPath: fresh.DBPath, BlobDir: fresh.BlobDir})
+	if err != nil {
+		t.Fatalf("restored database does not open: %v", err)
+	}
+	_ = b.Close()
+}

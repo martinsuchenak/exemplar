@@ -71,8 +71,11 @@ type Manifest struct {
 
 const (
 	maxManifest = 1 << 20
-	// MaxRecords caps one JSON-lines entry.
-	MaxRecords = 256 << 20
+	// MaxRecords caps one JSON-lines entry's size.
+	MaxRecords = 64 << 20
+	// MaxRecordCount caps the records in one JSON-lines entry, so a
+	// compressed archive cannot make a reader hold millions of them.
+	MaxRecordCount = 100_000
 )
 
 var (
@@ -191,11 +194,17 @@ func (e *Entry) IsBlob() bool {
 // format or a newer format version are rejected.
 func NewReader(r io.Reader) (*Reader, error) {
 	gz, err := gzip.NewReader(r)
+	if errors.Is(err, apperr.ErrTooLarge) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, invalid("not a gzip stream")
 	}
 	ar := &Reader{tr: tar.NewReader(gz)}
 	hdr, err := ar.tr.Next()
+	if errors.Is(err, apperr.ErrTooLarge) {
+		return nil, err
+	}
 	if err != nil || hdr.Name != ManifestName || hdr.Size > maxManifest {
 		return nil, invalid("the first entry must be %s", ManifestName)
 	}
@@ -225,6 +234,9 @@ func (r *Reader) Next() (*Entry, error) {
 	hdr, err := r.tr.Next()
 	if errors.Is(err, io.EOF) {
 		return nil, io.EOF
+	}
+	if errors.Is(err, apperr.ErrTooLarge) {
+		return nil, err
 	}
 	if err != nil {
 		return nil, invalid("damaged or truncated (%v)", err)
@@ -259,7 +271,7 @@ type damaged struct {
 // Read implements io.Reader.
 func (d damaged) Read(p []byte) (int, error) {
 	n, err := d.r.Read(p)
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, apperr.ErrInvalid) {
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, apperr.ErrInvalid) && !errors.Is(err, apperr.ErrTooLarge) {
 		err = invalid("%s is damaged or truncated (%v)", d.name, err)
 	}
 	return n, err
@@ -278,8 +290,14 @@ func ReadRecords[T any](e *Entry) ([]T, error) {
 		if errors.Is(err, io.EOF) {
 			return out, nil
 		}
+		if errors.Is(err, apperr.ErrTooLarge) {
+			return nil, err
+		}
 		if err != nil {
 			return nil, invalid("%s: %v", e.Name, err)
+		}
+		if len(out) == MaxRecordCount {
+			return nil, invalid("%s holds over %d records", e.Name, MaxRecordCount)
 		}
 		out = append(out, v)
 	}

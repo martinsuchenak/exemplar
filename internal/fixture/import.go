@@ -16,14 +16,19 @@ import (
 )
 
 // HoldContent stops content garbage collection until release is called.
-// An import holds it from storing the first content until the fixtures that
-// use it are inserted.
+// An import holds it from EnsureContent until the fixtures that use the
+// content are inserted. Hold it briefly: while a collection waits for it,
+// every other content write waits too.
 func (s *Service) HoldContent() (release func()) {
 	return s.blobs.Acquire()
 }
 
 // StoreContent stores content for fixtures an import inserts later, within
-// the fixture size limit. Hold HoldContent around it and the inserts.
+// the fixture size limit. It does not hold off garbage collection, so a slow
+// upload never stalls other writes, and it does not register the content,
+// so garbage collection (which only removes registered content) leaves it
+// alone meanwhile. Then call EnsureContent under HoldContent before
+// inserting the fixtures, or AbandonContent if the import fails.
 func (s *Service) StoreContent(ctx context.Context, actor principal.Principal, r io.Reader) (hash string, size int64, err error) {
 	if !actor.CanWrite() {
 		return "", 0, fmt.Errorf("%w: importing needs a write key", apperr.ErrForbidden)
@@ -38,23 +43,43 @@ func (s *Service) StoreContent(ctx context.Context, actor principal.Principal, r
 	if err != nil {
 		return "", 0, err
 	}
-	if err := s.blobs.Register(ctx, s.db, hash, size); err != nil {
-		return "", 0, fmt.Errorf("registering blob: %w", err)
-	}
 	return hash, size, nil
+}
+
+// EnsureContent registers content StoreContent stored, after checking it is
+// still there. Call it under HoldContent. The content can only be gone if the
+// same bytes were already here, used by fixtures deleted (and collected)
+// while the import ran.
+func (s *Service) EnsureContent(ctx context.Context, hash string, size int64) error {
+	f, err := s.blobs.Open(hash)
+	if err != nil {
+		return fmt.Errorf("%w: content %s was removed while the import ran; run it again", apperr.ErrConflict, hash)
+	}
+	_ = f.Close()
+	return s.blobs.Register(ctx, s.db, hash, size)
+}
+
+// AbandonContent registers content a failed import stored, so the next
+// garbage collection removes it unless something uses it.
+func (s *Service) AbandonContent(ctx context.Context, hash string, size int64) error {
+	return s.blobs.Register(ctx, s.db, hash, size)
 }
 
 // Import inserts an exported fixture into d inside tx, keeping its ID, name,
 // kind, provenance and review state; the caller becomes its creator. Its
 // content must already be stored (StoreContent) and its people already here.
-// A fixture with the same ID already here is left alone (added false).
+// A fixture with the same ID already in d is left alone (added false); one
+// with the same ID in another dataset is a conflict.
 //
 // Real-derived fixtures must be approved and need an admin key: importing one
 // trusts the review made on the instance it came from. Its reviewer is kept
 // as ImportedReviewer, since it is not an account here. Quarantine datasets
 // take only real-derived fixtures, as they do for uploads.
 func (s *Service) Import(ctx context.Context, tx *xdal.Tx, actor principal.Principal, d *dataset.Dataset, f Fixture) (added bool, err error) {
-	if _, err := s.storage.Get(ctx, tx, f.ID); err == nil {
+	if existing, err := s.storage.Get(ctx, tx, f.ID); err == nil {
+		if existing.DatasetID != d.ID {
+			return false, fmt.Errorf("%w: fixture %s is already here, in another dataset", apperr.ErrConflict, f.ID)
+		}
 		return false, nil
 	} else if !errors.Is(err, apperr.ErrNotFound) {
 		return false, err
@@ -91,8 +116,8 @@ func (s *Service) Import(ctx context.Context, tx *xdal.Tx, actor principal.Princ
 // well formed. Import applies it; an import calls it first to report
 // fixtures it will skip.
 func CheckImport(actor principal.Principal, d *dataset.Dataset, f *Fixture) error {
-	name := strings.TrimSpace(f.Name)
-	if f.ID == "" || len(f.ID) > 64 || name == "" || len(name) > maxNameLen || strings.ContainsAny(name, `/\`) ||
+	f.Name = strings.TrimSpace(f.Name)
+	if f.ID == "" || len(f.ID) > 64 || !validName(f.Name) ||
 		!f.Kind.Valid() || f.Format == "" || !f.Source.Valid() || !blob.ValidHash(f.BlobHash) {
 		return fmt.Errorf("%w: archive fixture %q is malformed", apperr.ErrInvalid, f.ID)
 	}

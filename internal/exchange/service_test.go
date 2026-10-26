@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
@@ -355,4 +357,147 @@ func TestImportIntoFrozenDataset(t *testing.T) {
 func sha(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
+}
+
+func TestImportKeepsParentLinks(t *testing.T) {
+	src := newSource(t)
+	fork, err := src.a.Datasets.Fork(ctx, src.alice, src.ws.ID, dataset.ForkInput{Name: "fork"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fork comes first in the archive, before its source.
+	_, data := export(t, src.a, src.admin, fork.Dataset.ID, src.global.ID, src.ws.ID, src.quarantine.ID)
+	dst := testutil.NewApp(t)
+	admin := testutil.Admin(t, dst)
+	if _, err := dst.Exchange.Import(ctx, admin, bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	for child, parent := range map[string]string{fork.Dataset.ID: src.ws.ID, src.global.ID: src.quarantine.ID} {
+		d, err := dst.Datasets.Get(ctx, admin, child)
+		if err != nil || d.ParentID != parent {
+			t.Errorf("%s parent = %q, want %q (%v)", child, d.ParentID, parent, err)
+		}
+	}
+}
+
+func TestImportFixtureIDInAnotherDataset(t *testing.T) {
+	src := newSource(t)
+	exp, data := export(t, src.a, src.admin, src.ws.ID)
+	dst := testutil.NewApp(t)
+	admin := testutil.Admin(t, dst)
+	if _, err := dst.Exchange.Import(ctx, admin, bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	// The same fixtures, now claimed by a dataset with another ID.
+	ar, err := archive.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var datasets []dataset.Dataset
+	var persons []person.Person
+	var fixtures []fixture.Fixture
+	blobs := map[string][]byte{}
+	for {
+		e, err := ar.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case e.Name == "datasets.jsonl":
+			datasets, _ = archive.ReadRecords[dataset.Dataset](e)
+		case e.Name == "persons.jsonl":
+			persons, _ = archive.ReadRecords[person.Person](e)
+		case e.Name == "fixtures.jsonl":
+			fixtures, _ = archive.ReadRecords[fixture.Fixture](e)
+		case e.IsBlob():
+			blobs[e.BlobHash()], _ = io.ReadAll(e)
+		}
+	}
+	datasets[0].ID, datasets[0].Name = "other-dataset", "other"
+	for i := range fixtures {
+		fixtures[i].DatasetID = "other-dataset"
+	}
+	moved := craft(t, exp.Counts(), datasets, persons, fixtures, blobs)
+	if _, err := dst.Exchange.Import(ctx, admin, bytes.NewReader(moved)); !errors.Is(err, apperr.ErrConflict) || !strings.Contains(err.Error(), "another dataset") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := dst.Datasets.Get(ctx, admin, "other-dataset"); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("a failed import left the dataset: %v", err)
+	}
+}
+
+func TestSlowImportDoesNotStallCleanup(t *testing.T) {
+	src := newSource(t)
+	_, data := export(t, src.a, src.admin, src.ws.ID)
+	var blobDir string
+	dst := testutil.NewAppWith(t, func(c *app.Config) { blobDir = c.BlobDir })
+	admin := testutil.Admin(t, dst)
+	scratch, err := dst.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "scratch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		_, err := dst.Exchange.Import(ctx, admin, pr)
+		done <- err
+	}()
+	// Send all but the end of the archive, then stall like a slow client.
+	if _, err := pw.Write(data[:len(data)-64]); err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the import is storing contents.
+	for start := time.Now(); ; time.Sleep(10 * time.Millisecond) {
+		if stored, _ := filepath.Glob(filepath.Join(blobDir, "objects", "*", "*", "*")); len(stored) > 0 {
+			break
+		}
+		if time.Since(start) > 5*time.Second {
+			t.Fatal("the import never stored content")
+		}
+	}
+
+	deleted := make(chan error, 1)
+	go func() { deleted <- dst.Datasets.Delete(ctx, admin, scratch.ID) }()
+	select {
+	case err := <-deleted:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("deleting a dataset (and collecting content) waited for an import upload")
+	}
+
+	if _, err := pw.Write(data[len(data)-64:]); err != nil {
+		t.Fatal(err)
+	}
+	_ = pw.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("import = %v", err)
+	}
+}
+
+func TestFailedImportLeavesNoContent(t *testing.T) {
+	src := newSource(t)
+	_, data := export(t, src.a, src.admin, src.ws.ID)
+	// Valid records and contents, but a dataset named like one already here.
+	var blobDir string
+	dst := testutil.NewAppWith(t, func(c *app.Config) { blobDir = c.BlobDir })
+	admin := testutil.Admin(t, dst)
+	if _, err := dst.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "work"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dst.Exchange.Import(ctx, admin, bytes.NewReader(data)); !errors.Is(err, apperr.ErrConflict) {
+		t.Fatalf("err = %v", err)
+	}
+	scratch, _ := dst.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "scratch"})
+	if err := dst.Datasets.Delete(ctx, admin, scratch.ID); err != nil { // collects content
+		t.Fatal(err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(blobDir, "objects", "*", "*", "*")); len(left) != 0 {
+		t.Errorf("%d contents left after a failed import and a collection", len(left))
+	}
 }

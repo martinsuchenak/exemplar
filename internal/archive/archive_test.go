@@ -178,3 +178,12 @@ func TestReaderRejects(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordCountLimit(t *testing.T) {
+	good := manifest(map[string]any{"format": Format, "version": 1, "kind": "export"})
+	r, _ := NewReader(bytes.NewReader(raw(t, [2]string{ManifestName, good}, [2]string{"x.jsonl", strings.Repeat("{}\n", MaxRecordCount+1)})))
+	e, _ := r.Next()
+	if _, err := ReadRecords[rec](e); !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "records") {
+		t.Errorf("too many records err = %v", err)
+	}
+}

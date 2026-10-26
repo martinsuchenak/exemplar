@@ -100,7 +100,7 @@ exemplar generate <dataset-id> --kind emails --count 20 --from <fixture-id>,<fix
 Each email is one of the templates, in turn, with its linked people (`from`,
 `to`, `cc`…) swapped for people picked from the registry:
 
-- Every form of a person's name (`First Last`, `Last, First`, each name alone, all capitals), their address, phone, job title and street.
+- Every form of a person's name (`First Last`, `Last, First`, each name alone, all capitals), their address, phone, job title and street. Names, job titles, company names and streets match only as written or in capitals, since many names are words: swapping "Grace Price" leaves "the grace period" and "the price" alone.
 - Their company: name, stem (`Noosa Engineering`), the compact form a domain uses (`noosaengineering`), domain (including other addresses and subdomains at it), ABN and phone.
 - Message-ID, In-Reply-To and References get fresh IDs on the new domain; IDs that matched still match.
 

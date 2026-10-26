@@ -75,8 +75,9 @@ backup.Service   ─> db (VACUUM INTO snapshot, schema version) + blob.Store + a
 
 Import runs each service's import method inside one transaction it opens,
 the way fork passes its transaction to `CopyShareable`. Content is stored
-first, under `HoldContent`, so garbage collection cannot remove it before
-the records commit. `backup` takes no principal: only host commands reach it.
+first without holding off garbage collection, unregistered (collection only
+removes registered content); it is registered under `HoldContent` just
+before the records commit, so a slow upload never stalls other writes. `backup` takes no principal: only host commands reach it.
 See [backup-and-exchange.md](backup-and-exchange.md).
 
 ## CLI and API

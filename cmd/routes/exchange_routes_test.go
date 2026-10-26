@@ -2,10 +2,18 @@ package routes
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/martinsuchenak/exemplar/internal/account"
+	"github.com/martinsuchenak/exemplar/internal/app"
+	"github.com/martinsuchenak/exemplar/internal/archive"
+	"github.com/martinsuchenak/exemplar/internal/testutil"
 )
 
 func TestExportAndImportRoutes(t *testing.T) {
@@ -38,5 +46,32 @@ func TestExportAndImportRoutes(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"created":false`) {
 		t.Errorf("import = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestImportSizeLimit(t *testing.T) {
+	a := testutil.NewAppWith(t, func(c *app.Config) { c.MaxImportBytes = 512 })
+	_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, a)
+	// Random-looking records, so compression cannot shrink them under the limit.
+	var buf bytes.Buffer
+	w, _ := archive.NewWriter(&buf, archive.Manifest{Kind: archive.KindExport})
+	records := make([]map[string]string, 200)
+	for i := range records {
+		records[i] = map[string]string{"description": fmt.Sprintf("%x", sha256.Sum256([]byte{byte(i)}))}
+	}
+	_ = archive.Records(w, "datasets.jsonl", records)
+	_ = w.Close()
+	big := buf.Bytes()
+	req := httptest.NewRequest("POST", "/api/v1/import", bytes.NewReader(big))
+	req.Header.Set("X-API-Key", issued.Secret)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversized import = %d %s", rec.Code, rec.Body)
 	}
 }

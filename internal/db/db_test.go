@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/martinsuchenak/xdal/pkg/migrate"
@@ -115,5 +116,34 @@ func TestSchemaVersions(t *testing.T) {
 	v, err := AppliedVersion(context.Background(), conn)
 	if err != nil || v != LatestVersion() || v == "" {
 		t.Errorf("applied %q, latest %q, %v", v, LatestVersion(), err)
+	}
+}
+
+func TestOpenCurrent(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if _, err := OpenCurrent(ctx, nil, filepath.Join(dir, "missing.db")); err == nil {
+		t.Error("missing database opened")
+	}
+	conn, path := openTemp(t)
+	cur, err := OpenCurrent(ctx, nil, path)
+	if err != nil {
+		t.Fatalf("current schema refused: %v", err)
+	}
+	_ = cur.Close()
+
+	// An older schema is refused, and left as it was.
+	m, err := migrate.New(conn.DB, migrations(), migrate.Options{Namespace: MigrationNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Down(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenCurrent(ctx, nil, path); err == nil || !strings.Contains(err.Error(), "schema") {
+		t.Errorf("older schema err = %v", err)
+	}
+	if v, _ := AppliedVersion(ctx, conn); v == LatestVersion() {
+		t.Error("OpenCurrent migrated the database")
 	}
 }

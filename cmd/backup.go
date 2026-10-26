@@ -9,6 +9,7 @@ import (
 	"github.com/paularlott/cli"
 	logslog "github.com/paularlott/logger/slog"
 
+	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/backup"
 )
 
@@ -27,7 +28,8 @@ func backupCmd() *cli.Command {
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
 			log := logslog.New(logslog.Config{Level: cmd.GetString("log-level"), Format: cmd.GetString("log-format"), Writer: os.Stderr})
-			a, err := openApp(ctx, cmd, log)
+			// No migrations: the server may be running an older build.
+			a, err := app.Open(ctx, log, app.Config{DBPath: cmd.GetString("db-path"), BlobDir: cmd.GetString("blob-dir"), NoMigrate: true})
 			if err != nil {
 				return err
 			}

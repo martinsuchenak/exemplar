@@ -64,3 +64,23 @@ func TestAnonymiserConfig(t *testing.T) {
 		t.Error("Open with a broken profile succeeded")
 	}
 }
+
+func TestOpenWithoutMigrating(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{DBPath: filepath.Join(dir, "x.db"), BlobDir: filepath.Join(dir, "blobs"), NoMigrate: true}
+	if _, err := Open(context.Background(), nil, cfg); err == nil {
+		t.Error("NoMigrate created a database")
+	}
+	cfg.NoMigrate = false
+	a, err := Open(context.Background(), nil, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = a.Close()
+	cfg.NoMigrate = true
+	a, err = Open(context.Background(), nil, cfg)
+	if err != nil {
+		t.Fatalf("current database refused: %v", err)
+	}
+	_ = a.Close()
+}

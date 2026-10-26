@@ -272,6 +272,13 @@ func Restore(ctx context.Context, r io.Reader, t Target, overwrite bool) (*Summa
 		if err := removeEmptyBlobDir(t.BlobDir); err != nil {
 			return nil, err
 		}
+		// Empty leftovers of a server that never wrote anything; SQLite
+		// would read them as the restored database's log.
+		for _, p := range []string{t.DBPath + "-wal", t.DBPath + "-shm"} {
+			if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
+		}
 	}
 	if exists {
 		for _, p := range []string{t.DBPath, t.DBPath + "-wal", t.DBPath + "-shm", t.BlobDir} {
@@ -315,11 +322,15 @@ func removeEmptyBlobDir(dir string) error {
 }
 
 // holdsInstance reports whether t already has a database or stored content.
+// A non-empty write-ahead log counts: a server stopped before a checkpoint
+// keeps its data there while the main file is still empty.
 func holdsInstance(t Target) (bool, error) {
-	if info, err := os.Stat(t.DBPath); err == nil && info.Size() > 0 {
-		return true, nil
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, err
+	for _, p := range []string{t.DBPath, t.DBPath + "-wal"} {
+		if info, err := os.Stat(p); err == nil && info.Size() > 0 {
+			return true, nil
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
 	}
 	entries, err := os.ReadDir(filepath.Join(t.BlobDir, "objects"))
 	if errors.Is(err, os.ErrNotExist) {

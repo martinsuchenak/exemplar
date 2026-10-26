@@ -467,8 +467,8 @@ paths:
         Up to 50 datasets the key can read, with their fixtures, linked
         people and contents. Real-derived fixtures go only if approved; the
         rest are counted in X-Exemplar-Skipped. Everything is decided before
-        streaming; a failure while streaming truncates the archive, which
-        import refuses.
+        streaming; a failure while streaming aborts the connection, so the
+        client sees an error rather than a short archive.
       operationId: exportDatasets
       requestBody:
         required: true

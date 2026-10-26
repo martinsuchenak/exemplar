@@ -94,6 +94,7 @@ Configuration is loaded from `exemplar-config.toml` and can be overridden via en
 | `storage.blob_dir` | `BLOB_DIR` | `data/blobs` | Fixture contents, stored once per SHA-256 |
 | `storage.max_fixture_mb` | `MAX_FIXTURE_MB` | `100` | Largest fixture accepted (0 for no limit) |
 | `storage.max_ingest_mb` | `MAX_INGEST_MB` | `200` | Largest ingest request (0 for no limit) |
+| `storage.max_import_mb` | `MAX_IMPORT_MB` | `2048` | Largest import archive (0 for no limit) |
 | `anonymiser.key_file` | `ANON_KEY_FILE` | | Anonymisation key file, mode 600; or the key in `EXEMPLAR_ANON_KEY` |
 | `anonymiser.presidio_url` | `PRESIDIO_URL` | | Presidio Analyzer, e.g. `http://localhost:3000`; with a key, turns ingest on |
 | `anonymiser.profiles_dir` | `ANON_PROFILES_DIR` | | Extra anonymisation profiles (`*.toml`) |

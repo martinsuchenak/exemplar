@@ -37,7 +37,46 @@ func Open(ctx context.Context, log logger.Logger, path string) (*Connection, err
 		return nil, fmt.Errorf("creating database file: %w", err)
 	}
 	_ = f.Close()
+	conn, err := connect(ctx, log, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := Migrate(ctx, conn, log); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if log != nil {
+		log.Info("opened database", "path", path)
+	}
+	return conn, nil
+}
 
+// OpenCurrent opens an existing database without migrating it, and fails
+// unless its schema is exactly this build's. Commands that run beside a
+// live server (backup) use it, so a newer binary never changes the schema
+// under an older running server.
+func OpenCurrent(ctx context.Context, log logger.Logger, path string) (*Connection, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("opening database: %w", err)
+	}
+	conn, err := connect(ctx, log, path)
+	if err != nil {
+		return nil, err
+	}
+	applied, err := AppliedVersion(ctx, conn)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if applied != LatestVersion() {
+		_ = conn.Close()
+		return nil, fmt.Errorf("the database schema is %q but this build expects %q: use the build the server runs (or restart the server on this one first)", applied, LatestVersion())
+	}
+	return conn, nil
+}
+
+// connect opens the SQLite database at path with exemplar's settings.
+func connect(ctx context.Context, log logger.Logger, path string) (*Connection, error) {
 	// WAL with synchronous(NORMAL) is SQLite's recommended pairing; _txlock=immediate
 	// takes the write lock at BEGIN so concurrent writers wait instead of failing.
 	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
@@ -54,15 +93,7 @@ func Open(ctx context.Context, log logger.Logger, path string) (*Connection, err
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
-	conn := &Connection{SQL: sqlDB, DB: wrapXDALDB(sqlDB, log)}
-	if err := Migrate(ctx, conn, log); err != nil {
-		_ = sqlDB.Close()
-		return nil, err
-	}
-	if log != nil {
-		log.Info("opened database", "path", path)
-	}
-	return conn, nil
+	return &Connection{SQL: sqlDB, DB: wrapXDALDB(sqlDB, log)}, nil
 }
 
 // Close closes the database.

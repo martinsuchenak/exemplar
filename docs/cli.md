@@ -24,6 +24,7 @@ Two kinds of command:
 | `--blob-dir` | `BLOB_DIR` | `storage.blob_dir` | `data/blobs` |
 | `--max-fixture-mb` | `MAX_FIXTURE_MB` | `storage.max_fixture_mb` | `100` (0 for no limit) |
 | `--max-ingest-mb` | `MAX_INGEST_MB` | `storage.max_ingest_mb` | `200` (0 for no limit); `serve` only |
+| `--max-import-mb` | `MAX_IMPORT_MB` | `storage.max_import_mb` | `2048` (0 for no limit); `serve` only |
 
 ### `serve`
 
@@ -62,7 +63,8 @@ exemplar backup --output FILE
 ```
 
 Writes the whole instance (database snapshot and contents) to a `.tar.gz`
-archive. Safe while the server runs. Never overwrites `FILE`. See
+archive. Safe while the server runs. It never migrates the database and
+refuses one whose schema differs from its build. Never overwrites `FILE`. See
 [backup-and-exchange.md](backup-and-exchange.md).
 
 ### `restore`

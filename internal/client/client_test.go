@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -440,5 +442,29 @@ func TestExportAndImport(t *testing.T) {
 	}
 	if _, err := admin.Export(ctx, []string{"missing"}, io.Discard); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("missing dataset err = %v", err)
+	}
+}
+
+func TestExportFailingMidStreamIsAnError(t *testing.T) {
+	var blobDir string
+	_, member, _, _ := server(t, func(c *app.Config) { blobDir = c.BlobDir })
+	d, err := member.CreateDataset(ctx, dataset.CreateInput{Name: "broken"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := member.Generate(ctx, d.ID, generate.Request{Kind: generate.KindFiles, Count: 2, Formats: []string{"txt"}, Seed: 4}); err != nil {
+		t.Fatal(err)
+	}
+	objects, _ := filepath.Glob(filepath.Join(blobDir, "objects", "*", "*", "*"))
+	if len(objects) == 0 {
+		t.Fatal("no stored content")
+	}
+	for _, o := range objects {
+		if err := os.Remove(o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := member.Export(ctx, []string{d.ID}, io.Discard); err == nil {
+		t.Error("an export that failed while streaming reported success")
 	}
 }

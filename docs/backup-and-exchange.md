@@ -52,7 +52,10 @@ content is logged as a download, as usual.
 frozen state; the importing account becomes the owner. Then:
 
 - A dataset already here (same ID) gets only the fixtures it lacks. Adding
-  fixtures to one that is frozen here is refused.
+  fixtures to one that is frozen here is refused, and so is a fixture whose
+  ID is already here in another dataset.
+- Datasets are added parents first, so fork and promote links between
+  datasets in the same archive survive whatever order they were exported in.
 - A different dataset with the same name and version is a conflict; rename
   one first.
 - Global and quarantine datasets need an admin key, as when creating them.
@@ -65,9 +68,14 @@ frozen state; the importing account becomes the owner. Then:
 - A `dataset.import` audit event records each dataset with what was added,
   what was already here and what was skipped.
 
-Contents are stored as they stream in; all records are added in one
-transaction at the end. A failed import adds no records (contents it stored
-are removed by the next garbage collection).
+Contents are stored as they stream in, without pausing garbage collection
+(a slow upload would otherwise stall every other write); they are registered
+just before the records are added, in one transaction at the end. A failed
+import adds no records, and the contents it stored are removed by the next
+garbage collection.
+
+An archive is capped at `storage.max_import_mb` (default 2048 MiB; `413` over
+it), each record file at 64 MiB and 100,000 records.
 
 ### Real-derived fixtures
 
@@ -90,6 +98,9 @@ exemplar backup --output /backups/exemplar-$(date +%F).tar.gz
 Runs on the host with the storage flags (`--db-path`, `--blob-dir`), and is
 safe while the server runs:
 
+- It never migrates the database: it refuses one whose schema is not exactly
+  its own build's, so a newly installed binary cannot change the schema under
+  a server still running the old one. Back up with the build the server runs.
 - The database is copied with SQLite's `VACUUM INTO`, a consistent snapshot
   taken in one transaction.
 - Every content the snapshot's fixtures use is copied and checked against its
@@ -113,7 +124,11 @@ exemplar restore /backups/exemplar-2026-10-26.tar.gz --overwrite # replace this 
 
 Stop the server first. Restore:
 
-1. Refuses a target that already holds an instance, unless `--overwrite` is given.
+1. Refuses a target that already holds an instance, unless `--overwrite` is
+   given. A non-empty write-ahead log (`exemplar.db-wal`) counts: a server
+   stopped before its first checkpoint keeps its data there. Empty leftover
+   `-wal` and `-shm` files are removed, so SQLite never reads them as the
+   restored database's log.
 2. Refuses a backup whose schema is newer than this build; older ones are migrated.
 3. Unpacks everything beside the target, checking every content's hash, the
    database's integrity, and that every fixture's content is present.

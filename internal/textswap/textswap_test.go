@@ -32,3 +32,22 @@ func TestApply(t *testing.T) {
 		t.Errorf("New(nil) = %v", err)
 	}
 }
+
+func TestExactKeys(t *testing.T) {
+	r, err := NewCased(map[string]string{"grace@x.example": "ann@y.example"},
+		map[string]string{"Grace": "Ann", "Price": "Lee", "Grace Price": "Ann Lee", "grace@x.example": "ignored"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string]string{
+		"the grace period, the price":    "the grace period, the price",
+		"Grace Price, GRACE PRICE":       "Ann Lee, ANN LEE",
+		"Grace PRICE and grace Price":    "Ann LEE and grace Lee",
+		"mail GRACE@X.EXAMPLE or Grace.": "mail ANN@Y.EXAMPLE or Ann.",
+		"Gracefully priced, Grace-Price": "Gracefully priced, Grace-Price",
+	} {
+		if got := r.Apply(in); got != want {
+			t.Errorf("Apply(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
