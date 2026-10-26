@@ -7,12 +7,12 @@ and workflows settle; until then, use the REST API or CLI to change data.
 
 ## Connecting
 
-The server listens on its own port at `/mcp`:
+The endpoint is `/mcp` on the same port as the REST API (`server.port`,
+default 8080). It is on by default:
 
 | Flag | Env var | Config | Default |
 |------|---------|--------|---------|
-| `--mcp-host` | `MCP_HOST` | `mcp.host` | `0.0.0.0` |
-| `--mcp-port` | `MCP_PORT` | `mcp.port` | `9000`; `0` turns MCP off |
+| `--mcp` | `MCP_ENABLED` | `mcp.enabled` | `true`; `--mcp=false` turns it off (`/mcp` then answers 404) |
 
 Every request needs an API key, sent as `Authorization: Bearer exm_…` (what
 most MCP clients send) or `X-API-Key: exm_…`. The tools act as that key, so
@@ -27,7 +27,7 @@ For Claude Code, add the server to `.mcp.json`:
   "mcpServers": {
     "exemplar": {
       "type": "http",
-      "url": "http://localhost:9000/mcp",
+      "url": "http://localhost:8080/mcp",
       "headers": { "Authorization": "Bearer ${EXEMPLAR_API_KEY}" }
     }
   }

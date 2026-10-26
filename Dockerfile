@@ -18,6 +18,6 @@ COPY --from=builder /app/bin/exemplar .
 COPY --from=builder /app/exemplar-config.toml .
 USER app
 VOLUME ["/app/data"]
-EXPOSE 8080 9000
+EXPOSE 8080
 ENTRYPOINT ["./exemplar"]
 CMD ["serve"]

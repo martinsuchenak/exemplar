@@ -376,17 +376,11 @@ func TestToolErrorMapping(t *testing.T) {
 	}
 }
 
-func TestHTTPServerServesMCPBehindAuth(t *testing.T) {
+func TestHandlerNeedsAKey(t *testing.T) {
 	a := testutil.NewApp(t)
-	srv := NewHTTPServer(a, "127.0.0.1:0")
-	if srv.Addr != "127.0.0.1:0" || srv.ReadHeaderTimeout == 0 || srv.WriteTimeout == 0 {
-		t.Errorf("server = %+v", srv)
-	}
-	for path, want := range map[string]int{"/mcp": http.StatusUnauthorized, "/other": http.StatusNotFound} {
-		rec := httptest.NewRecorder()
-		srv.Handler.ServeHTTP(rec, httptest.NewRequest("POST", path, strings.NewReader("{}")))
-		if rec.Code != want {
-			t.Errorf("%s = %d, want %d", path, rec.Code, want)
-		}
+	rec := httptest.NewRecorder()
+	Handler(a).ServeHTTP(rec, httptest.NewRequest("POST", "/mcp", strings.NewReader("{}")))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("/mcp without a key = %d", rec.Code)
 	}
 }

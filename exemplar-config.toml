@@ -21,8 +21,8 @@ max_import_mb = 2048
 # profiles_dir = "profiles"
 
 [mcp]
-host = "0.0.0.0"
-port = 9000
+# The read-only MCP endpoint at /mcp on the server port.
+enabled = true
 
 [client]
 server = "http://localhost:8080"

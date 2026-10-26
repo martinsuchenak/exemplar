@@ -1,4 +1,5 @@
-// Package mcp runs the MCP server. Tools register themselves in init and,
+// Package mcp is the MCP endpoint; serve mounts Handler at /mcp on the same
+// listener as the REST API. Tools register themselves in init and,
 // like every entry point, call services rather than storage. Every request
 // needs an API key (Authorization: Bearer exm_… or X-API-Key), and the tools
 // act as that key, so MCP sees exactly what the key may see over REST.
@@ -10,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	mcplib "github.com/paularlott/mcp"
 
@@ -47,21 +47,6 @@ func NewServer(a *app.App) *mcplib.Server {
 func Handler(a *app.App) http.Handler {
 	server := NewServer(a)
 	return auth.APIKeyMiddleware(a.Accounts)(http.HandlerFunc(server.HandleRequest))
-}
-
-// NewHTTPServer serves Handler at /mcp on addr, with timeouts that suit
-// tool calls. serve runs and shuts it down with the REST server.
-func NewHTTPServer(a *app.App, addr string) *http.Server {
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", Handler(a))
-	return &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       time.Minute,
-		WriteTimeout:      5 * time.Minute,
-		IdleTimeout:       120 * time.Second,
-	}
 }
 
 // caller returns the principal the authentication middleware stored.

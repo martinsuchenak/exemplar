@@ -98,7 +98,7 @@ Configuration is loaded from `exemplar-config.toml` and can be overridden via en
 | `anonymiser.key_file` | `ANON_KEY_FILE` | | Anonymisation key file, mode 600; or the key in `EXEMPLAR_ANON_KEY` |
 | `anonymiser.presidio_url` | `PRESIDIO_URL` | | Presidio Analyzer, e.g. `http://localhost:3000`; with a key, turns ingest on |
 | `anonymiser.profiles_dir` | `ANON_PROFILES_DIR` | | Extra anonymisation profiles (`*.toml`) |
-| `mcp.host`, `mcp.port` | `MCP_HOST`, `MCP_PORT` | `0.0.0.0`, `9000` | Read-only MCP server at `/mcp`; port 0 turns it off |
+| `mcp.enabled` | `MCP_ENABLED` | `true` | Read-only MCP endpoint at `/mcp` on the server port |
 | `client.server` | `EXEMPLAR_SERVER` | `http://localhost:8080` | Server the remote CLI commands call |
 | `mailpit.smtp` | `MAILPIT_SMTP` | `localhost:1025` | Where `push-mailpit` sends emails |
 | (none) | `EXEMPLAR_API_KEY` | | API key for remote CLI commands |

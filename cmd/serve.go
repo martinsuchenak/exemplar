@@ -15,6 +15,7 @@ import (
 	logslog "github.com/paularlott/logger/slog"
 
 	"github.com/martinsuchenak/exemplar/cmd/routes"
+	"github.com/martinsuchenak/exemplar/internal/app"
 
 	mcpserver "github.com/martinsuchenak/exemplar/cmd/mcp"
 	// go-scaffolder:serve-imports
@@ -43,19 +44,12 @@ func serveCmd() *cli.Command {
 				ConfigPath:   []string{"server.port"},
 				EnvVars:      []string{"SERVER_PORT"},
 			},
-			&cli.StringFlag{
-				Name:         "mcp-host",
-				DefaultValue: "0.0.0.0",
-				Usage:        "MCP server listen host",
-				ConfigPath:   []string{"mcp.host"},
-				EnvVars:      []string{"MCP_HOST"},
-			},
-			&cli.IntFlag{
-				Name:         "mcp-port",
-				DefaultValue: 9000,
-				Usage:        "MCP server listen port (0 turns MCP off)",
-				ConfigPath:   []string{"mcp.port"},
-				EnvVars:      []string{"MCP_PORT"},
+			&cli.BoolFlag{
+				Name:         "mcp",
+				DefaultValue: true,
+				Usage:        "Serve the read-only MCP endpoint at /mcp (--mcp=false turns it off)",
+				ConfigPath:   []string{"mcp.enabled"},
+				EnvVars:      []string{"MCP_ENABLED"},
 			},
 		),
 		// go-scaffolder:serve-flags
@@ -73,18 +67,13 @@ func serveCmd() *cli.Command {
 			}
 			defer func() { _ = services.Close() }()
 
-			var servers []namedServer
-			if port := cmd.GetInt("mcp-port"); port != 0 {
-				servers = append(servers, namedServer{"MCP", mcpserver.NewHTTPServer(services, fmt.Sprintf("%s:%d", cmd.GetString("mcp-host"), port))})
-			}
 			// go-scaffolder:serve-init
 
-			mux := http.NewServeMux()
-			routes.RegisterRoutes(mux, services)
+			mux := newMux(services, cmd.GetBool("mcp"))
 
 			addr := fmt.Sprintf("%s:%d", cmd.GetString("server-host"), cmd.GetInt("server-port"))
 			// go-scaffolder:serve-start
-			servers = append(servers, namedServer{"HTTP", newHTTPServer(addr, mux)})
+			servers := []namedServer{{"HTTP", newHTTPServer(addr, mux)}}
 			// SIGTERM (docker stop) and Ctrl-C shut down gracefully: requests in
 			// flight finish and the database is closed.
 			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -92,6 +81,17 @@ func serveCmd() *cli.Command {
 			return runServers(ctx, log, servers, shutdownGrace)
 		},
 	}
+}
+
+// newMux serves the REST API and, with withMCP, the MCP endpoint at /mcp, on
+// one listener: both use the same API keys and services.
+func newMux(services *app.App, withMCP bool) *http.ServeMux {
+	mux := http.NewServeMux()
+	routes.RegisterRoutes(mux, services)
+	if withMCP {
+		mux.Handle("/mcp", mcpserver.Handler(services))
+	}
+	return mux
 }
 
 // shutdownGrace is how long requests in flight get to finish on shutdown.
@@ -106,7 +106,8 @@ type namedServer struct {
 // runServers runs every server until ctx ends (a signal) or one of them fails,
 // for example because its port is taken; then it shuts all of them down,
 // letting requests in flight finish for up to grace. A failure is returned,
-// so serve never keeps running without a listener it was asked for.
+// so serve never keeps running without a listener it was asked for. serve
+// has one listener today; extra ones (metrics, say) would join it here.
 func runServers(ctx context.Context, log logger.Logger, servers []namedServer, grace time.Duration) error {
 	errs := make(chan error, len(servers))
 	for _, s := range servers {

@@ -5,11 +5,15 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/paularlott/logger"
+
+	"github.com/martinsuchenak/exemplar/internal/account"
+	"github.com/martinsuchenak/exemplar/internal/testutil"
 )
 
 func TestServeCmdExists(t *testing.T) {
@@ -95,11 +99,58 @@ func TestRunServersFailsWhenAPortIsTaken(t *testing.T) {
 	freeAddr := free.Addr().String()
 	_ = free.Close()
 	servers := []namedServer{
-		{"MCP", newHTTPServer(taken.Addr().String(), http.NewServeMux())},
-		{"HTTP", newHTTPServer(freeAddr, http.NewServeMux())},
+		{"HTTP", newHTTPServer(taken.Addr().String(), http.NewServeMux())},
+		{"extra", newHTTPServer(freeAddr, http.NewServeMux())},
 	}
 	err = runServers(context.Background(), logger.NewNullLogger(), servers, time.Second)
-	if err == nil || !strings.Contains(err.Error(), "MCP server") {
+	if err == nil || !strings.Contains(err.Error(), "HTTP server") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestOneListenerServesRESTAndMCP(t *testing.T) {
+	a := testutil.NewApp(t)
+	_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(newMux(a, true))
+	defer srv.Close()
+
+	// MCP initialize on /mcp of the REST listener, with the same key.
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`
+	req, _ := http.NewRequest("POST", srv.URL+"/mcp", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+issued.Secret)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(out), "exemplar-mcp") {
+		t.Errorf("/mcp initialize = %d %s", resp.StatusCode, out)
+	}
+	for _, path := range []string{"/mcp", "/api/v1/datasets"} {
+		r, err := http.Post(srv.URL+path, "application/json", strings.NewReader("{}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+		if r.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s without a key = %d", path, r.StatusCode)
+		}
+	}
+
+	off := httptest.NewServer(newMux(a, false))
+	defer off.Close()
+	r, err := http.Post(off.URL+"/mcp", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Body.Close()
+	if r.StatusCode != http.StatusNotFound {
+		t.Errorf("/mcp with MCP off = %d, want 404", r.StatusCode)
 	}
 }

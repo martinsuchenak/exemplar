@@ -28,17 +28,16 @@ Two kinds of command:
 
 ### `serve`
 
-Opens the database (running pending migrations) and starts the HTTP API and the
-MCP server. If either cannot listen (a port in use), `serve` stops with an
-error. On SIGTERM (`docker stop`) or Ctrl-C it stops accepting requests, lets
+Opens the database (running pending migrations) and serves the REST API and
+the MCP endpoint (`/mcp`) on one port. If it cannot listen (a port in use),
+`serve` stops with an error. On SIGTERM (`docker stop`) or Ctrl-C it stops accepting requests, lets
 those in flight finish for up to 30 seconds, and closes the database.
 
 | Flag | Env var | Config | Default |
 |------|---------|--------|---------|
 | `--server-host` | `SERVER_HOST` | `server.host` | `0.0.0.0` |
 | `--server-port` | `SERVER_PORT` | `server.port` | `8080` |
-| `--mcp-host` | `MCP_HOST` | `mcp.host` | `0.0.0.0` |
-| `--mcp-port` | `MCP_PORT` | `mcp.port` | `9000` (0 turns MCP off; see [mcp.md](mcp.md)) |
+| `--mcp` | `MCP_ENABLED` | `mcp.enabled` | `true`: the MCP endpoint at `/mcp` on the server port (`--mcp=false` turns it off; see [mcp.md](mcp.md)) |
 | `--anon-key-file` | `ANON_KEY_FILE` | `anonymiser.key_file` | none; or the key itself in `EXEMPLAR_ANON_KEY` |
 | `--presidio-url` | `PRESIDIO_URL` | `anonymiser.presidio_url` | none |
 | `--anon-profiles-dir` | `ANON_PROFILES_DIR` | `anonymiser.profiles_dir` | none: built-in profiles only |

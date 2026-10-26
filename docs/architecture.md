@@ -84,8 +84,9 @@ See [backup-and-exchange.md](backup-and-exchange.md).
 
 The MCP server (`cmd/mcp`) is another entry point of the same kind: each tool
 reads its arguments, calls a service with the key's principal and returns the
-result, and `toolError` maps service errors to MCP error codes. It runs on its
-own port behind the same API key middleware. See [mcp.md](mcp.md).
+result, and `toolError` maps service errors to MCP error codes. `serve`
+mounts it at `/mcp` on the REST listener, behind the same API key
+middleware. See [mcp.md](mcp.md).
 
 Host commands (`serve`, `bootstrap`, `init`, `backup`, `restore`) open the app directly. All other
 commands are remote: they call the REST API through `internal/client`, so a
