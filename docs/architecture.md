@@ -43,6 +43,11 @@ generate.Service ─> dataset.Service.Authorize (write)
 
 ## CLI and API
 
+The MCP server (`cmd/mcp`) is another entry point of the same kind: each tool
+reads its arguments, calls a service with the key's principal and returns the
+result, and `toolError` maps service errors to MCP error codes. It runs on its
+own port behind the same API key middleware. See [mcp.md](mcp.md).
+
 Host commands (`serve`, `bootstrap`, `init`) open the app directly. All other
 commands are remote: they call the REST API through `internal/client`, so a
 local instance and a shared server are used the same way and the server's

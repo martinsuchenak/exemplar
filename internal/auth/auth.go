@@ -19,13 +19,15 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, secret string) (principal.Principal, error)
 }
 
-// APIKeyMiddleware requires a valid X-API-Key header and stores the resolved
-// principal in the request context (principal.FromContext). A nil
-// authenticator rejects every request rather than disabling authentication.
+// APIKeyMiddleware requires a valid API key and stores the resolved principal
+// in the request context (principal.FromContext). The key comes from the
+// X-API-Key header or, as most MCP clients send it, from
+// "Authorization: Bearer exm_…". A nil authenticator rejects every request
+// rather than disabling authentication.
 func APIKeyMiddleware(authn Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := r.Header.Get("X-API-Key")
+			key := apiKey(r)
 			if authn == nil || key == "" {
 				rest.RespondError(w, http.StatusUnauthorized, "unauthorized")
 				return
@@ -43,6 +45,21 @@ func APIKeyMiddleware(authn Authenticator) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// apiKey returns the request's API key. Bearer tokens count only when they
+// carry the exm_ key prefix, so SSO tokens can use the same header later.
+func apiKey(r *http.Request) string {
+	if key := r.Header.Get("X-API-Key"); key != "" {
+		return key
+	}
+	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && strings.HasPrefix(token, keyPrefix) {
+		return token
+	}
+	return ""
+}
+
+// keyPrefix matches account.KeyPrefix; auth does not import account.
+const keyPrefix = "exm_"
 
 // TokenValidator reports whether a bearer token is valid.
 type TokenValidator func(r *http.Request, token string) bool

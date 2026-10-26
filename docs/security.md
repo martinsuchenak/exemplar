@@ -112,6 +112,14 @@ Only admin keys can read the log.
 - Downloads are attachments with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so fixture HTML or scripts never run in a browser.
 - Key creation responses carry `Cache-Control: no-store`.
 - The CLI reads the API key from `--api-key` or `EXEMPLAR_API_KEY`, never from the config file, so keys are not committed with config.
+- Keys are accepted as `X-API-Key` or `Authorization: Bearer exm_…`; bearer tokens without the `exm_` prefix are not treated as keys.
+
+## MCP
+
+The MCP server uses the same keys and the same services, so an agent can see
+exactly what its key can see over REST. Its tools only read. Give agents a
+read-only key. Reading real-derived content through `get_fixture` is
+audit-logged like a REST download. Details in [mcp.md](mcp.md).
 
 ## SOC 2 good practice
 

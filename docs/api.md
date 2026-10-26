@@ -6,7 +6,9 @@ All API routes live under `/api/v1`. The OpenAPI description is in
 
 ## Authentication
 
-Send an API key in the `X-API-Key` header. Missing, unknown and revoked keys,
+Send an API key in the `X-API-Key` header, or as `Authorization: Bearer exm_…`
+(bearer tokens without the `exm_` prefix are ignored, so SSO tokens can use
+the header later). Missing, unknown and revoked keys,
 and keys of disabled accounts, all get `401`. The first admin key comes from
 `exemplar bootstrap`; further keys are created through `POST /api/v1/keys`
 (see [security.md](security.md) for who may create what).

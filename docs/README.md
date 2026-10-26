@@ -7,6 +7,7 @@
 | [generation.md](generation.md) | Person registry, synthetic files, email shapes, records, seeds |
 | [data-model.md](data-model.md) | Tables, columns and migrations |
 | [cli.md](cli.md) | Commands and flags |
+| [mcp.md](mcp.md) | The read-only MCP server: connecting, tools, errors |
 | [api.md](api.md) | Authentication, error codes and endpoints |
 | [development.md](development.md) | Commands, testing conventions, expectations for changes |
 

@@ -33,6 +33,8 @@ MCP server.
 |------|---------|--------|---------|
 | `--server-host` | `SERVER_HOST` | `server.host` | `0.0.0.0` |
 | `--server-port` | `SERVER_PORT` | `server.port` | `8080` |
+| `--mcp-host` | `MCP_HOST` | `mcp.host` | `0.0.0.0` |
+| `--mcp-port` | `MCP_PORT` | `mcp.port` | `9000` (0 turns MCP off; see [mcp.md](mcp.md)) |
 
 ### `bootstrap`
 

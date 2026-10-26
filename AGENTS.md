@@ -35,7 +35,7 @@
 - `internal/blob/`: content-addressed file store (storage layer only).
 - `internal/principal/`: the authenticated caller passed to every service method.
 - `internal/apperr/`: error kinds services return; `rest.RespondServiceError` maps them to HTTP.
-- `cmd/mcp/`: MCP server wiring and sample tool.
+- `cmd/mcp/`: read-only MCP server and its tools; same API key auth and services as REST.
 - `internal/db/`: SQLite connection and migrations.
   The DB package returns a `Connection` wrapper with:
   `SQL` for raw `*sql.DB`

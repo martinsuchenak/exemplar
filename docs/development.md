@@ -56,10 +56,14 @@ go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cov
   `httptest.Server` and exercise every client method, including how each
   status maps back to an `apperr` kind.
 
+- **MCP tests** (`cmd/mcp/mcp_test.go`) serve `Handler(app)` with
+  `httptest`, generate data, and call the tools with the MCP library's own
+  client and a bearer key, checking results, access rules and error codes.
+
 - **Remote CLI tests** start the same server with `startServer(t)` in
   `cmd/remote_test.go` and run commands with `s.run(t, key, args...)` or decode
   `--json` output with `s.runJSON`. `s.member(t, name)` creates a member and
   returns its key.
 
-Not covered by tests: `main`, the blocking listener in `serve`, and the
-scaffold's sample MCP tool (to be replaced by the read-only MCP tools).
+Not covered by tests: `main` and the blocking listeners in `serve` and
+`StartMCPServer` (the servers they run are tested).

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/martinsuchenak/exemplar/internal/apperr"
@@ -38,6 +39,8 @@ func TestAPIKeyMiddleware(t *testing.T) {
 		{"wrong key", fakeAuthn{secret: "exm_good"}, "exm_bad", http.StatusUnauthorized},
 		{"nil authenticator", nil, "exm_good", http.StatusUnauthorized},
 		{"lookup failure", fakeAuthn{err: errors.New("db down")}, "exm_good", http.StatusInternalServerError},
+		{"bearer key", fakeAuthn{secret: "exm_good"}, "Bearer exm_good", http.StatusOK},
+		{"bearer non-key token", fakeAuthn{secret: "exm_good"}, "Bearer eyJhbGciOi", http.StatusUnauthorized},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -47,7 +50,9 @@ func TestAPIKeyMiddleware(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}))
 			req := httptest.NewRequest("GET", "/", nil)
-			if tt.key != "" {
+			if bearer, ok := strings.CutPrefix(tt.key, "Bearer "); ok {
+				req.Header.Set("Authorization", "Bearer "+bearer)
+			} else if tt.key != "" {
 				req.Header.Set("X-API-Key", tt.key)
 			}
 			w := httptest.NewRecorder()

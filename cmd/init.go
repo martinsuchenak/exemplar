@@ -45,6 +45,10 @@ path = "data/exemplar.db"
 blob_dir = "data/blobs"
 max_fixture_mb = 100
 
+[mcp]
+host = "0.0.0.0"
+port = 9000
+
 [client]
 server = "http://localhost:8080"
 `

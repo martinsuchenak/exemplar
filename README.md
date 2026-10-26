@@ -33,8 +33,8 @@ layer. REST handlers, CLI commands and MCP tools get their services from
 
 ## Documentation
 
-See [docs/](docs/README.md): architecture, security model, data model, CLI, API
-and development conventions.
+See [docs/](docs/README.md): architecture, security model, generation, data
+model, CLI, API, MCP and development conventions.
 
 ## Features
 
@@ -88,6 +88,7 @@ Configuration is loaded from `exemplar-config.toml` and can be overridden via en
 | `database.path` | `DB_PATH` | `data/exemplar.db` | SQLite database file (created with mode 600) |
 | `storage.blob_dir` | `BLOB_DIR` | `data/blobs` | Fixture contents, stored once per SHA-256 |
 | `storage.max_fixture_mb` | `MAX_FIXTURE_MB` | `100` | Largest fixture accepted (0 for no limit) |
+| `mcp.host`, `mcp.port` | `MCP_HOST`, `MCP_PORT` | `0.0.0.0`, `9000` | Read-only MCP server at `/mcp`; port 0 turns it off |
 | `client.server` | `EXEMPLAR_SERVER` | `http://localhost:8080` | Server the remote CLI commands call |
 | (none) | `EXEMPLAR_API_KEY` | | API key for remote CLI commands |
 

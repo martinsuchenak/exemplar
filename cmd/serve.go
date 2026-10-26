@@ -39,6 +39,20 @@ func serveCmd() *cli.Command {
 				ConfigPath:   []string{"server.port"},
 				EnvVars:      []string{"SERVER_PORT"},
 			},
+			&cli.StringFlag{
+				Name:         "mcp-host",
+				DefaultValue: "0.0.0.0",
+				Usage:        "MCP server listen host",
+				ConfigPath:   []string{"mcp.host"},
+				EnvVars:      []string{"MCP_HOST"},
+			},
+			&cli.IntFlag{
+				Name:         "mcp-port",
+				DefaultValue: 9000,
+				Usage:        "MCP server listen port (0 turns MCP off)",
+				ConfigPath:   []string{"mcp.port"},
+				EnvVars:      []string{"MCP_PORT"},
+			},
 		),
 		// go-scaffolder:serve-flags
 		Run: func(ctx context.Context, cmd *cli.Command) error {
@@ -55,7 +69,9 @@ func serveCmd() *cli.Command {
 			}
 			defer func() { _ = services.Close() }()
 
-			mcpserver.StartMCPServer(log)
+			if port := cmd.GetInt("mcp-port"); port != 0 {
+				mcpserver.StartMCPServer(log, services, fmt.Sprintf("%s:%d", cmd.GetString("mcp-host"), port))
+			}
 			// go-scaffolder:serve-init
 
 			mux := http.NewServeMux()
