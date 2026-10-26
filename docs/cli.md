@@ -133,6 +133,41 @@ regular files directly inside it (not subdirectories), in name order. If some
 files fail, the rest still upload; the failures are printed to stderr and the
 command exits non-zero. Uploading declares the files hold no real data.
 
+### `push-mailpit`
+
+```bash
+exemplar push-mailpit <dataset-id> [--smtp localhost:1025] [--run ID] [--to a@x.test,b@x.test] [--scenario S] [--tag T] [--limit N] [--raw] [--dry-run]
+```
+
+Sends a dataset's `.eml` fixtures to Mailpit (or any SMTP server) for a test
+run. The messages are downloaded through the REST API, so the key's access
+rules apply, and their stored bytes are sent unchanged except for three
+headers added at the top:
+
+- `X-Tags: exemplar-run-<run>`, which Mailpit turns into a tag, so a test finds
+  its own messages with the search `tag:exemplar-run-<run>`;
+- `X-Exemplar-Run: <run>` and `X-Exemplar-Fixture: <fixture-id>`.
+
+| Flag | Env var | Config | Description |
+|------|---------|--------|-------------|
+| `--smtp` | `MAILPIT_SMTP` | `mailpit.smtp` | SMTP address, default `localhost:1025` |
+| `--smtp-user`, `--smtp-password` | `MAILPIT_SMTP_USER`, `MAILPIT_SMTP_PASSWORD` | | AUTH PLAIN, if Mailpit requires it |
+| `--run` | | | Run ID; default a new one such as `20261027-091502-3fa1`, printed |
+| `--to` | | | Deliver every message to these addresses instead of its own To, Cc and Bcc. Headers are unchanged; Mailpit lists the address as Bcc |
+| `--scenario`, `--tag`, `--limit` | | | Which emails to send |
+| `--raw` | | | Send the stored bytes exactly, without the added headers |
+| `--dry-run` | | | Show what would be sent |
+
+The envelope sender is the message's From address. Each message is sent on its
+own connection; failures are listed per message and make the command exit
+non-zero. Only `.eml` fixtures are sent (`.msg` cannot be sent over SMTP).
+
+```bash
+exemplar generate <dataset-id> --kind emails --count 24
+exemplar push-mailpit <dataset-id> --run "$CI_JOB_ID"
+# then in the test: GET http://mailpit:8025/api/v1/search?query=tag:exemplar-run-$CI_JOB_ID
+```
+
 ### `fork`
 
 ```bash

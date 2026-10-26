@@ -66,6 +66,7 @@ export EXEMPLAR_API_KEY=exm_...
 go run . datasets create --name replies
 go run . upload <dataset-id> ./samples --scenario outlook-reply
 go run . generate <dataset-id> --kind emails --count 24
+go run . push-mailpit <dataset-id> --run my-test
 go run . fixtures list <dataset-id>
 
 # Or the API
@@ -90,6 +91,7 @@ Configuration is loaded from `exemplar-config.toml` and can be overridden via en
 | `storage.max_fixture_mb` | `MAX_FIXTURE_MB` | `100` | Largest fixture accepted (0 for no limit) |
 | `mcp.host`, `mcp.port` | `MCP_HOST`, `MCP_PORT` | `0.0.0.0`, `9000` | Read-only MCP server at `/mcp`; port 0 turns it off |
 | `client.server` | `EXEMPLAR_SERVER` | `http://localhost:8080` | Server the remote CLI commands call |
+| `mailpit.smtp` | `MAILPIT_SMTP` | `localhost:1025` | Where `push-mailpit` sends emails |
 | (none) | `EXEMPLAR_API_KEY` | | API key for remote CLI commands |
 
 ## Dependencies

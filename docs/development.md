@@ -10,6 +10,16 @@ task check         # vet + lint + race tests (the CI gate)
 go run . serve
 ```
 
+Integration test against a real Mailpit (needs Docker; starts and stops a
+pinned `axllent/mailpit` container):
+
+```bash
+task test:mailpit
+```
+
+It sets `EXEMPLAR_TEST_MAILPIT_SMTP` and `EXEMPLAR_TEST_MAILPIT_API`; without
+them `TestRealMailpit` is skipped, so `task test` needs no Docker.
+
 Coverage across packages:
 
 ```bash
@@ -55,6 +65,10 @@ go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cov
 - **Client tests** (`internal/client`) run the real routes in an
   `httptest.Server` and exercise every client method, including how each
   status maps back to an `apperr` kind.
+
+- **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
+  that records envelopes and data, can require AUTH PLAIN and can reject a
+  recipient.
 
 - **MCP tests** (`cmd/mcp/mcp_test.go`) serve `Handler(app)` with
   `httptest`, generate data, and call the tools with the MCP library's own

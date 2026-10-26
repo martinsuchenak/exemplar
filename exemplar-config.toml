@@ -19,4 +19,7 @@ port = 9000
 
 [client]
 server = "http://localhost:8080"
+
+[mailpit]
+smtp = "localhost:1025"
 # go-scaffolder:config-sections

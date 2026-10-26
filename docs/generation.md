@@ -114,6 +114,11 @@ fails with a name conflict instead of duplicating it.
 Fixture provenance records `source: synthetic` and
 `generator: exemplar-synth/1 seed=<seed>`.
 
+## Into a mailbox
+
+`exemplar push-mailpit <dataset-id>` sends the generated emails to Mailpit,
+tagged with a run ID; see [cli.md](cli.md).
+
 ## Limits and failures
 
 Up to 500 items and 200 people per request. Items are stored one by one; if one

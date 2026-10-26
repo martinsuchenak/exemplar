@@ -57,6 +57,9 @@ services make every access decision.
 exemplar upload ─> internal/client ─HTTP─> cmd/routes ─> fixture.Handler ─> fixture.Service
 ```
 
+`push-mailpit` downloads emails the same way, then `internal/mailpit` sends the
+bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
+
 ## Packages
 
 | Package | Role |
@@ -77,6 +80,7 @@ exemplar upload ─> internal/client ─HTTP─> cmd/routes ─> fixture.Handler
 | `internal/generate` | Fills datasets with synthetic fixtures; stores each through the fixture service. |
 | `internal/synth` | Pure, seeded content generation: people, companies, text, files, emails, records. No database. |
 | `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
+| `internal/mailpit` | Sends email bytes over SMTP with run tags; `mailpittest` is a fake SMTP server for tests. |
 | `internal/testutil` | Builds a real app in a temp directory plus admin and member principals for tests. |
 
 ## Errors

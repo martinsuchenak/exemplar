@@ -38,6 +38,16 @@ tasks:
     cmds:
       - go test ./... -v -count=1 -race
 
+  test:mailpit:
+    desc: Run the Mailpit integration test against a throwaway Mailpit container (needs Docker)
+    vars:
+      MAILPIT_IMAGE: axllent/mailpit:v1.32.0
+    cmds:
+      - docker run -d --rm --name exemplar-test-mailpit -p 127.0.0.1:11025:1025 -p 127.0.0.1:18025:8025 {{.MAILPIT_IMAGE}}
+      - defer: docker stop exemplar-test-mailpit
+      - for i in $(seq 1 50); do curl -sf -o /dev/null http://127.0.0.1:18025/api/v1/info && break; sleep 0.2; done
+      - EXEMPLAR_TEST_MAILPIT_SMTP=127.0.0.1:11025 EXEMPLAR_TEST_MAILPIT_API=http://127.0.0.1:18025 go test ./internal/mailpit/ -run TestRealMailpit -count=1 -v
+
   clean:
     desc: Clean build artifacts
     cmds:

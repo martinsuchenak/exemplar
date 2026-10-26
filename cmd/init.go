@@ -51,6 +51,9 @@ port = 9000
 
 [client]
 server = "http://localhost:8080"
+
+[mailpit]
+smtp = "localhost:1025"
 `
 			if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
 				return fmt.Errorf("writing config file: %w", err)
