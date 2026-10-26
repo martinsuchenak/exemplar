@@ -71,6 +71,10 @@ func TestEveryAPIRouteNeedsAKey(t *testing.T) {
 		{"POST", "/api/v1/fixtures/x/review"},
 		{"POST", "/api/v1/purge"},
 		{"GET", "/api/v1/audit"},
+		{"GET", "/api/v1/persons"},
+		{"POST", "/api/v1/persons"},
+		{"GET", "/api/v1/persons/x"},
+		{"POST", "/api/v1/datasets/x/generate"},
 	} {
 		if w := call(mux, r.method, r.path, "", ""); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without key: %d, want 401", r.method, r.path, w.Code)
@@ -94,6 +98,12 @@ func TestMalformedRequests(t *testing.T) {
 		{"GET", "/api/v1/audit?after_seq=x", ""},
 		{"GET", "/api/v1/audit?limit=x", ""},
 		{"POST", "/api/v1/datasets/" + dsID + "/fixtures", "no name given"},
+		{"POST", "/api/v1/persons", "{"},
+		{"POST", "/api/v1/persons", `{"count":0}`},
+		{"GET", "/api/v1/persons?limit=x", ""},
+		{"GET", "/api/v1/persons?offset=x", ""},
+		{"POST", "/api/v1/datasets/" + dsID + "/generate", "{"},
+		{"POST", "/api/v1/datasets/" + dsID + "/generate", `{"kind":"files"}`},
 	} {
 		if w := call(mux, r.method, r.path, key, r.body); w.Code != http.StatusBadRequest {
 			t.Errorf("%s %s %q: %d, want 400 (%s)", r.method, r.path, r.body, w.Code, w.Body)
@@ -107,6 +117,7 @@ func TestStatusCodes(t *testing.T) {
 		method, path, body string
 		want               int
 	}{
+		{"POST", "/api/v1/datasets/" + dsID + "/generate", `{"kind":"records","count":2,"seed":1}`, http.StatusCreated},
 		// An empty body forks under the source's name, which the owner already uses.
 		{"POST", "/api/v1/datasets/" + dsID + "/fork", "", http.StatusConflict},
 		{"POST", "/api/v1/datasets/" + dsID + "/fork", `{"name":"copy"}`, http.StatusCreated},
@@ -120,6 +131,10 @@ func TestStatusCodes(t *testing.T) {
 		{"GET", "/api/v1/fixtures/missing/content", "", http.StatusNotFound},
 		{"DELETE", "/api/v1/fixtures/missing", "", http.StatusNotFound},
 		{"POST", "/api/v1/fixtures/missing/review", `{"approve":true}`, http.StatusNotFound},
+		{"GET", "/api/v1/persons/missing", "", http.StatusNotFound},
+		{"POST", "/api/v1/datasets/missing/generate", `{"kind":"files","count":1}`, http.StatusNotFound},
+		{"POST", "/api/v1/persons", `{"count":2}`, http.StatusCreated},
+		{"GET", "/api/v1/datasets/" + dsID + "/fixtures?record_schema=contact&person_id=x", "", http.StatusOK},
 		{"DELETE", "/api/v1/datasets/missing", "", http.StatusNotFound},
 		{"POST", "/api/v1/datasets/missing/freeze", "", http.StatusNotFound},
 		{"POST", "/api/v1/datasets/missing/fork", "", http.StatusNotFound},

@@ -69,16 +69,19 @@ is used.
 
 | Method and path | Who | Body / query | Response |
 |-----------------|-----|--------------|----------|
-| `GET /api/v1/datasets/{id}/fixtures` | readers | `?kind= &format= &scenario= &tag= &review_state= &limit= &offset=` | Fixtures, by name; limit defaults to 100, at most 1000 |
-| `POST /api/v1/datasets/{id}/fixtures` | can change the dataset | Raw content as the body; `?name=` (required) `&kind= &format= &mime_type= &scenario= &tags=a,b &source= &generator=` | `201` Fixture |
+| `GET /api/v1/datasets/{id}/fixtures` | readers | `?kind= &format= &scenario= &tag= &review_state= &record_schema= &person_id= &limit= &offset=` | Fixtures, by name; limit defaults to 100, at most 1000 |
+| `POST /api/v1/datasets/{id}/fixtures` | can change the dataset | Raw content as the body; `?name=` (required) `&kind= &format= &mime_type= &scenario= &tags=a,b &source= &generator= &record_schema=` | `201` Fixture |
 | `GET /api/v1/fixtures/{id}` | readers | | Fixture |
 | `GET /api/v1/fixtures/{id}/content` | readers | | The content |
 | `DELETE /api/v1/fixtures/{id}` | can change the dataset | | `204` |
 | `POST /api/v1/fixtures/{id}/review` | admin | `{"approve": true\|false}` | Fixture |
 | `POST /api/v1/purge` | admin | `{"ingest_batch": "…"}` | `{"ingest_batch", "deleted": n}` |
 
+A Fixture includes `record_schema` (records only) and `people`: the registry
+people it mentions, as `{"person_id", "role"}`.
+
 Uploads stream to disk; kind, format and MIME type are inferred from the name
-when not given. `tags` may be comma-separated or repeated. Uploading declares
+when not given; `record_schema` makes the upload a record. `tags` may be comma-separated or repeated. Uploading declares
 the content holds no real data; `source=anonymised` is only accepted into
 quarantine datasets.
 
@@ -88,6 +91,18 @@ browser never runs fixture HTML or scripts.
 
 Purge removes the batch's fixtures from every dataset they were copied to,
 frozen ones included, and is audit-logged.
+
+### People and generation
+
+| Method and path | Who | Body / query | Response |
+|-----------------|-----|--------------|----------|
+| `GET /api/v1/persons` | any key | `?company= &limit= &offset=` | People by last name |
+| `POST /api/v1/persons` | write key | `{"count", "seed"}` | `201` `{"seed", "people": [Person]}` |
+| `GET /api/v1/persons/{id}` | any key | | Person |
+| `POST /api/v1/datasets/{id}/generate` | can change the dataset | `{"kind", "count", "formats", "shapes", "schemas", "profile", "people", "seed", "scenario", "tags"}` | `201` `{"seed", "fixtures": [Fixture], "person_ids"}` |
+
+See [generation.md](generation.md) for the request fields, email shapes and
+record schemas.
 
 ### Audit log
 

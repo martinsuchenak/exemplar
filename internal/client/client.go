@@ -20,6 +20,8 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/audit"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
+	"github.com/martinsuchenak/exemplar/internal/generate"
+	"github.com/martinsuchenak/exemplar/internal/person"
 )
 
 // Client calls one exemplar server with one API key.
@@ -178,6 +180,8 @@ func (c *Client) ListFixtures(ctx context.Context, datasetID string, f fixture.L
 	set("scenario", f.Scenario)
 	set("tag", f.Tag)
 	set("review_state", string(f.ReviewState))
+	set("record_schema", f.RecordSchema)
+	set("person_id", f.PersonID)
 	if f.Limit > 0 {
 		q.Set("limit", fmt.Sprint(f.Limit))
 	}
@@ -191,14 +195,15 @@ func (c *Client) ListFixtures(ctx context.Context, datasetID string, f fixture.L
 // UploadInput is a fixture's metadata for Upload. Empty fields are inferred
 // by the server.
 type UploadInput struct {
-	Name      string
-	Kind      fixture.Kind
-	Format    string
-	MimeType  string
-	Scenario  string
-	Tags      []string
-	Source    fixture.Source
-	Generator string
+	Name         string
+	Kind         fixture.Kind
+	Format       string
+	MimeType     string
+	Scenario     string
+	Tags         []string
+	Source       fixture.Source
+	Generator    string
+	RecordSchema string
 }
 
 // Upload streams content into a dataset as a new fixture.
@@ -217,6 +222,7 @@ func (c *Client) Upload(ctx context.Context, datasetID string, in UploadInput, c
 	set("tags", strings.Join(in.Tags, ","))
 	set("source", string(in.Source))
 	set("generator", in.Generator)
+	set("record_schema", in.RecordSchema)
 	var out fixture.Fixture
 	return &out, c.send(ctx, http.MethodPost, "/api/v1/datasets/"+url.PathEscape(datasetID)+"/fixtures", q, content, "application/octet-stream", &out)
 }
@@ -245,6 +251,40 @@ func (c *Client) DeleteFixture(ctx context.Context, id string) error {
 func (c *Client) Review(ctx context.Context, id string, approve bool) (*fixture.Fixture, error) {
 	var out fixture.Fixture
 	return &out, c.do(ctx, http.MethodPost, "/api/v1/fixtures/"+url.PathEscape(id)+"/review", nil, fixture.ReviewInput{Approve: &approve}, &out)
+}
+
+// ListPersons lists people in the registry.
+func (c *Client) ListPersons(ctx context.Context, f person.ListFilter) ([]person.Person, error) {
+	q := url.Values{}
+	if f.Company != "" {
+		q.Set("company", f.Company)
+	}
+	if f.Limit > 0 {
+		q.Set("limit", fmt.Sprint(f.Limit))
+	}
+	if f.Offset > 0 {
+		q.Set("offset", fmt.Sprint(f.Offset))
+	}
+	var out []person.Person
+	return out, c.do(ctx, http.MethodGet, "/api/v1/persons", q, nil, &out)
+}
+
+// GetPerson returns one person.
+func (c *Client) GetPerson(ctx context.Context, id string) (*person.Person, error) {
+	var out person.Person
+	return &out, c.do(ctx, http.MethodGet, "/api/v1/persons/"+url.PathEscape(id), nil, nil, &out)
+}
+
+// GeneratePersons adds new people to the registry.
+func (c *Client) GeneratePersons(ctx context.Context, in person.GenerateInput) (*person.GenerateResult, error) {
+	var out person.GenerateResult
+	return &out, c.do(ctx, http.MethodPost, "/api/v1/persons", nil, in, &out)
+}
+
+// Generate fills a dataset with synthetic fixtures.
+func (c *Client) Generate(ctx context.Context, datasetID string, req generate.Request) (*generate.Result, error) {
+	var out generate.Result
+	return &out, c.do(ctx, http.MethodPost, "/api/v1/datasets/"+url.PathEscape(datasetID)+"/generate", nil, req, &out)
 }
 
 // Purge deletes every fixture from an ingest batch (admin key).

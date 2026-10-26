@@ -34,6 +34,8 @@ const (
 	ActionFixtureApprove  = "fixture.approve"
 	ActionFixtureReject   = "fixture.reject"
 	ActionFixturePurge    = "fixture.purge"
+	ActionFixtureGenerate = "fixture.generate"
+	ActionPersonGenerate  = "person.generate"
 )
 
 // Event is one audit log entry. Seq orders events and pages through them.

@@ -21,7 +21,7 @@ func NewHandler(s *Service) *Handler {
 }
 
 // List returns a dataset's fixtures. Query parameters: kind, format,
-// scenario, tag, review_state, limit, offset.
+// scenario, tag, review_state, record_schema, person_id, limit, offset.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p, ok := rest.Caller(w, r)
 	if !ok {
@@ -39,13 +39,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list, err := h.service.List(r.Context(), p, r.PathValue("id"), ListFilter{
-		Kind:        Kind(q.Get("kind")),
-		Format:      q.Get("format"),
-		Scenario:    q.Get("scenario"),
-		Tag:         q.Get("tag"),
-		ReviewState: ReviewState(q.Get("review_state")),
-		Limit:       limit,
-		Offset:      offset,
+		Kind:         Kind(q.Get("kind")),
+		Format:       q.Get("format"),
+		Scenario:     q.Get("scenario"),
+		Tag:          q.Get("tag"),
+		ReviewState:  ReviewState(q.Get("review_state")),
+		RecordSchema: q.Get("record_schema"),
+		PersonID:     q.Get("person_id"),
+		Limit:        limit,
+		Offset:       offset,
 	})
 	if err != nil {
 		rest.RespondServiceError(w, err)
@@ -56,7 +58,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 // Upload adds a fixture to a dataset. The request body is the raw content;
 // metadata comes from query parameters: name (required), kind, format,
-// mime_type, scenario, tags (comma-separated), source, generator.
+// mime_type, scenario, tags (comma-separated), source, generator,
+// record_schema.
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	p, ok := rest.Caller(w, r)
 	if !ok {
@@ -64,16 +67,17 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	f, err := h.service.Create(r.Context(), p, CreateInput{
-		DatasetID: r.PathValue("id"),
-		Name:      q.Get("name"),
-		Kind:      Kind(q.Get("kind")),
-		Format:    q.Get("format"),
-		MimeType:  q.Get("mime_type"),
-		Scenario:  q.Get("scenario"),
-		Tags:      rest.QueryList(r, "tags"),
-		Source:    Source(q.Get("source")),
-		Generator: q.Get("generator"),
-		Content:   r.Body,
+		DatasetID:    r.PathValue("id"),
+		Name:         q.Get("name"),
+		Kind:         Kind(q.Get("kind")),
+		Format:       q.Get("format"),
+		MimeType:     q.Get("mime_type"),
+		Scenario:     q.Get("scenario"),
+		Tags:         rest.QueryList(r, "tags"),
+		Source:       Source(q.Get("source")),
+		Generator:    q.Get("generator"),
+		RecordSchema: q.Get("record_schema"),
+		Content:      r.Body,
 	})
 	if err != nil {
 		rest.RespondServiceError(w, err)

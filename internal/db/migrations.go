@@ -34,6 +34,18 @@ func migrations() []migrate.Migration {
 				)
 			},
 		},
+		{
+			Version: "20261027000001",
+			Name:    "people",
+			Up:      execFile("migrations/20261027000001_people.sql"),
+			Down: func(ctx context.Context, tx *migrate.Tx) error {
+				return tx.ExecSQL(ctx,
+					`DROP TABLE fixture_persons`,
+					`ALTER TABLE fixtures DROP COLUMN record_schema`,
+					`DROP TABLE persons`,
+				)
+			},
+		},
 	}
 }
 

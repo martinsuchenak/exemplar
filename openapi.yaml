@@ -257,6 +257,8 @@ paths:
         - { name: scenario, in: query, schema: { type: string } }
         - { name: tag, in: query, schema: { type: string } }
         - { name: review_state, in: query, schema: { type: string, enum: [not-required, unreviewed, approved, rejected] } }
+        - { name: record_schema, in: query, schema: { type: string } }
+        - { name: person_id, in: query, schema: { type: string }, description: Fixtures that mention this person }
         - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 1000 } }
         - { name: offset, in: query, schema: { type: integer, default: 0 } }
       responses:
@@ -279,6 +281,7 @@ paths:
         - { name: tags, in: query, schema: { type: string }, description: Comma-separated or repeated }
         - { name: source, in: query, schema: { type: string, enum: [uploaded, synthetic, public-corpus, anonymised], default: uploaded } }
         - { name: generator, in: query, schema: { type: string } }
+        - { name: record_schema, in: query, schema: { type: string }, description: Makes the upload a record }
       requestBody:
         required: true
         content:
@@ -376,6 +379,97 @@ paths:
                   deleted: { type: integer }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+  /api/v1/datasets/{id}/generate:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    post:
+      summary: Fill a dataset with synthetic files, emails or records
+      operationId: generateFixtures
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, count]
+              properties:
+                kind: { type: string, enum: [files, emails, records] }
+                count: { type: integer, minimum: 1, maximum: 500 }
+                formats: { type: array, items: { type: string, enum: [csv, docx, gif, html, jpg, pdf, png, rtf, txt, xlsx] } }
+                shapes:
+                  type: array
+                  items: { type: string, enum: [plain, html, reply, forward, forward-attached, attachment, inline-image, calendar, auto-reply, bounce, newsletter, thread] }
+                schemas: { type: array, items: { type: string, enum: [contact, company, project, opportunity, address] } }
+                profile: { type: string, enum: [insurance, manufacturing], default: insurance }
+                people: { type: integer, minimum: 1, maximum: 200 }
+                seed: { type: integer, description: 0 or absent picks a random seed }
+                scenario: { type: string }
+                tags: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: Generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seed: { type: integer }
+                  fixtures: { type: array, items: { $ref: "#/components/schemas/Fixture" } }
+                  person_ids: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/persons:
+    get:
+      summary: List people in the registry
+      operationId: listPersons
+      parameters:
+        - { name: company, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 1000 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: People by last name
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Person" } }
+    post:
+      summary: Add new people to the registry
+      operationId: generatePersons
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [count]
+              properties:
+                count: { type: integer, minimum: 1, maximum: 1000 }
+                seed: { type: integer }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seed: { type: integer }
+                  people: { type: array, items: { $ref: "#/components/schemas/Person" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/persons/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      summary: Get a person
+      operationId: getPerson
+      responses:
+        "200":
+          description: Person
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Person" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v1/audit:
     get:
       summary: List audit events (admin)
@@ -489,6 +583,34 @@ components:
         review_state: { type: string, enum: [not-required, unreviewed, approved, rejected] }
         reviewed_by: { type: string }
         reviewed_at: { type: string, format: date-time }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        record_schema: { type: string }
+        people:
+          type: array
+          items:
+            type: object
+            properties:
+              person_id: { type: string }
+              role: { type: string }
+    Person:
+      type: object
+      properties:
+        id: { type: string }
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        job_title: { type: string }
+        company: { type: string }
+        address:
+          type: object
+          properties:
+            street: { type: string }
+            suburb: { type: string }
+            state: { type: string }
+            postcode: { type: string }
+            country: { type: string }
         created_by: { type: string }
         created_at: { type: string, format: date-time }
     AuditEvent:

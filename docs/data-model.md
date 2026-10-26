@@ -64,10 +64,35 @@ Names are unique per `(name, version)` for global datasets and per
 | `review_state` | `not-required`, `unreviewed`, `approved` or `rejected` |
 | `reviewed_by`, `reviewed_at` | Set by an admin's review |
 | `created_by`, `created_at` | |
+| `record_schema` | Records only: `contact`, `company`, `project`, `opportunity`, `address` or another lower-case name |
 
 Deleting a dataset deletes its fixtures (`ON DELETE CASCADE`). Fork and
 promote insert new fixture rows pointing at the same blobs, keeping
 provenance and review fields.
+
+### persons
+
+The person registry: fake people that records, files and emails refer to.
+
+| Column | Notes |
+|--------|-------|
+| `id` | UUIDv7 |
+| `first_name`, `last_name`, `job_title`, `phone` | |
+| `email` | Unique; on a `.example` domain; a clash gets a number (`jane.doe2@`) |
+| `company` | Company name; the company's other details derive from it |
+| `street`, `suburb`, `state`, `postcode`, `country` | Postal address |
+| `created_by`, `created_at` | |
+
+### fixture_persons
+
+| Column | Notes |
+|--------|-------|
+| `fixture_id` | Deleted with the fixture |
+| `person_id` | Must exist in `persons` |
+| `role` | `from`, `to`, `cc`, `author`, `mentioned`, `contact`, `manager`, `resident`… |
+
+The primary key is `(fixture_id, person_id, role)`. Fork and promote copy the
+links with the fixture.
 
 ### audit_events
 

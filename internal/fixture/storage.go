@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/martinsuchenak/xdal/pkg/xdal"
@@ -15,7 +16,7 @@ import (
 var columns = []string{
 	"id", "dataset_id", "name", "kind", "format", "mime_type", "blob_hash", "size", "scenario", "tags",
 	"source", "generator", "anon_profile", "anon_key_id", "ingest_batch", "review_state", "reviewed_by",
-	"reviewed_at", "created_by", "created_at",
+	"reviewed_at", "created_by", "created_at", "record_schema",
 }
 
 // Storage holds the SQL for fixtures. Only the fixture service calls it.
@@ -51,6 +52,7 @@ func (s *Storage) Insert(ctx context.Context, exec xdal.DBExecutor, f *Fixture) 
 		Set("reviewed_at", storeutil.TimeArg(f.ReviewedAt)).
 		Set("created_by", f.CreatedBy).
 		Set("created_at", storeutil.FormatTime(f.CreatedAt)).
+		Set("record_schema", f.RecordSchema).
 		Build()
 	if err != nil {
 		return err
@@ -59,7 +61,61 @@ func (s *Storage) Insert(ctx context.Context, exec xdal.DBExecutor, f *Fixture) 
 	if storeutil.IsUniqueViolation(err) {
 		return apperr.ErrConflict
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	for _, l := range f.People {
+		query, args, err := s.qb.Insert("fixture_persons").
+			Set("fixture_id", f.ID).
+			Set("person_id", l.PersonID).
+			Set("role", l.Role).
+			Build()
+		if err != nil {
+			return err
+		}
+		if _, err := exec.Exec(ctx, query, args...); err != nil {
+			if storeutil.IsForeignKeyViolation(err) {
+				return fmt.Errorf("%w: unknown person %s", apperr.ErrInvalid, l.PersonID)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// LoadLinks fills in the People of each fixture.
+func (s *Storage) LoadLinks(ctx context.Context, exec xdal.DBExecutor, fixtures []*Fixture) error {
+	if len(fixtures) == 0 {
+		return nil
+	}
+	byID := make(map[string]*Fixture, len(fixtures))
+	ids := make(xdal.InValues, len(fixtures))
+	for i, f := range fixtures {
+		f.People = []PersonLink{}
+		byID[f.ID] = f
+		ids[i] = f.ID
+	}
+	query, args, err := s.qb.Select("fixture_id", "person_id", "role").From("fixture_persons").
+		Where("fixture_id IN (?)", ids).
+		OrderBy("fixture_id", "role", "person_id").
+		Build()
+	if err != nil {
+		return err
+	}
+	rows, err := exec.Query(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var fid string
+		var l PersonLink
+		if err := rows.Scan(&fid, &l.PersonID, &l.Role); err != nil {
+			return err
+		}
+		byID[fid].People = append(byID[fid].People, l)
+	}
+	return rows.Err()
 }
 
 // Get returns a fixture by id.
@@ -89,6 +145,12 @@ func (s *Storage) List(ctx context.Context, exec xdal.DBExecutor, datasetID stri
 	}
 	if lf.ReviewState != "" {
 		q = q.Where("review_state = ?", string(lf.ReviewState))
+	}
+	if lf.RecordSchema != "" {
+		q = q.Where("record_schema = ?", lf.RecordSchema)
+	}
+	if lf.PersonID != "" {
+		q = q.Where("EXISTS (SELECT 1 FROM fixture_persons fp WHERE fp.fixture_id = fixtures.id AND fp.person_id = ?)", lf.PersonID)
 	}
 	if lf.Tag != "" {
 		q = q.Where("EXISTS (SELECT 1 FROM json_each(fixtures.tags) WHERE json_each.value = ?)", lf.Tag)
@@ -182,7 +244,7 @@ func scan(row scanner) (*Fixture, error) {
 	if err := row.Scan(
 		&f.ID, &f.DatasetID, &f.Name, &kind, &f.Format, &f.MimeType, &f.BlobHash, &f.Size, &f.Scenario, &tags,
 		&source, &f.Generator, &f.AnonProfile, &f.AnonKeyID, &f.IngestBatch, &review, &reviewedBy,
-		&reviewedAt, &f.CreatedBy, &created,
+		&reviewedAt, &f.CreatedBy, &created, &f.RecordSchema,
 	); err != nil {
 		return nil, err
 	}

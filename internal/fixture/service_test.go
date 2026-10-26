@@ -12,6 +12,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/audit"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
+	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
 	"github.com/martinsuchenak/exemplar/internal/testutil"
 )
@@ -236,7 +237,7 @@ func TestListFiltersAndPaging(t *testing.T) {
 		{Name: "a.eml", Scenario: "reply"},
 		{Name: "b.eml", Scenario: "forward"},
 		{Name: "c.pdf"},
-		{Name: "d.json", Kind: fixture.KindRecord, Source: fixture.SourceSynthetic, Generator: "test"},
+		{Name: "d.json", Kind: fixture.KindRecord, RecordSchema: "contact", Source: fixture.SourceSynthetic, Generator: "test"},
 	} {
 		in.DatasetID = ws.ID
 		in.Content = strings.NewReader(in.Name)
@@ -473,5 +474,72 @@ func TestSizeLimit(t *testing.T) {
 	}
 	if list, _ := a.Fixtures.List(ctx, admin, ws.ID, fixture.ListFilter{}); len(list) != 1 {
 		t.Errorf("dataset holds %d fixtures, want only the one at the limit", len(list))
+	}
+}
+
+func TestPersonLinksAndRecordSchemas(t *testing.T) {
+	a := testutil.NewApp(t)
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	ws := newDataset(t, a, alice, "mine", dataset.ScopeWorkspace)
+	people, _, err := a.Persons.Generate(ctx, alice, person.GenerateInput{Count: 2, Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1, p2 := people[0].ID, people[1].ID
+
+	f, err := a.Fixtures.Create(ctx, alice, fixture.CreateInput{
+		DatasetID: ws.ID, Name: "c.json", RecordSchema: "contact", Content: strings.NewReader("{}"),
+		People: []fixture.PersonLink{{PersonID: p1, Role: "contact"}, {PersonID: p1, Role: "contact"}, {PersonID: p2, Role: "manager"}},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if f.Kind != fixture.KindRecord || f.RecordSchema != "contact" || len(f.People) != 2 {
+		t.Errorf("record = %+v (duplicate links should collapse)", f)
+	}
+	got, err := a.Fixtures.Get(ctx, alice, f.ID)
+	if err != nil || len(got.People) != 2 {
+		t.Errorf("get links = %+v, %v", got, err)
+	}
+	plain, err := a.Fixtures.Create(ctx, alice, fixture.CreateInput{DatasetID: ws.ID, Name: "p.txt", Content: strings.NewReader("x")})
+	if err != nil || plain.People == nil || len(plain.People) != 0 {
+		t.Errorf("fixture without links has People = %#v, %v", plain.People, err)
+	}
+
+	byP2, _ := a.Fixtures.List(ctx, alice, ws.ID, fixture.ListFilter{PersonID: p2})
+	if len(byP2) != 1 || byP2[0].ID != f.ID || len(byP2[0].People) != 2 {
+		t.Errorf("person filter = %+v", byP2)
+	}
+	if records, _ := a.Fixtures.List(ctx, alice, ws.ID, fixture.ListFilter{RecordSchema: "contact"}); len(records) != 1 {
+		t.Errorf("schema filter = %d", len(records))
+	}
+
+	fork, err := a.Datasets.Fork(ctx, alice, ws.ID, dataset.ForkInput{Name: "copy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copies, _ := a.Fixtures.List(ctx, alice, fork.Dataset.ID, fixture.ListFilter{PersonID: p1})
+	if len(copies) != 1 || copies[0].RecordSchema != "contact" || len(copies[0].People) != 2 {
+		t.Errorf("fork lost record schema or links: %+v", copies)
+	}
+
+	tests := []struct {
+		name string
+		in   fixture.CreateInput
+	}{
+		{"record without schema", fixture.CreateInput{Name: "r.json", Kind: fixture.KindRecord}},
+		{"schema on a file", fixture.CreateInput{Name: "f.txt", Kind: fixture.KindFile, RecordSchema: "contact"}},
+		{"bad schema", fixture.CreateInput{Name: "r.json", RecordSchema: "Contact Card"}},
+		{"link without person", fixture.CreateInput{Name: "x.txt", People: []fixture.PersonLink{{Role: "to"}}}},
+		{"bad role", fixture.CreateInput{Name: "x.txt", People: []fixture.PersonLink{{PersonID: p1, Role: "To Whom"}}}},
+		{"unknown person", fixture.CreateInput{Name: "x.txt", People: []fixture.PersonLink{{PersonID: "ghost", Role: "to"}}}},
+	}
+	for _, tt := range tests {
+		tt.in.DatasetID = ws.ID
+		tt.in.Content = strings.NewReader("x")
+		if _, err := a.Fixtures.Create(ctx, alice, tt.in); !errors.Is(err, apperr.ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", tt.name, err)
+		}
 	}
 }

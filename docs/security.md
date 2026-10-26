@@ -61,6 +61,13 @@ library as the next version of its name, frozen (admin key). Both skip
 real-derived fixtures that are not approved, so unreviewed real data never
 leaves quarantine. Members cannot promote yet; a proposal workflow may follow.
 
+## Synthetic data and the person registry
+
+Generated content is `source: synthetic` and needs no review. Every generated
+address is on a reserved `.example` domain. Registry people are fake, so any
+key that can read may list them; adding people or generating content needs a
+write key, and generating into a dataset needs the right to change it.
+
 ## Real-derived data
 
 Only fixtures with source `anonymised` are derived from real data.
@@ -90,6 +97,8 @@ Only admin keys can read the log.
 | `fixture.download` | Real-derived content is read |
 | `fixture.approve`, `fixture.reject` | A real-derived fixture is reviewed |
 | `fixture.purge` | An ingest batch is purged; details record how many fixtures |
+| `fixture.generate` | Synthetic content is generated into a dataset; details record kind, count, seed and people |
+| `person.generate` | People are added to the registry, directly or for generated content |
 
 ## Files on disk
 

@@ -15,6 +15,8 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/db"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
+	"github.com/martinsuchenak/exemplar/internal/generate"
+	"github.com/martinsuchenak/exemplar/internal/person"
 )
 
 // Config locates an instance's data.
@@ -34,6 +36,8 @@ type App struct {
 	Accounts *account.Service
 	Datasets *dataset.Service
 	Fixtures *fixture.Service
+	Persons  *person.Service
+	Generate *generate.Service
 }
 
 // Open opens the database (running migrations) and blob store and builds the
@@ -55,12 +59,15 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 	datasets := dataset.NewService(conn.DB, blobs, auditService)
 	fixtures := fixture.NewService(conn.DB, blobs, datasets, auditService, cfg.MaxFixtureBytes)
 	datasets.UseFixtures(fixtures)
+	persons := person.NewService(conn.DB, auditService)
 	return &App{
 		conn:     conn,
 		Audit:    auditService,
 		Accounts: account.NewService(conn.DB, auditService),
 		Datasets: datasets,
 		Fixtures: fixtures,
+		Persons:  persons,
+		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService),
 	}, nil
 }
 

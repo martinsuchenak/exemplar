@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -90,6 +91,18 @@ type Fixture struct {
 	ReviewedAt  *time.Time  `json:"reviewed_at,omitempty"`
 	CreatedBy   string      `json:"created_by"`
 	CreatedAt   time.Time   `json:"created_at"`
+	// RecordSchema names a record's schema (contact, company…); empty for
+	// other kinds.
+	RecordSchema string `json:"record_schema,omitempty"`
+	// People are the registry people the fixture mentions and their roles.
+	People []PersonLink `json:"people"`
+}
+
+// PersonLink ties a fixture to a person in the registry, with the person's
+// role in it (from, to, cc, contact, manager…).
+type PersonLink struct {
+	PersonID string `json:"person_id"`
+	Role     string `json:"role"`
 }
 
 // RealDerived reports whether the fixture came from real data.
@@ -118,7 +131,11 @@ type CreateInput struct {
 	AnonProfile string
 	AnonKeyID   string
 	IngestBatch string
-	Content     io.Reader
+	// RecordSchema is required for, and only allowed on, kind record.
+	RecordSchema string
+	// People must exist in the person registry.
+	People  []PersonLink
+	Content io.Reader
 }
 
 // ListFilter narrows List; empty fields match everything. Limit defaults to
@@ -129,14 +146,23 @@ type ListFilter struct {
 	Scenario    string
 	Tag         string
 	ReviewState ReviewState
-	Limit       int
-	Offset      int
+	// RecordSchema matches records of one schema.
+	RecordSchema string
+	// PersonID matches fixtures that mention the person.
+	PersonID string
+	Limit    int
+	Offset   int
 }
 
 const (
 	maxNameLen     = 255
 	defaultListLim = 100
 	maxListLimit   = 1000
+)
+
+var (
+	schemaRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+	roleRe   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 )
 
 // Service manages fixtures and their content.
@@ -234,6 +260,9 @@ func (s *Service) Get(ctx context.Context, actor principal.Principal, id string)
 	if _, err := s.datasets.Authorize(ctx, s.db, actor, f.DatasetID, dataset.AccessRead); err != nil {
 		return nil, fmt.Errorf("fixture %s: %w", id, apperr.ErrNotFound)
 	}
+	if err := s.storage.LoadLinks(ctx, s.db, []*Fixture{f}); err != nil {
+		return nil, err
+	}
 	return f, nil
 }
 
@@ -257,7 +286,18 @@ func (s *Service) List(ctx context.Context, actor principal.Principal, datasetID
 	if lf.Offset < 0 {
 		lf.Offset = 0
 	}
-	return s.storage.List(ctx, s.db, datasetID, lf)
+	list, err := s.storage.List(ctx, s.db, datasetID, lf)
+	if err != nil {
+		return nil, err
+	}
+	ptrs := make([]*Fixture, len(list))
+	for i := range list {
+		ptrs[i] = &list[i]
+	}
+	if err := s.storage.LoadLinks(ctx, s.db, ptrs); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // Open returns the fixture's content. Real-derived content is only served
@@ -362,6 +402,13 @@ func (s *Service) CopyShareable(ctx context.Context, exec xdal.DBExecutor, srcID
 	if err != nil {
 		return 0, 0, err
 	}
+	ptrs := make([]*Fixture, len(fixtures))
+	for i := range fixtures {
+		ptrs[i] = &fixtures[i]
+	}
+	if err := s.storage.LoadLinks(ctx, exec, ptrs); err != nil {
+		return 0, 0, err
+	}
 	now := s.now()
 	for _, f := range fixtures {
 		if !f.Shareable() {
@@ -424,13 +471,28 @@ func (s *Service) prepare(actor principal.Principal, in CreateInput) (*Fixture, 
 	}
 	kind := in.Kind
 	if kind == "" {
-		kind = KindFile
-		if format == "eml" || format == "msg" {
+		switch {
+		case in.RecordSchema != "":
+			kind = KindRecord
+		case format == "eml" || format == "msg":
 			kind = KindEmail
+		default:
+			kind = KindFile
 		}
 	}
 	if !kind.Valid() {
 		return nil, fmt.Errorf("%w: kind must be email, file or record", apperr.ErrInvalid)
+	}
+	if (kind == KindRecord) != (in.RecordSchema != "") {
+		return nil, fmt.Errorf("%w: records need a record schema, and only records have one", apperr.ErrInvalid)
+	}
+	if in.RecordSchema != "" && !schemaRe.MatchString(in.RecordSchema) {
+		return nil, fmt.Errorf("%w: record schema must be lower-case letters, digits and '-'", apperr.ErrInvalid)
+	}
+	for _, l := range in.People {
+		if l.PersonID == "" || !roleRe.MatchString(l.Role) {
+			return nil, fmt.Errorf("%w: person links need a person ID and a lower-case role", apperr.ErrInvalid)
+		}
 	}
 	source := in.Source
 	if source == "" {
@@ -448,23 +510,39 @@ func (s *Service) prepare(actor principal.Principal, in CreateInput) (*Fixture, 
 		mimeType = mimeFor(format)
 	}
 	return &Fixture{
-		ID:          storeutil.NewID(),
-		DatasetID:   in.DatasetID,
-		Name:        name,
-		Kind:        kind,
-		Format:      format,
-		MimeType:    mimeType,
-		Scenario:    strings.TrimSpace(in.Scenario),
-		Tags:        normaliseTags(in.Tags),
-		Source:      source,
-		Generator:   in.Generator,
-		AnonProfile: in.AnonProfile,
-		AnonKeyID:   in.AnonKeyID,
-		IngestBatch: in.IngestBatch,
-		ReviewState: review,
-		CreatedBy:   actor.AccountID,
-		CreatedAt:   s.now(),
+		ID:           storeutil.NewID(),
+		DatasetID:    in.DatasetID,
+		Name:         name,
+		Kind:         kind,
+		Format:       format,
+		MimeType:     mimeType,
+		Scenario:     strings.TrimSpace(in.Scenario),
+		Tags:         normaliseTags(in.Tags),
+		Source:       source,
+		Generator:    in.Generator,
+		AnonProfile:  in.AnonProfile,
+		AnonKeyID:    in.AnonKeyID,
+		IngestBatch:  in.IngestBatch,
+		ReviewState:  review,
+		CreatedBy:    actor.AccountID,
+		CreatedAt:    s.now(),
+		RecordSchema: in.RecordSchema,
+		People:       uniqueLinks(in.People),
 	}, nil
+}
+
+// uniqueLinks drops repeated person/role pairs and never returns nil, so the
+// JSON shows an empty list.
+func uniqueLinks(links []PersonLink) []PersonLink {
+	out := []PersonLink{}
+	seen := map[PersonLink]bool{}
+	for _, l := range links {
+		if !seen[l] {
+			seen[l] = true
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func checkSourceFits(source Source, d *dataset.Dataset) error {

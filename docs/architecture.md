@@ -29,6 +29,18 @@ fixtures copied inside the dataset service's transaction: the dataset service
 calls a `dataset.FixtureCopier`, which `fixture.Service` implements and
 `app.Open` wires in with `UseFixtures`.
 
+## Generation
+
+```
+generate.Service ─> dataset.Service.Authorize (write)
+                 ─> person.Service.Pick (reuse or create people)
+                 ─> synth (content, from the seed)
+                 ─> fixture.Service.Create (each item: access, blob, links, audit)
+```
+
+`synth` never touches storage, so it is tested on its own, byte for byte. See
+[generation.md](generation.md).
+
 ## CLI and API
 
 Host commands (`serve`, `bootstrap`, `init`) open the app directly. All other
@@ -56,6 +68,9 @@ exemplar upload ─> internal/client ─HTTP─> cmd/routes ─> fixture.Handler
 | `internal/auth` | `X-API-Key` middleware; resolves keys through the account service. |
 | `internal/db` | SQLite connection (pragmas, file permissions) and migrations. |
 | `internal/storeutil` | IDs (UUIDv7), timestamp and JSON column helpers for storage code. |
+| `internal/person` | The person registry: list, get, generate, and `Pick` for generated content. |
+| `internal/generate` | Fills datasets with synthetic fixtures; stores each through the fixture service. |
+| `internal/synth` | Pure, seeded content generation: people, companies, text, files, emails, records. No database. |
 | `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
 | `internal/testutil` | Builds a real app in a temp directory plus admin and member principals for tests. |
 

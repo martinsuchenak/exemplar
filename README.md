@@ -65,6 +65,7 @@ go run . serve
 export EXEMPLAR_API_KEY=exm_...
 go run . datasets create --name replies
 go run . upload <dataset-id> ./samples --scenario outlook-reply
+go run . generate <dataset-id> --kind emails --count 24
 go run . fixtures list <dataset-id>
 
 # Or the API

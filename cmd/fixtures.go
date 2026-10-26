@@ -33,6 +33,8 @@ func fixturesCmd() *cli.Command {
 					&cli.StringFlag{Name: "scenario", Usage: "Scenario label"},
 					&cli.StringFlag{Name: "tag", Usage: "Tag"},
 					&cli.StringFlag{Name: "review-state", Usage: "not-required, unreviewed, approved or rejected"},
+					&cli.StringFlag{Name: "record-schema", Usage: "Records of one schema, e.g. contact"},
+					&cli.StringFlag{Name: "person", Usage: "Fixtures that mention this person ID"},
 					&cli.IntFlag{Name: "limit", Usage: "Maximum fixtures (default 100, at most 1000)"},
 					&cli.IntFlag{Name: "offset", Usage: "Fixtures to skip"},
 				),
@@ -46,13 +48,15 @@ func fixturesCmd() *cli.Command {
 						return err
 					}
 					list, err := c.ListFixtures(ctx, id, fixture.ListFilter{
-						Kind:        fixture.Kind(cmd.GetString("kind")),
-						Format:      cmd.GetString("format"),
-						Scenario:    cmd.GetString("scenario"),
-						Tag:         cmd.GetString("tag"),
-						ReviewState: fixture.ReviewState(cmd.GetString("review-state")),
-						Limit:       cmd.GetInt("limit"),
-						Offset:      cmd.GetInt("offset"),
+						Kind:         fixture.Kind(cmd.GetString("kind")),
+						Format:       cmd.GetString("format"),
+						Scenario:     cmd.GetString("scenario"),
+						Tag:          cmd.GetString("tag"),
+						ReviewState:  fixture.ReviewState(cmd.GetString("review-state")),
+						RecordSchema: cmd.GetString("record-schema"),
+						PersonID:     cmd.GetString("person"),
+						Limit:        cmd.GetInt("limit"),
+						Offset:       cmd.GetInt("offset"),
 					})
 					if err != nil {
 						return err

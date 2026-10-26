@@ -66,3 +66,8 @@ func DecodeStrings(s string) []string {
 func IsUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
+
+// IsForeignKeyViolation reports whether err is a FOREIGN KEY constraint failure.
+func IsForeignKeyViolation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
+}

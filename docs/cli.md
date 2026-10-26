@@ -101,8 +101,24 @@ export EXEMPLAR_API_KEY=exm_...
 
 | Command | Description |
 |---------|-------------|
-| `fixtures list <dataset-id> [--kind] [--format] [--scenario] [--tag] [--review-state] [--limit] [--offset]` | |
+| `fixtures list <dataset-id> [--kind] [--format] [--scenario] [--tag] [--review-state] [--record-schema] [--person ID] [--limit] [--offset]` | |
 | `fixtures download <fixture-id> [--output FILE]` | To stdout, or a new file (never overwrites) |
+
+### `persons`
+
+| Command | Description |
+|---------|-------------|
+| `persons list [--company C] [--limit] [--offset]` | People in the registry |
+| `persons generate [--count 10] [--seed N]` | Add people; prints the seed |
+
+### `generate`
+
+```bash
+exemplar generate <dataset-id> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--schemas contact,company] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
+```
+
+Fills a dataset with synthetic content about registry people and prints the
+seed; see [generation.md](generation.md).
 
 ### `upload`
 

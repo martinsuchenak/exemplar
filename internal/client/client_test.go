@@ -17,7 +17,10 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/client"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
+	"github.com/martinsuchenak/exemplar/internal/generate"
+	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/synth"
 	"github.com/martinsuchenak/exemplar/internal/testutil"
 )
 
@@ -329,5 +332,47 @@ func TestMalformedSuccessBody(t *testing.T) {
 	defer srv.Close()
 	if _, err := newClient(t, srv.URL, "exm_x").Me(ctx); err == nil || !strings.Contains(err.Error(), "decoding") {
 		t.Errorf("err = %v, want a decoding error", err)
+	}
+}
+
+func TestPersonsAndGenerate(t *testing.T) {
+	admin, alice, _, _ := server(t, nil)
+
+	gen, err := alice.GeneratePersons(ctx, person.GenerateInput{Count: 4, Seed: 9})
+	if err != nil || gen.Seed != 9 || len(gen.People) != 4 {
+		t.Fatalf("generate persons = %+v, %v", gen, err)
+	}
+	list, err := admin.ListPersons(ctx, person.ListFilter{Company: gen.People[0].Company, Limit: 10, Offset: 0})
+	if err != nil || len(list) == 0 {
+		t.Errorf("list by company = %d, %v", len(list), err)
+	}
+	if page, _ := admin.ListPersons(ctx, person.ListFilter{Limit: 2, Offset: 2}); len(page) != 2 {
+		t.Errorf("page = %d", len(page))
+	}
+	if got, err := alice.GetPerson(ctx, gen.People[0].ID); err != nil || got.Email != gen.People[0].Email {
+		t.Errorf("get person = %+v, %v", got, err)
+	}
+	if _, err := alice.GetPerson(ctx, "missing"); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("missing person err = %v", err)
+	}
+
+	ds, err := alice.CreateDataset(ctx, dataset.CreateInput{Name: "gen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := alice.Generate(ctx, ds.ID, generate.Request{Kind: generate.KindRecords, Count: 3, Schemas: []synth.RecordSchema{synth.SchemaContact}, People: 3, Seed: 4})
+	if err != nil || len(res.Fixtures) != 3 || res.Seed != 4 {
+		t.Fatalf("generate = %+v, %v", res, err)
+	}
+	byPerson, err := alice.ListFixtures(ctx, ds.ID, fixture.ListFilter{PersonID: res.PersonIDs[0], RecordSchema: "contact"})
+	if err != nil || len(byPerson) != 1 {
+		t.Errorf("fixtures for person = %d, %v", len(byPerson), err)
+	}
+	up, err := alice.Upload(ctx, ds.ID, client.UploadInput{Name: "extra.json", RecordSchema: "company"}, strings.NewReader("{}"))
+	if err != nil || up.Kind != fixture.KindRecord || up.RecordSchema != "company" {
+		t.Errorf("record upload = %+v, %v", up, err)
+	}
+	if _, err := alice.Generate(ctx, ds.ID, generate.Request{Kind: "videos", Count: 1}); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("bad kind err = %v", err)
 	}
 }
