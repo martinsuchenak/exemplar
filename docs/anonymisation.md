@@ -53,8 +53,10 @@ rest; its row in the result carries the error.
 | People in headers | Address headers | A registry person; the same real address always maps to the same person |
 | Names in text | Presidio (`PERSON`), plus every name from the batch's headers | Fake first and last names, case kept, each real name token mapped once |
 | Email addresses | Pattern | The person's fake address, or a fake local part at a fake domain |
-| Domains and companies | Addresses, URLs, `Pty Ltd`-style suffixes | A fake company; its domain is the company name on `.example`, subdomains kept |
-| URLs | Pattern | Same scheme and subdomains on the fake domain; path and query replaced |
+| Domains and companies | Addresses, URLs, `Pty Ltd`-style suffixes | A fake company; its domain is the company name on `.example`. A company name learned from a domain (`acme` from `acme.com.au`) is also replaced inside identifiers: `acme-prod`, `logo_acme.png`. Every domain in the address headers is also replaced where it appears alone, as in a DMARC subject |
+| Subdomains | Domains anywhere | Generic labels (`mail`, `www`, `api`, `reply`, `mx1`…) kept; any other label (a client, product or system name) replaced with a fake, the same every time |
+| URLs | Pattern | Same scheme on the fake domain; path and query replaced |
+| Profile terms | The profile's `terms` list | The company-style fake (the same company as the domain it names), in any case, also inside identifiers; a term wins over a name a display name made of it |
 | Phone numbers | Australian patterns | Fake digits; leading zeros and the first other digit kept (`04…`, `(02)…`, `13…`) |
 | ABN, ACN | Labelled patterns | Fake digits, same layout |
 | Money | `$`, `AUD` patterns | Fake digits, same layout |
@@ -77,7 +79,10 @@ JPEG files are padded with a metadata chunk, so they still decode.
 Headers not on the allowlist are dropped: `Received`, DKIM and ARC signatures,
 `X-MS-Exchange-*`, `X-Originating-IP` and the like. They carry addresses, IPs
 and tenant ids that nothing downstream reads. The result reports how many were
-dropped. The allowlist is `keepHeaders` in `internal/anonymise/engine.go`.
+dropped. The allowlist is `keepHeaders` in `internal/anonymise/engine.go`. Kept
+headers that hold free text (`Subject`, `Thread-Topic`, `Content-Description`,
+`X-Mailer`, `User-Agent`) go through the same replacements as bodies, and so
+does each MIME part's `Content-Description`.
 
 ## Consistency and the key
 
@@ -146,6 +151,8 @@ unknown `--profile` is answered with the names of the profiles the server has.
 | `keep_domains` | Domains and their subdomains left as they are |
 | `keep_local_parts` | Address local parts left as they are (`noreply`, `support`, …) |
 | `stop_words` | Words never replaced, even when tagged as a name |
+| `automated_markers` | Markers of automated senders (`dmarc`, `report`, `noreply`, `alert`…): an address whose local part contains one is kept like `keep_local_parts`, and its display name ("DMARC Report") is not read as a person's name. Terms and company names inside a kept local part are still replaced (`acme-alerts@` becomes `<fake>-alerts@`) |
+| `terms` | Names that identify where the mail comes from and no detector can know: your organisation, products, client codes. Always replaced |
 | `two_level_suffixes` | Public suffixes such as `com.au`, so `acme.com.au` is read as company `acme` |
 
 A profile file is complete on its own: fields it leaves out are empty, not

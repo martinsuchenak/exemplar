@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/martinsuchenak/exemplar/internal/synth"
+	"github.com/martinsuchenak/exemplar/internal/textswap"
 )
 
 // Registry gives the engine fake people and name tokens that last across
@@ -115,6 +116,29 @@ func (e *Engine) fakeCompany(value string) string {
 	return fake + suffix
 }
 
+// scrubLocal replaces profile terms and known company names inside a local
+// part that is otherwise kept ("support-acme" or "acme.systems-1793025610" in
+// a DMARC report id), as compact lower-case fakes.
+func (e *Engine) scrubLocal(local string) string {
+	loose := map[string]string{}
+	for c := range e.companies {
+		loose[c] = companyKey(e.fakeCompany(c))
+	}
+	for _, t := range e.profile.Terms {
+		if t = strings.TrimSpace(t); t != "" {
+			loose[strings.ToLower(t)] = companyKey(e.fakeCompany(t))
+		}
+	}
+	if len(loose) == 0 {
+		return local
+	}
+	r, err := textswap.NewSets(textswap.Sets{Loose: loose})
+	if err != nil {
+		return local
+	}
+	return r.Apply(local)
+}
+
 // fakeDomain maps a domain to its fake company's domain, keeping subdomains:
 // mail.acme.com.au becomes mail.<company>.example. Kept domains stay.
 func (e *Engine) fakeDomain(d string) string {
@@ -124,7 +148,32 @@ func (e *Engine) fakeDomain(d string) string {
 	}
 	sub, registrable := e.profile.splitDomain(d)
 	base := synth.CompanyFor(e.companyName(companyKey(registrable))).Domain
+	for i, label := range sub {
+		sub[i] = e.fakeLabel(label)
+	}
 	return strings.Join(append(sub, base), ".")
+}
+
+// genericLabels are subdomain labels that say what a host does, not whose it
+// is; they are kept so hosts still look like mail, web or API hosts. A
+// trailing number ("mail2", "mx1") does not change that.
+var genericLabels = set([]string{
+	"www", "mail", "smtp", "imap", "pop", "mx", "webmail", "email", "e", "em", "m", "mta", "out",
+	"outbound", "inbound", "reply", "replies", "bounce", "bounces", "news", "newsletter", "lists",
+	"list", "info", "go", "app", "apps", "api", "portal", "support", "help", "docs", "cdn",
+	"static", "assets", "img", "images", "media", "files", "link", "links", "click", "clicks",
+	"track", "tracking", "t", "s", "o", "md", "login", "auth", "sso", "id", "my", "secure",
+	"shop", "store", "blog", "dev", "test", "staging", "prod", "au", "nz", "uk", "us", "eu",
+})
+
+// fakeLabel keeps a generic subdomain label and replaces any other (a
+// client, product or system name such as "acme-prod") with a fake one, the
+// same every time.
+func (e *Engine) fakeLabel(label string) string {
+	if genericLabels[strings.ToLower(strings.TrimRight(label, "0123456789"))] {
+		return label
+	}
+	return companyKey(e.fakeCompany(strings.ToLower(label)))
 }
 
 // fakeEmail maps an address found in text. Addresses from headers resolve to
@@ -139,7 +188,8 @@ func (e *Engine) fakeEmail(ctx context.Context, addr string) (string, error) {
 	}
 	local, domain := addr[:i], addr[i+1:]
 	switch {
-	case e.profile.keepLocal[strings.ToLower(local)]:
+	case e.profile.keepsLocal(local):
+		local = e.scrubLocal(local)
 	case nameLocalRe.MatchString(local):
 		var err error
 		local = letterRe.ReplaceAllStringFunc(local, func(w string) string {
@@ -257,7 +307,7 @@ func (e *Engine) fake(ctx context.Context, entity, value string) (string, error)
 		return e.fakeID(value), nil
 	case entity == EntityURL:
 		return e.fakeURL(ctx, value)
-	case entity == EntityOrganization || entity == EntityCompany:
+	case entity == EntityOrganization || entity == EntityCompany || entity == EntityTerm:
 		return e.fakeCompany(value), nil
 	case entity == EntityStreet:
 		return synth.New(e.key.Seed("street", value)).Address().Street, nil

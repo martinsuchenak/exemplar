@@ -32,7 +32,7 @@ var (
 	})
 	addressHeaders = set([]string{"From", "To", "Cc", "Bcc", "Reply-To", "Sender", "Return-Path", "Disposition-Notification-To"})
 	idHeaders      = set([]string{"Message-ID", "In-Reply-To", "References"})
-	textHeaders    = set([]string{"Subject", "Thread-Topic", "Content-Description"})
+	textHeaders    = set([]string{"Subject", "Thread-Topic", "Content-Description", "X-Mailer", "User-Agent"})
 	urlHeaders     = set([]string{"List-Unsubscribe", "List-Post", "List-Help", "List-Id"})
 	headerRoles    = map[string]string{"from": "from", "sender": "from", "to": "to", "cc": "cc", "bcc": "bcc", "reply-to": "reply-to"}
 	reportTypes    = set([]string{"message/delivery-status", "message/disposition-notification"})
@@ -54,6 +54,9 @@ type Engine struct {
 	// pairs are corpus-wide replacements learned from headers: display
 	// names, name tokens and addresses, applied in every email.
 	pairs map[string]string
+	// companies are the company names learned from address domains
+	// ("acme" from acme.com.au), replaced even inside kept local parts.
+	companies map[string]bool
 	// names are the real names from headers, sent to Presidio so it finds
 	// them wherever they appear.
 	names map[string]bool
@@ -74,7 +77,7 @@ func New(key Key, profile *Profile, detector Detector, registry Registry) (*Engi
 	}
 	return &Engine{
 		key: key, profile: profile, detector: detector, registry: registry,
-		identities: map[string]*identity{}, pairs: map[string]string{}, names: map[string]bool{},
+		identities: map[string]*identity{}, pairs: map[string]string{}, names: map[string]bool{}, companies: map[string]bool{},
 	}, nil
 }
 
@@ -153,8 +156,16 @@ func (e *Engine) resolve(ctx context.Context, display, addr string) (*identity, 
 		return nil, nil
 	}
 	local, domain := addr[:i], addr[i+1:]
-	if e.profile.keepLocal[strings.ToLower(local)] {
-		id := &identity{fake: local + "@" + e.fakeDomain(domain)}
+	// The address's domain is replaced wherever it appears on its own too
+	// ("Report domain: acme.com.au" in a subject).
+	if fake := e.fakeDomain(domain); fake != domain {
+		e.pairs[strings.ToLower(domain)] = fake
+		if _, registrable := e.profile.splitDomain(domain); len(registrable) >= 4 {
+			e.companies[strings.ToLower(registrable)] = true
+		}
+	}
+	if e.profile.keepsLocal(local) {
+		id := &identity{fake: e.scrubLocal(local) + "@" + e.fakeDomain(domain)}
 		e.identities[key], e.pairs[addr] = id, id.fake
 		return id, nil
 	}
@@ -257,7 +268,7 @@ func (e *Engine) Anonymise(ctx context.Context, data []byte) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	rep, err := textswap.New(pairs)
+	rep, err := textswap.NewSets(e.sets(pairs, f))
 	if err != nil {
 		return nil, err
 	}
@@ -270,6 +281,25 @@ func (e *Engine) Anonymise(ctx context.Context, data []byte) (*Output, error) {
 		return nil, fmt.Errorf("anonymised output is not a valid email: %w", err)
 	}
 	return out, nil
+}
+
+// sets splits the replacements by how they match. Profile terms and
+// single-word company names (most often learned from an address's domain,
+// "acme" from acme.com.au) match loosely, so they are also replaced inside
+// identifiers such as "acme-prod" or "logo_acme.png"; everything else
+// matches at word boundaries.
+func (e *Engine) sets(pairs map[string]string, f *found) textswap.Sets {
+	sets := textswap.Sets{AnyCase: map[string]string{}, Loose: map[string]string{}}
+	for v, fake := range pairs {
+		entity := f.entities[v]
+		single := !strings.ContainsAny(v, " \t") && len([]rune(v)) >= 4
+		if entity == EntityTerm || (single && (entity == EntityCompany || entity == EntityOrganization)) {
+			sets.Loose[v] = fake
+		} else {
+			sets.AnyCase[v] = fake
+		}
+	}
+	return sets
 }
 
 // collect finds personal data in one message (and messages attached to it).
@@ -421,9 +451,21 @@ type replacer = textswap.Replacer
 // replacements returns the replacements for one email: the corpus-wide
 // pairs plus a fake for every entity found in it.
 func (e *Engine) replacements(ctx context.Context, f *found) (map[string]string, error) {
+	for _, t := range e.profile.Terms {
+		if t = strings.TrimSpace(t); t != "" {
+			f.entities[t] = EntityTerm
+		}
+	}
 	pairs := map[string]string{}
 	for v, fake := range e.pairs {
 		pairs[v] = fake
+	}
+	// A term is a company-style name even if a display name made it a
+	// person's name too: it always gets the company fake.
+	for v, entity := range f.entities {
+		if entity == EntityTerm {
+			pairs[v] = e.fakeCompany(v)
+		}
 	}
 	for v, entity := range f.entities {
 		if _, ok := pairs[v]; ok {

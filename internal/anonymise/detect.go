@@ -29,10 +29,12 @@ const (
 	EntityMedicare     = "AU_MEDICARE"
 	EntityOrganization = "ORGANIZATION"
 	EntityCompany      = "COMPANY"
-	EntityMoney        = "MONEY"
-	EntityStreet       = "STREET_ADDRESS"
-	EntityDomain       = "DOMAIN"
-	EntityContentID    = "CONTENT_ID"
+	// EntityTerm is a profile term (Profile.Terms).
+	EntityTerm      = "PROFILE_TERM"
+	EntityMoney     = "MONEY"
+	EntityStreet    = "STREET_ADDRESS"
+	EntityDomain    = "DOMAIN"
+	EntityContentID = "CONTENT_ID"
 )
 
 // presidioEntities are requested from Presidio; the Go patterns cover the rest.

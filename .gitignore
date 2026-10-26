@@ -35,3 +35,6 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# Local scratch files, which may hold real data (emails to ingest).
+tmp/

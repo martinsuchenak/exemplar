@@ -26,6 +26,15 @@ keep_local_parts = [
   "accounts", "sales", "support", "enquiries", "reception",
 ]
 
+# Markers of automated senders: a local part containing one of these
+# (dmarcreport@, alerts-prod@, noreply-dmarc-support@) is kept, like the list
+# above, and its display name ("DMARC Report") is not read as a person's name.
+automated_markers = [
+  "noreply", "no-reply", "donotreply", "do-not-reply", "dmarc", "report", "notification",
+  "alert", "mailer", "daemon", "bounce", "postmaster", "robot", "monitor", "system",
+  "automat",
+]
+
 # Words named-entity recognition sometimes tags as names or organisations,
 # never replaced: greetings, sign-offs and client markers that segmentation
 # depends on.
@@ -40,6 +49,12 @@ stop_words = [
   "google", "apple", "teams", "zoom", "office", "word", "excel", "pdf", "confidential",
   "disclaimer", "privileged",
 ]
+
+# Names that identify where the mail comes from and no detector can know:
+# your organisation's name, products, client codes. Always replaced, also
+# inside identifiers. Add them in a copy of this profile, for example:
+# terms = ["Acme", "AcmeCloud", "ACX"]
+terms = []
 
 # Two-label public suffixes, so "acme.com.au" keeps ".com.au" and maps only "acme".
 two_level_suffixes = [

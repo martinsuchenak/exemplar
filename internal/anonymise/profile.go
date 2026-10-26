@@ -31,6 +31,14 @@ type Profile struct {
 	KeepLocalParts   []string `toml:"keep_local_parts" json:"keep_local_parts"`
 	StopWords        []string `toml:"stop_words" json:"stop_words"`
 	TwoLevelSuffixes []string `toml:"two_level_suffixes" json:"two_level_suffixes"`
+	// AutomatedMarkers mark automated senders: a local part containing one
+	// is kept like KeepLocalParts, and its display name is not a person's.
+	AutomatedMarkers []string `toml:"automated_markers" json:"automated_markers"`
+	// Terms are names that identify the organisation the mail comes from
+	// (its own name, products, client codes) and that no detector can know.
+	// They are always replaced, in any case, also inside identifiers
+	// ("acme-prod", "logo_acme.png").
+	Terms []string `toml:"terms" json:"terms"`
 
 	keepLocal map[string]bool
 	stop      map[string]bool
@@ -114,6 +122,21 @@ func set(values []string) map[string]bool {
 		m[strings.ToLower(v)] = true
 	}
 	return m
+}
+
+// keepsLocal reports whether an address's local part is kept as it is: a
+// listed system sender, or one carrying an automated-sender marker.
+func (p *Profile) keepsLocal(local string) bool {
+	local = strings.ToLower(local)
+	if p.keepLocal[local] {
+		return true
+	}
+	for _, m := range p.AutomatedMarkers {
+		if m != "" && strings.Contains(local, strings.ToLower(m)) {
+			return true
+		}
+	}
+	return false
 }
 
 // keepsDomain reports whether d or a parent of it is kept.

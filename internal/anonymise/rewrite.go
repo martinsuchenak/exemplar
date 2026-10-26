@@ -139,6 +139,11 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		inline := strings.HasPrefix(strings.ToLower(p.Header.Get("Content-Disposition")), "inline") || p.Header.Get("Content-ID") != ""
 		e.renameAttachment(p, name, inline)
 	}
+	// A part's description often repeats its file name or what it is about
+	// ("acme.com.au!1792800000.xml.gz" on a DMARC report).
+	if desc := p.Header.Get("Content-Description"); desc != "" {
+		p.Header.Set("Content-Description", mimetree.EncodeHeader(rep.Apply(mimetree.DecodeHeader(desc))))
+	}
 	switch {
 	case mt == "message/rfc822":
 		raw, err := p.Decoded()

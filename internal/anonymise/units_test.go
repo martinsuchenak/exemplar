@@ -446,3 +446,144 @@ func TestNoAddressHeaders(t *testing.T) {
 		t.Errorf("attachments %d, people %v", out.Attachments, out.People)
 	}
 }
+
+// ownCompany is mail from a company's own systems: its name turns up in
+// subdomains, identifiers, X-Mailer and file names, and its product and a
+// client code in the subject.
+const ownCompany = "From: Ops Bot <ops.bot@acmeco.com.au>\r\nTo: Priya Shah <priya.shah@acmeco.com.au>\r\n" +
+	"Subject: KLIX - Widgetron-PROD-11 alert\r\nX-Mailer: Acmeco Widgetron 3\r\nUser-Agent: acmeco-mailer/2\r\n" +
+	"List-Id: <widgetron-prod.acmeco-6o.acmeco.com.au>\r\nMessage-ID: <x1@klix.acmeco.com.au>\r\n" +
+	"Content-Type: text/html; charset=utf-8\r\n\r\n" +
+	`<p>Hi Priya, see <a href="https://acmeco-6o.acmeco.com.au/jobs/1">the job</a> and ` +
+	`<a href="https://mail.acmeco.com.au/x">mail</a>.</p><img src="https://cdn.example.org/2021/official_acmeco_logo.png">` +
+	"<p>Widgetron for KLIX</p>\r\n"
+
+func TestOwnCompanyIdentifiers(t *testing.T) {
+	p := defaultProfile(t)
+	p.Terms = []string{"Widgetron", "KLIX"}
+	e, err := New(testKey(t), p, wordDetector{names: []string{"Priya"}}, newMemRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := run(t, e, ownCompany)[0]
+	all := strings.ToLower(string(out.Data) + decodedText(t, out.Data))
+	for _, s := range []string{"acmeco", "widgetron", "klix", "priya"} {
+		if strings.Contains(all, s) {
+			t.Errorf("%q survived:\n%s", s, out.Data)
+		}
+	}
+	for _, s := range []string{"https://mail.", "x-mailer: ", "-prod-11 alert", "_logo.png"} {
+		if !strings.Contains(all, s) {
+			t.Errorf("structure %q lost:\n%s", s, out.Data)
+		}
+	}
+	if out.Entities["KLIX"] != EntityTerm {
+		t.Errorf("term entity = %q", out.Entities["KLIX"])
+	}
+	// The same label gets the same fake everywhere; generic ones stay.
+	first := e.fakeLabel("acmeco-6o")
+	if first == "acmeco-6o" || e.fakeLabel("Acmeco-6o") != first || e.fakeLabel("mail2") != "mail2" || e.fakeLabel("www") != "www" {
+		t.Errorf("labels: %q, generic mail2 %q, www %q", first, e.fakeLabel("mail2"), e.fakeLabel("www"))
+	}
+}
+
+// dmarcReport is an aggregate report whose attachment's description names
+// the reported domain.
+const dmarcReport = "From: noreply-dmarc-support@google.com\r\nTo: dmarc@acmeco.com.au\r\nSubject: Report domain: acmeco.com.au\r\n" +
+	"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nReport for acmeco.com.au\r\n" +
+	"--B\r\nContent-Type: application/gzip; name=\"google.com!acmeco.com.au!1792800000!1792886400.xml.gz\"\r\n" +
+	"Content-Description: google.com!acmeco.com.au!1792800000!1792886400.xml.gz\r\n" +
+	"Content-Disposition: attachment; filename=\"google.com!acmeco.com.au!1792800000!1792886400.xml.gz\"\r\n" +
+	"Content-Transfer-Encoding: base64\r\n\r\nH4sIAAAAAAAAA0tMSgYAWJhzBwQAAAA=\r\n--B--\r\n"
+
+func TestPartDescriptions(t *testing.T) {
+	out := run(t, newEngine(t, newMemRegistry()), dmarcReport)[0]
+	if strings.Contains(strings.ToLower(string(out.Data)), "acmeco") {
+		t.Errorf("the reported domain survived:\n%s", out.Data)
+	}
+	root, _ := mimetree.Parse(out.Data)
+	if d := root.Parts[1].Header.Get("Content-Description"); !strings.Contains(d, "google.com!") || !strings.Contains(d, "!1792800000!") {
+		t.Errorf("description lost its shape: %q", d)
+	}
+}
+
+// An automated DMARC sender at a public provider, a report subject naming
+// the company's domain, and a person whose display name holds the company
+// name (a profile term).
+const (
+	dmarcFromProvider = "From: DMARC Report <dmarcreport@microsoft.com>\r\nTo: Acmeco Support <support@acmeco.com.au>\r\n" +
+		"Subject: Report Domain: acmeco.com.au Submitter: protection.outlook.com\r\n\r\nReport for acmeco.com.au from Acmeco.\r\n"
+	termInDisplayName = "From: Acmeco Ops <acmeco.ops@acmeco.com.au>\r\nTo: Priya Shah <priya.shah@acmeco.com.au>\r\n" +
+		"Subject: Acmeco weekly\r\n\r\nHi Priya, the Acmeco report is ready.\r\n"
+)
+
+func TestAutomatedSendersAndTerms(t *testing.T) {
+	render := func() []*Output {
+		p := defaultProfile(t)
+		p.Terms = []string{"Acmeco"}
+		e, err := New(testKey(t), p, wordDetector{names: []string{"Priya"}}, newMemRegistry())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return run(t, e, dmarcFromProvider, termInDisplayName)
+	}
+	outs := render()
+	dmarc, team := string(outs[0].Data), string(outs[1].Data)
+
+	// The automated sender stays as it is; "Report" is not a surname.
+	if !strings.Contains(dmarc, `From: "DMARC Report" <dmarcreport@microsoft.com>`) {
+		t.Errorf("automated sender changed:\n%s", dmarc)
+	}
+	root, _ := mimetree.Parse(outs[0].Data)
+	subject := mimetree.DecodeHeader(root.Header.Get("Subject"))
+	if !strings.HasPrefix(subject, "Report Domain: ") || !strings.Contains(subject, ".example Submitter: protection.outlook.com") {
+		t.Errorf("subject = %q", subject)
+	}
+
+	// The term gets the company fake everywhere, the domain its fake domain,
+	// even where a display name also made "Acmeco" a first name.
+	e, _ := New(testKey(t), defaultProfile(t), wordDetector{}, newMemRegistry())
+	company := e.companyName(companyKey("acmeco"))
+	stem, domain := synth.CompanyStem(company), synth.CompanyFor(company).Domain
+	for _, out := range []string{dmarc, team} {
+		if strings.Contains(strings.ToLower(out), "acmeco") {
+			t.Errorf("acmeco survived:\n%s", out)
+		}
+	}
+	if !strings.Contains(dmarc, "Report for "+domain+" from "+stem+".") {
+		t.Errorf("body should name %s and %s:\n%s", domain, stem, dmarc)
+	}
+	if !strings.Contains(team, "the "+stem+" report is ready") || !strings.Contains(team, "Subject: "+stem+" weekly") {
+		t.Errorf("term not replaced by the company %q:\n%s", stem, team)
+	}
+
+	// The same input gives the same output, whatever the map order.
+	for i := 0; i < 5; i++ {
+		again := render()
+		if string(again[0].Data) != dmarc || string(again[1].Data) != team {
+			t.Fatal("output differs between runs")
+		}
+	}
+}
+
+func TestKeptLocalPartsAreScrubbed(t *testing.T) {
+	msg := "From: Alerts <acmeco-alerts@acmeco.com.au>\r\nTo: Priya Shah <priya.shah@acmeco.com.au>\r\n" +
+		"Subject: Report Domain: acmeco.systems Report-ID: acmeco.systems-1793025610@mail.reporter.example\r\n\r\nSee report.\r\n"
+	p := defaultProfile(t)
+	p.Terms = []string{"KLIX"}
+	e, err := New(testKey(t), p, wordDetector{names: []string{"Priya"}}, newMemRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(run(t, e, msg)[0].Data)
+	if strings.Contains(strings.ToLower(out), "acmeco") {
+		t.Errorf("company survived in a kept local part:\n%s", out)
+	}
+	fake := companyKey(e.fakeCompany("acmeco"))
+	if !strings.Contains(out, fake+"-alerts@") || !strings.Contains(out, "Report-ID: "+fake+".systems-1793025610@") {
+		t.Errorf("kept local parts lost their shape (want %s-alerts@, %s.systems-…):\n%s", fake, fake, out)
+	}
+	if got := e.scrubLocal("klix-noreply"); got != companyKey(e.fakeCompany("KLIX"))+"-noreply" {
+		t.Errorf("term in local part = %q", got)
+	}
+}

@@ -51,3 +51,31 @@ func TestExactKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestLooseKeys(t *testing.T) {
+	r, err := NewSets(Sets{Loose: map[string]string{"acme": "zeta"}, AnyCase: map[string]string{"acme": "ignored", "Ann": "Bea"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, want := range map[string]string{
+		"acme-prod logo_acme.png ACME x.acme.example": "zeta-prod logo_zeta.png ZETA x.zeta.example",
+		"acmeco acme2 2acme":                          "acmeco acme2 2acme",
+		"Ann-Marie and Ann":                           "Ann-Marie and Bea",
+	} {
+		if got := r.Apply(in); got != want {
+			t.Errorf("Apply(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCaseVariantsKeepTheirOwnReplacement(t *testing.T) {
+	for i := 0; i < 20; i++ { // map order must not matter
+		r, err := NewSets(Sets{Loose: map[string]string{"Acme": "Zeta Group", "acme": "zetagroup"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := r.Apply("Acme, acme, ACME"); got != "Zeta Group, zetagroup, ZETA GROUP" {
+			t.Fatalf("Apply = %q", got)
+		}
+	}
+}
