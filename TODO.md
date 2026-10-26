@@ -2,11 +2,12 @@
 
 Welcome to your newly scaffolded `exemplar` project! Here are the next steps to get your project fully production-ready based on the features you selected.
 ## API & Authentication
-- [ ] **Authentication**: The boilerplate provides middleware placeholders in `internal/auth/auth.go`. `BearerTokenMiddleware` rejects every request until you pass it a `TokenValidator` implementing your auth scheme (e.g., JWT validation, OAuth 2.0 + PKCE, or OIDC).
+- [x] **Authentication**: per-account API keys (`X-API-Key`) resolved by the account service.
+- [ ] **SSO**: `BearerTokenMiddleware` is kept for a later SSO validator (JWT, OAuth 2.0 + PKCE, or OIDC).
 - [ ] **OpenAPI Spec**: Update `openapi.yaml` to match any new endpoints you add, or consider generating it automatically from code comments using tools like `swag`.
 ## Database
 - [ ] **Configuration**: Update the database credentials in `exemplar-config.toml` or set the appropriate environment variables.
-- [ ] **Schema Migrations**: The project provides a `internal/db/schema.sql` for initial setup. Consider adding a migration tool like `golang-migrate/migrate` or `pressly/goose` for managing schema evolution.
+- [x] **Schema Migrations**: versioned migrations run through `xdal/pkg/migrate` (`internal/db/migrations/`).
 ## Docker
 - [ ] **Registry**: Update the Docker tag registry prefix in `Taskfile.yml` or your CI pipelines before pushing the image.
 

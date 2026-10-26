@@ -1,94 +1,78 @@
+// Package db opens the SQLite database and runs its migrations.
 package db
 
 import (
+	"context"
 	"database/sql"
-	"embed"
 	"fmt"
-	"net"
-	"strconv"
-	"strings"
+	"os"
+	"path/filepath"
+	"time"
 
-	"github.com/fortix/go-libs/netx/dns"
-	"github.com/paularlott/logger"
-	_ "modernc.org/sqlite"
 	xdaldb "github.com/martinsuchenak/xdal/pkg/sqlite"
 	"github.com/martinsuchenak/xdal/pkg/xdal"
+	"github.com/paularlott/logger"
+	_ "modernc.org/sqlite"
 )
 
-//go:embed schema.sql
-var schemaFS embed.FS
+// maxOpenConns allows the migration lock its own connection next to the one
+// running migrations; xdal's migrator refuses a single-connection pool.
+const maxOpenConns = 4
 
-type DBAddr struct {
-	Host string
-	Port int
-}
+// Connection exposes the database as raw *sql.DB (SQL) and through xdal (DB).
 type Connection struct {
 	SQL *sql.DB
 	DB  xdal.DBInterface
 }
 
-// ResolveHost resolves a host string to a database address.
-// If the host starts with "_", it's treated as an SRV name and resolved via DNS.
-// Otherwise, it's parsed as host:port (e.g., "localhost:5432").
-func ResolveHost(log logger.Logger, host string) (*DBAddr, error) {
-	// SRV names start with underscore (e.g., _postgres._tcp.myserver)
-	if strings.HasPrefix(host, "_") {
-		resolver := dns.NewDNSResolver(dns.ResolverConfig{Logger: log})
-		addrs, err := resolver.LookupSRV(host)
-		if err != nil {
-			return nil, fmt.Errorf("SRV lookup failed for %s: %w", host, err)
-		}
-		if len(addrs) == 0 {
-			return nil, fmt.Errorf("no addresses found for SRV %s", host)
-		}
-		return &DBAddr{
-			Host: addrs[0].IP.String(),
-			Port: addrs[0].Port,
-		}, nil
+// Open opens (creating if needed) the SQLite database at path and runs pending
+// migrations. The file is created with owner-only permissions because it holds
+// API key hashes and the audit log.
+func Open(ctx context.Context, log logger.Logger, path string) (*Connection, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("creating database directory: %w", err)
 	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("creating database file: %w", err)
+	}
+	_ = f.Close()
 
-	// Parse as host:port
-	h, p, err := net.SplitHostPort(host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid host:port format %s: %w", host, err)
-	}
-	port, err := strconv.Atoi(p)
-	if err != nil {
-		return nil, fmt.Errorf("invalid port %s: %w", p, err)
-	}
-	return &DBAddr{Host: h, Port: port}, nil
-}
-func Connect(log logger.Logger, host string, user, password, dbName string) (*Connection, error) {
-	addr, err := ResolveHost(log, host)
-	if err != nil {
-		return nil, fmt.Errorf("resolving host: %w", err)
-	}
-	db, err := sql.Open("sqlite", dbName)
+	// WAL with synchronous(NORMAL) is SQLite's recommended pairing; _txlock=immediate
+	// takes the write lock at BEGIN so concurrent writers wait instead of failing.
+	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
+	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxOpenConns)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	if err := db.Ping(); err != nil {
+	if err := sqlDB.PingContext(ctx); err != nil {
+		_ = sqlDB.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
-	log.Info("connected to database", "host", addr.Host, "port", addr.Port)
-	return &Connection{
-		SQL: db,
-		DB:  wrapXDALDB(db, log),
-	}, nil
-}
-func wrapXDALDB(sqlDB *sql.DB, log logger.Logger) xdal.DBInterface {
-	return xdaldb.NewSQLiteDB(sqlDB, log)
+	conn := &Connection{SQL: sqlDB, DB: wrapXDALDB(sqlDB, log)}
+	if err := Migrate(ctx, conn, log); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
+	if log != nil {
+		log.Info("opened database", "path", path)
+	}
+	return conn, nil
 }
 
-func RunMigrations(db *sql.DB) error {
-	schema, err := schemaFS.ReadFile("schema.sql")
-	if err != nil {
-		return fmt.Errorf("reading schema: %w", err)
+// Close closes the database.
+func (c *Connection) Close() error {
+	return c.SQL.Close()
+}
+
+func wrapXDALDB(sqlDB *sql.DB, log logger.Logger) xdal.DBInterface {
+	if log == nil {
+		return xdaldb.NewSQLiteDB(sqlDB, nil)
 	}
-	if _, err := db.Exec(string(schema)); err != nil {
-		return fmt.Errorf("executing schema: %w", err)
-	}
-	return nil
+	return xdaldb.NewSQLiteDB(sqlDB, log)
 }

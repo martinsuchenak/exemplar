@@ -1,3 +1,5 @@
+// Package mcp runs the MCP server. Tools register themselves in init and,
+// like every entry point, call services rather than storage.
 package mcp
 
 import (

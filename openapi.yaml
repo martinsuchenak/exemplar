@@ -28,40 +28,20 @@ paths:
       responses:
         "200":
           description: Current metrics
-  /api/samples:
+  /api/v1/me:
     get:
-      summary: List samples
-      operationId: listSamples
+      summary: The calling account and key
+      operationId: getMe
+      security:
+        - apiKey: []
       responses:
         "200":
-          description: List of samples
-    post:
-      summary: Create a sample
-      operationId: createSample
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-      responses:
-        "201":
-          description: Sample created
-  /api/samples/{id}:
-    get:
-      summary: Get a sample by ID
-      operationId: getSample
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Sample found
-        "404":
-          description: Sample not found
+          description: The account and the principal the key acts as
+        "401":
+          description: Missing, unknown or revoked key
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key

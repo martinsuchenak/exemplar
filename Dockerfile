@@ -12,11 +12,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bin/exemplar .
 FROM alpine:3.24
 RUN apk --no-cache add ca-certificates \
     && addgroup -S app && adduser -S -G app app \
-    && mkdir -p /app && chown app:app /app
+    && mkdir -p /app/data && chown -R app:app /app
 WORKDIR /app
 COPY --from=builder /app/bin/exemplar .
 COPY --from=builder /app/exemplar-config.toml .
 USER app
+VOLUME ["/app/data"]
 EXPOSE 8080
 ENTRYPOINT ["./exemplar"]
 CMD ["serve"]

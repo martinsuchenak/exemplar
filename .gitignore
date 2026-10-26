@@ -29,3 +29,9 @@ go.work.sum
 # OS
 .DS_Store
 Thumbs.db
+
+# Local data (database, blobs)
+data/
+*.db
+*.db-shm
+*.db-wal

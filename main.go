@@ -1,3 +1,4 @@
+// Command exemplar serves test fixtures over REST, MCP and a CLI.
 package main
 
 import (

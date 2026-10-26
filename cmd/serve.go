@@ -24,7 +24,7 @@ func serveCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "serve",
 		Usage: "Start the exemplar service",
-		Flags: []cli.Flag{
+		Flags: append(storageFlags(),
 			&cli.StringFlag{
 				Name:         "server-host",
 				DefaultValue: "0.0.0.0",
@@ -39,7 +39,7 @@ func serveCmd() *cli.Command {
 				ConfigPath:   []string{"server.port"},
 				EnvVars:      []string{"SERVER_PORT"},
 			},
-		},
+		),
 		// go-scaffolder:serve-flags
 		Run: func(ctx context.Context, cmd *cli.Command) error {
 			log := logslog.New(logslog.Config{
@@ -49,24 +49,36 @@ func serveCmd() *cli.Command {
 			})
 			log.Info("starting exemplar service")
 
+			services, err := openApp(ctx, cmd, log)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = services.Close() }()
+
 			mcpserver.StartMCPServer(log)
 			// go-scaffolder:serve-init
 
 			mux := http.NewServeMux()
-			routes.RegisterRoutes(mux)
+			routes.RegisterRoutes(mux, services)
 
 			addr := fmt.Sprintf("%s:%d", cmd.GetString("server-host"), cmd.GetInt("server-port"))
 			log.Info("starting HTTP server", "addr", addr)
 			// go-scaffolder:serve-start
-			srv := &http.Server{
-				Addr:              addr,
-				Handler:           mux,
-				ReadHeaderTimeout: 10 * time.Second,
-				ReadTimeout:       30 * time.Second,
-				WriteTimeout:      30 * time.Second,
-				IdleTimeout:       120 * time.Second,
-			}
+			srv := newHTTPServer(addr, mux)
 			return srv.ListenAndServe()
 		},
+	}
+}
+
+// newHTTPServer applies the timeouts every exemplar listener uses, so slow
+// clients cannot hold connections open indefinitely.
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 }

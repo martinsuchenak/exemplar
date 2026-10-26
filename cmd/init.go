@@ -33,6 +33,16 @@ func initCmd() *cli.Command {
 			defaultConfig := `[log]
 level = "info"
 format = "text"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[database]
+path = "data/exemplar.db"
+
+[storage]
+blob_dir = "data/blobs"
 `
 			if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
 				return fmt.Errorf("writing config file: %w", err)
