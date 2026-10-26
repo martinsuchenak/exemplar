@@ -98,7 +98,7 @@ func TestMigrationsRollBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrator: %v", err)
 	}
-	if _, err := m.Down(ctx, 3); err != nil {
+	if _, err := m.Down(ctx, 4); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	var n int
@@ -107,5 +107,13 @@ func TestMigrationsRollBack(t *testing.T) {
 	}
 	if err := Migrate(ctx, conn, nil); err != nil {
 		t.Fatalf("migrate up again: %v", err)
+	}
+}
+
+func TestSchemaVersions(t *testing.T) {
+	conn, _ := openTemp(t)
+	v, err := AppliedVersion(context.Background(), conn)
+	if err != nil || v != LatestVersion() || v == "" {
+		t.Errorf("applied %q, latest %q, %v", v, LatestVersion(), err)
 	}
 }

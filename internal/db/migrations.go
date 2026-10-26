@@ -54,6 +54,14 @@ func migrations() []migrate.Migration {
 				return tx.ExecSQL(ctx, `DROP TABLE name_tokens`, `DROP TABLE identity_keys`)
 			},
 		},
+		{
+			Version: "20261030000001",
+			Name:    "imported_reviewer",
+			Up:      execFile("migrations/20261030000001_imported_reviewer.sql"),
+			Down: func(ctx context.Context, tx *migrate.Tx) error {
+				return tx.ExecSQL(ctx, `ALTER TABLE fixtures DROP COLUMN imported_reviewer`)
+			},
+		},
 	}
 }
 
@@ -67,6 +75,32 @@ func execFile(name string) func(context.Context, *migrate.Tx) error {
 		// which keeps trigger bodies (with their own semicolons) intact.
 		return tx.ExecSQL(ctx, string(script))
 	}
+}
+
+// LatestVersion is the newest schema version this binary knows.
+func LatestVersion() string {
+	all := migrations()
+	return all[len(all)-1].Version
+}
+
+// AppliedVersion is the newest schema version applied to conn's database, or
+// "" for an empty one.
+func AppliedVersion(ctx context.Context, conn *Connection) (string, error) {
+	m, err := migrate.New(conn.DB, migrations(), migrate.Options{Namespace: MigrationNamespace})
+	if err != nil {
+		return "", err
+	}
+	status, err := m.Status(ctx)
+	if err != nil {
+		return "", err
+	}
+	v := ""
+	for _, s := range status {
+		if s.Applied && s.Version > v {
+			v = s.Version
+		}
+	}
+	return v, nil
 }
 
 // Migrate applies pending migrations.

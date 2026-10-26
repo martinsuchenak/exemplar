@@ -1,6 +1,7 @@
 package client_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -411,5 +412,33 @@ func TestIngest(t *testing.T) {
 	broken := client.IngestFile{Name: "x.eml", Open: func() (io.ReadCloser, error) { return nil, errors.New("disk gone") }}
 	if _, err := admin.Ingest(ctx, d.ID, ingest.Request{}, []client.IngestFile{broken}); err == nil {
 		t.Error("unreadable file accepted")
+	}
+}
+
+func TestExportAndImport(t *testing.T) {
+	admin, member, _, _ := server(t, nil)
+	d, err := member.CreateDataset(ctx, dataset.CreateInput{Name: "travel"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := member.Generate(ctx, d.ID, generate.Request{Kind: generate.KindEmails, Count: 2, Seed: 4}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	counts, err := member.Export(ctx, []string{d.ID}, &buf)
+	if err != nil || counts["datasets"] != 1 || counts["fixtures"] != 2 || counts["blobs"] != 2 {
+		t.Fatalf("export = %v, %v", counts, err)
+	}
+
+	other, _, _, _ := server(t, nil)
+	res, err := other.Import(ctx, bytes.NewReader(buf.Bytes()))
+	if err != nil || len(res.Datasets) != 1 || !res.Datasets[0].Created || res.Datasets[0].Added != 2 {
+		t.Fatalf("import = %+v, %v", res, err)
+	}
+	if _, err := other.Import(ctx, strings.NewReader("nope")); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("garbage err = %v", err)
+	}
+	if _, err := admin.Export(ctx, []string{"missing"}, io.Discard); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("missing dataset err = %v", err)
 	}
 }

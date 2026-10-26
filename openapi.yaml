@@ -460,6 +460,86 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
+  /api/v1/export:
+    post:
+      summary: Export datasets to an archive another instance can import
+      description: >
+        Up to 50 datasets the key can read, with their fixtures, linked
+        people and contents. Real-derived fixtures go only if approved; the
+        rest are counted in X-Exemplar-Skipped. Everything is decided before
+        streaming; a failure while streaming truncates the archive, which
+        import refuses.
+      operationId: exportDatasets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataset_ids]
+              properties:
+                dataset_ids: { type: array, minItems: 1, maxItems: 50, items: { type: string } }
+      responses:
+        "200":
+          description: The archive (tar.gz)
+          headers:
+            X-Exemplar-Datasets: { schema: { type: integer } }
+            X-Exemplar-Fixtures: { schema: { type: integer } }
+            X-Exemplar-Persons: { schema: { type: integer } }
+            X-Exemplar-Blobs: { schema: { type: integer } }
+            X-Exemplar-Skipped: { schema: { type: integer } }
+          content:
+            application/gzip: { schema: { type: string, format: binary } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/import:
+    post:
+      summary: Import an export archive
+      description: >
+        Keeps IDs, so importing twice adds nothing the second time. Global
+        and quarantine datasets and real-derived fixtures need an admin key;
+        with a member key real-derived fixtures are skipped and listed.
+        Real-derived fixtures arrive approved, with imported_reviewer set.
+      operationId: importDatasets
+      requestBody:
+        required: true
+        content:
+          application/gzip: { schema: { type: string, format: binary } }
+      responses:
+        "201":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datasets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        scope: { type: string, enum: [global, workspace, quarantine] }
+                        version: { type: integer }
+                        created: { type: boolean, description: false when the dataset was already here }
+                        added: { type: integer }
+                        existing: { type: integer }
+                  people_added: { type: integer }
+                  people_merged: { type: integer, description: People matched to people already here by email }
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        dataset_id: { type: string }
+                        reason: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
   /api/v1/persons:
     get:
       summary: List people in the registry
@@ -624,6 +704,7 @@ components:
         review_state: { type: string, enum: [not-required, unreviewed, approved, rejected] }
         reviewed_by: { type: string }
         reviewed_at: { type: string, format: date-time }
+        imported_reviewer: { type: string, description: Source instance's reviewer account ID for a fixture imported already approved; reviewed_by is then empty }
         created_by: { type: string }
         created_at: { type: string, format: date-time }
         record_schema: { type: string }

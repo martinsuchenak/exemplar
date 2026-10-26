@@ -26,6 +26,7 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 		uploadCmd(), forkCmd(), promoteCmd(), purgeCmd(),
 		generateCmd(), personsCmd(), pushMailpitCmd(),
 		ingestCmd(), approveCmd(), rejectCmd(),
+		exportCmd(), importCmd(), backupCmd(), restoreCmd(),
 	}}
 	err := root.Execute(context.Background())
 	return out.String(), err

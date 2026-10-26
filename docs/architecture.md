@@ -63,6 +63,22 @@ only through its `Detector` interface, so it is tested with in-memory fakes.
 no key or no Presidio URL, ingest reports that it is not configured. See
 [anonymisation.md](anonymisation.md).
 
+## Export, import and backup
+
+```
+exchange.Service ─> dataset.Service (Get / CheckImport / Import, access and scope rules)
+                 ─> fixture.Service (List / Open; CheckImport / StoreContent / Import)
+                 ─> person.Service (Get / Import, matching by ID then email)
+                 ─> archive (format: tar.gz, manifest, records, verified blobs)
+backup.Service   ─> db (VACUUM INTO snapshot, schema version) + blob.Store + archive
+```
+
+Import runs each service's import method inside one transaction it opens,
+the way fork passes its transaction to `CopyShareable`. Content is stored
+first, under `HoldContent`, so garbage collection cannot remove it before
+the records commit. `backup` takes no principal: only host commands reach it.
+See [backup-and-exchange.md](backup-and-exchange.md).
+
 ## CLI and API
 
 The MCP server (`cmd/mcp`) is another entry point of the same kind: each tool
@@ -70,7 +86,7 @@ reads its arguments, calls a service with the key's principal and returns the
 result, and `toolError` maps service errors to MCP error codes. It runs on its
 own port behind the same API key middleware. See [mcp.md](mcp.md).
 
-Host commands (`serve`, `bootstrap`, `init`) open the app directly. All other
+Host commands (`serve`, `bootstrap`, `init`, `backup`, `restore`) open the app directly. All other
 commands are remote: they call the REST API through `internal/client`, so a
 local instance and a shared server are used the same way and the server's
 services make every access decision.
@@ -104,6 +120,9 @@ bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
 | `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
 | `internal/ingest` | Takes real emails into quarantine: access checks, the anonymiser, storing fixtures, the dry-run report. |
 | `internal/anonymise` | The anonymisation engine: detection (Presidio client and patterns), keyed pseudonyms, MIME rewriting, profiles. No database; `anonymisetest` has a fake detector. |
+| `internal/archive` | The archive format shared by export/import and backup/restore; rejects unexpected entries and blobs that do not match their hash. |
+| `internal/exchange` | Exports datasets to archives and imports them, through the dataset, fixture and person services. |
+| `internal/backup` | Host-only backup (database snapshot plus contents) and restore (staged, checked, swapped in). |
 | `internal/emailtemplate` | Renders an email as a template: swaps its people and companies, renews Message-IDs, keeps everything else. No database. |
 | `internal/textswap` | One-pass, word-boundary, case-insensitive replacement of many strings; shared by the anonymiser and templates. |
 | `internal/mimetree` | Parses and re-serialises MIME messages losslessly enough to rewrite parts in place; charsets and transfer encodings. |

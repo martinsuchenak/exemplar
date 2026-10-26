@@ -16,7 +16,7 @@ import (
 var columns = []string{
 	"id", "dataset_id", "name", "kind", "format", "mime_type", "blob_hash", "size", "scenario", "tags",
 	"source", "generator", "anon_profile", "anon_key_id", "ingest_batch", "review_state", "reviewed_by",
-	"reviewed_at", "created_by", "created_at", "record_schema",
+	"reviewed_at", "created_by", "created_at", "record_schema", "imported_reviewer",
 }
 
 // Storage holds the SQL for fixtures. Only the fixture service calls it.
@@ -53,6 +53,7 @@ func (s *Storage) Insert(ctx context.Context, exec xdal.DBExecutor, f *Fixture) 
 		Set("created_by", f.CreatedBy).
 		Set("created_at", storeutil.FormatTime(f.CreatedAt)).
 		Set("record_schema", f.RecordSchema).
+		Set("imported_reviewer", f.ImportedReviewer).
 		Build()
 	if err != nil {
 		return err
@@ -244,7 +245,7 @@ func scan(row scanner) (*Fixture, error) {
 	if err := row.Scan(
 		&f.ID, &f.DatasetID, &f.Name, &kind, &f.Format, &f.MimeType, &f.BlobHash, &f.Size, &f.Scenario, &tags,
 		&source, &f.Generator, &f.AnonProfile, &f.AnonKeyID, &f.IngestBatch, &review, &reviewedBy,
-		&reviewedAt, &f.CreatedBy, &created, &f.RecordSchema,
+		&reviewedAt, &f.CreatedBy, &created, &f.RecordSchema, &f.ImportedReviewer,
 	); err != nil {
 		return nil, err
 	}

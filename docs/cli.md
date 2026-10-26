@@ -9,7 +9,7 @@ Each setting can come from a flag, an environment variable or
 
 Two kinds of command:
 
-- **Host commands** (`serve`, `bootstrap`, `init`) open the database directly.
+- **Host commands** (`serve`, `bootstrap`, `init`, `backup`, `restore`) open the database directly.
 - **Remote commands** (everything else) call a server's REST API with an API
   key. They work the same against a local instance and a shared server, and
   the server's services enforce every permission.
@@ -54,6 +54,27 @@ admin exists.
 | `--name` | `admin` | Admin account name |
 | `--kind` | `developer` | `developer`, `team` or `app` |
 | `--recover` | off | Revoke the named admin's keys and print a new admin key |
+
+### `backup`
+
+```bash
+exemplar backup --output FILE
+```
+
+Writes the whole instance (database snapshot and contents) to a `.tar.gz`
+archive. Safe while the server runs. Never overwrites `FILE`. See
+[backup-and-exchange.md](backup-and-exchange.md).
+
+### `restore`
+
+```bash
+exemplar restore FILE [--overwrite]
+```
+
+Restores a backup into `--db-path` and `--blob-dir`. Stop the server first.
+Refuses a target that already holds an instance unless `--overwrite` is
+given; the existing data is then moved aside to `*.pre-restore-<time>`, never
+deleted.
 
 ### `init`
 
@@ -233,6 +254,21 @@ Admin key. Records the review of real-derived fixtures. Only approved fixtures
 are copied by fork and promote; rejected ones stay in quarantine until the
 dataset or batch is deleted. Each id is reviewed on its own; failures are
 listed and make the command exit non-zero.
+
+### `export`, `import`
+
+```bash
+exemplar export <dataset-id>... --output FILE
+exemplar import FILE
+```
+
+Export writes datasets the key can read, with their fixtures, linked people
+and contents, to an archive; real-derived fixtures go only if approved.
+Import adds an archive's datasets to the server, keeping IDs, so importing
+twice adds nothing the second time. Global and quarantine datasets and
+real-derived fixtures need an admin key to import; with a member key
+real-derived fixtures are skipped and listed on stderr. See
+[backup-and-exchange.md](backup-and-exchange.md).
 
 ## Example
 

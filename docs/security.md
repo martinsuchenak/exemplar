@@ -82,6 +82,8 @@ Only fixtures with source `anonymised` are derived from real data.
 - Presidio receives email text in plain form; run it next to the server on a private network or loopback. See [anonymisation.md](anonymisation.md).
 - Copies made by fork or promote keep the source's provenance (`ingest_batch`, review state, reviewer).
 - `exemplar purge <batch>` (admin) deletes a batch's fixtures from every dataset, frozen ones included, for removal on request. That includes emails generated from the batch's emails as templates, which keep its `ingest_batch`.
+- Export carries approved real-derived fixtures only. Importing them needs an admin key, because they arrive approved: the review made on the exporting instance is trusted, and its reviewer is recorded as `imported_reviewer`.
+- Backups are host-only and hold everything except the anonymisation key, including key hashes and quarantined data. exemplar does not encrypt them; keep them on encrypted storage. See [backup-and-exchange.md](backup-and-exchange.md).
 - Only approved real-derived emails can be templates, even for admins, since rendering copies their wording out of quarantine.
 
 ## Audit log
@@ -101,6 +103,8 @@ Only admin keys can read the log.
 | `fixture.download` | Real-derived content is read |
 | `fixture.approve`, `fixture.reject` | A real-derived fixture is reviewed |
 | `fixture.ingest` | Real emails are ingested; details record batch, profile, key id, dry run and counts |
+| `dataset.export`, `dataset.import` | Datasets leave or arrive in an archive; details record counts, and for imports the source build and time |
+| `instance.backup`, `instance.restore` | A backup is taken; an instance is restored (recorded in the restored log) |
 | `fixture.purge` | An ingest batch is purged; details record how many fixtures |
 | `fixture.generate` | Synthetic content is generated into a dataset; details record kind, count, seed and people |
 | `person.generate` | People are added to the registry, directly or for generated content |

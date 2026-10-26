@@ -112,6 +112,18 @@ Parts are read into memory, never into temporary files. A request over
 bad batch name or a dataset that is not quarantine get `400`, and so does a
 server with no anonymiser configured. See [anonymisation.md](anonymisation.md).
 
+### Export and import
+
+| Method and path | Who | Body | Response |
+|-----------------|-----|------|----------|
+| `POST /api/v1/export` | readers of every dataset named | `{"dataset_ids": ["…"]}` (1–50) | `200` `application/gzip` archive, as an attachment, `Cache-Control: no-store`; counts in `X-Exemplar-Datasets`, `-Fixtures`, `-Persons`, `-Blobs`, `-Skipped` |
+| `POST /api/v1/import` | write key; global and quarantine datasets and real-derived fixtures: admin | The archive as the body (`application/gzip`) | `201` `{"datasets": [{"id", "name", "scope", "version", "created", "added", "existing"}], "people_added", "people_merged", "skipped": [{"id", "name", "dataset_id", "reason"}]}` |
+
+Export decides and audits everything before the first byte, so errors come
+back with a status code; a failure while streaming truncates the archive,
+which import refuses. A damaged or truncated archive gets `400`. See
+[backup-and-exchange.md](backup-and-exchange.md).
+
 ### People and generation
 
 | Method and path | Who | Body / query | Response |

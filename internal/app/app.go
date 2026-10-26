@@ -9,12 +9,15 @@ import (
 
 	"github.com/paularlott/logger"
 
+	"github.com/martinsuchenak/exemplar/build"
 	"github.com/martinsuchenak/exemplar/internal/account"
 	"github.com/martinsuchenak/exemplar/internal/anonymise"
 	"github.com/martinsuchenak/exemplar/internal/audit"
+	"github.com/martinsuchenak/exemplar/internal/backup"
 	"github.com/martinsuchenak/exemplar/internal/blob"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/db"
+	"github.com/martinsuchenak/exemplar/internal/exchange"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
@@ -52,6 +55,9 @@ type App struct {
 	Persons  *person.Service
 	Generate *generate.Service
 	Ingest   *ingest.Service
+	Exchange *exchange.Service
+	// Backup is for host commands only; no API reaches it.
+	Backup *backup.Service
 }
 
 // Open opens the database (running migrations) and blob store and builds the
@@ -88,6 +94,8 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 		Persons:  persons,
 		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService),
 		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes),
+		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version),
+		Backup:   backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),
 	}, nil
 }
 

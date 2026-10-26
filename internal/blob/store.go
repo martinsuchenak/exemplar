@@ -117,11 +117,51 @@ func (s *Store) Register(ctx context.Context, exec xdal.DBExecutor, hash string,
 	return err
 }
 
+// backupLock is the file that tells garbage collection in every process
+// (the server, a separate backup command) that a backup is copying blobs.
+// One older than backupLockMaxAge is left over from a crash and ignored.
+const (
+	backupLock       = "backup.lock"
+	backupLockMaxAge = 24 * time.Hour
+)
+
+// HoldForBackup stops garbage collection, in this process and others using
+// the same directory, until release is called. Only one backup may hold it.
+func (s *Store) HoldForBackup() (release func(), err error) {
+	path := filepath.Join(s.root, backupLock)
+	if info, err := os.Stat(path); err == nil && s.now().Sub(info.ModTime()) > backupLockMaxAge {
+		_ = os.Remove(path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return nil, fmt.Errorf("%w: another backup is running (%s)", apperr.ErrConflict, path)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("creating backup lock: %w", err)
+	}
+	_, _ = fmt.Fprintf(f, "pid %d at %s\n", os.Getpid(), s.now().UTC().Format(time.RFC3339))
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+	return func() { _ = os.Remove(path) }, nil
+}
+
+var errBackupStarted = errors.New("backup started")
+
+func (s *Store) backupRunning() bool {
+	info, err := os.Stat(filepath.Join(s.root, backupLock))
+	return err == nil && s.now().Sub(info.ModTime()) <= backupLockMaxAge
+}
+
 // Collect removes blobs no fixture refers to, rows first, then files, and
-// returns how many it removed.
+// returns how many it removed. While a backup runs it removes nothing; the
+// next collection catches up.
 func (s *Store) Collect(ctx context.Context, db xdal.DBInterface) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.backupRunning() {
+		return 0, nil
+	}
 
 	var hashes []string
 	err := db.WithTx(ctx, nil, func(tx *xdal.Tx) error {
@@ -146,6 +186,11 @@ func (s *Store) Collect(ctx context.Context, db xdal.DBInterface) (int, error) {
 		if err := rows.Close(); err != nil {
 			return err
 		}
+		if s.backupRunning() {
+			// A backup started after the check above; roll back and let
+			// the next collection catch up.
+			return errBackupStarted
+		}
 		for _, h := range hashes {
 			query, args, err := s.qb.Delete("blobs").Where("hash = ?", h).Build()
 			if err != nil {
@@ -157,6 +202,9 @@ func (s *Store) Collect(ctx context.Context, db xdal.DBInterface) (int, error) {
 		}
 		return nil
 	})
+	if errors.Is(err, errBackupStarted) {
+		return 0, nil
+	}
 	if err != nil {
 		return 0, fmt.Errorf("collecting blobs: %w", err)
 	}

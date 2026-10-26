@@ -76,6 +76,10 @@ curl -H "X-API-Key: $EXEMPLAR_API_KEY" http://localhost:8080/api/v1/me
 `bootstrap` opens the database directly, so it only works on the host or inside
 the container (`docker exec`). It refuses to run once an admin exists.
 
+Back up with `exemplar backup --output FILE` (also host-only, safe while the
+server runs) and move datasets between instances with `exemplar export` and
+`exemplar import`; see [docs/backup-and-exchange.md](docs/backup-and-exchange.md).
+
 ## Configuration
 
 Configuration is loaded from `exemplar-config.toml` and can be overridden via environment variables or flags.

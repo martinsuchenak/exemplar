@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/db"
@@ -141,4 +142,48 @@ func TestCollectKeepsReferencedBlobs(t *testing.T) {
 	if _, err := os.Stat(s.path(hash)); err != nil {
 		t.Errorf("referenced blob removed: %v", err)
 	}
+}
+
+func TestBackupLockHoldsCollection(t *testing.T) {
+	s, conn := newStore(t)
+	ctx := context.Background()
+	hash, size, _ := s.Put(strings.NewReader("orphan"))
+	if err := s.Register(ctx, conn.DB, hash, size); err != nil {
+		t.Fatal(err)
+	}
+	release, err := s.HoldForBackup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.HoldForBackup(); !errors.Is(err, apperr.ErrConflict) {
+		t.Errorf("second hold err = %v", err)
+	}
+	if n, err := s.Collect(ctx, conn.DB); err != nil || n != 0 {
+		t.Errorf("collect during backup = %d, %v", n, err)
+	}
+	if _, err := os.Stat(s.path(hash)); err != nil {
+		t.Errorf("blob removed during backup: %v", err)
+	}
+	release()
+	if n, err := s.Collect(ctx, conn.DB); err != nil || n != 1 {
+		t.Errorf("collect after backup = %d, %v", n, err)
+	}
+
+	// A lock left by a crashed backup expires.
+	lock := filepath.Join(s.root, backupLock)
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * backupLockMaxAge)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if s.backupRunning() {
+		t.Error("stale lock counted")
+	}
+	release, err = s.HoldForBackup()
+	if err != nil {
+		t.Fatalf("stale lock not replaced: %v", err)
+	}
+	release()
 }

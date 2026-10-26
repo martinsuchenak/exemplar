@@ -21,6 +21,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/audit"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
+	"github.com/martinsuchenak/exemplar/internal/exchange"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
@@ -32,6 +33,8 @@ type Client struct {
 	base *url.URL
 	key  string
 	http *http.Client
+	// stream has no overall timeout, for archives; the context limits it.
+	stream *http.Client
 }
 
 // New returns a client for the server at baseURL (for example
@@ -44,7 +47,7 @@ func New(baseURL, apiKey string) (*Client, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("%w: an API key is required (--api-key or EXEMPLAR_API_KEY)", apperr.ErrInvalid)
 	}
-	return &Client{base: u, key: apiKey, http: &http.Client{Timeout: 10 * time.Minute}}, nil
+	return &Client{base: u, key: apiKey, http: &http.Client{Timeout: 10 * time.Minute}, stream: &http.Client{}}, nil
 }
 
 // Error is a non-2xx response. It unwraps to the matching apperr kind, so
@@ -338,6 +341,42 @@ func writeIngestForm(mw *multipart.Writer, req ingest.Request, files []IngestFil
 	return mw.Close()
 }
 
+// Export writes an export archive of the datasets to w and returns its
+// counts (datasets, fixtures, persons, blobs, skipped).
+func (c *Client) Export(ctx context.Context, datasetIDs []string, w io.Writer) (map[string]int, error) {
+	b, err := json.Marshal(exchange.ExportRequest{DatasetIDs: datasetIDs})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.requestOn(ctx, c.stream, http.MethodPost, "/api/v1/export", nil, bytes.NewReader(b), "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	counts := map[string]int{}
+	for _, k := range []string{"datasets", "fixtures", "persons", "blobs", "skipped"} {
+		counts[k], _ = strconv.Atoi(resp.Header.Get("X-Exemplar-" + k))
+	}
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		return nil, fmt.Errorf("receiving the archive: %w", err)
+	}
+	return counts, nil
+}
+
+// Import sends an export archive and returns what the server added.
+func (c *Client) Import(ctx context.Context, archive io.Reader) (*exchange.ImportResult, error) {
+	resp, err := c.requestOn(ctx, c.stream, http.MethodPost, "/api/v1/import", nil, archive, "application/gzip")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out exchange.ImportResult
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding the import result: %w", err)
+	}
+	return &out, nil
+}
+
 // Purge deletes every fixture from an ingest batch (admin key).
 func (c *Client) Purge(ctx context.Context, batch string) (*fixture.PurgeResult, error) {
 	var out fixture.PurgeResult
@@ -398,6 +437,10 @@ func (c *Client) send(ctx context.Context, method, path string, q url.Values, bo
 
 // request sends the request and turns any non-2xx response into an *Error.
 func (c *Client) request(ctx context.Context, method, path string, q url.Values, body io.Reader, contentType string) (*http.Response, error) {
+	return c.requestOn(ctx, c.http, method, path, q, body, contentType)
+}
+
+func (c *Client) requestOn(ctx context.Context, hc *http.Client, method, path string, q url.Values, body io.Reader, contentType string) (*http.Response, error) {
 	u := *c.base
 	u.Path = c.base.Path + path
 	u.RawQuery = q.Encode()
@@ -410,7 +453,7 @@ func (c *Client) request(ctx context.Context, method, path string, q url.Values,
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("calling %s: %w", c.base.Host, err)
 	}

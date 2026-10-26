@@ -37,6 +37,10 @@ const (
 	ActionFixtureGenerate = "fixture.generate"
 	ActionFixtureIngest   = "fixture.ingest"
 	ActionPersonGenerate  = "person.generate"
+	ActionDatasetExport   = "dataset.export"
+	ActionDatasetImport   = "dataset.import"
+	ActionBackup          = "instance.backup"
+	ActionRestore         = "instance.restore"
 )
 
 // Event is one audit log entry. Seq orders events and pages through them.

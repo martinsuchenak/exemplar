@@ -61,6 +61,7 @@ Names are unique per `(name, version)` for global datasets and per
 | `scenario`, `tags` | Free-form labels for search |
 | `source` | `synthetic`, `uploaded`, `public-corpus` or `anonymised` |
 | `generator`, `anon_profile`, `anon_key_id`, `ingest_batch` | Provenance |
+| `imported_reviewer` | For a fixture imported already approved: the source instance's reviewer account ID (`reviewed_by` stays empty, as it must name a local account) |
 | `review_state` | `not-required`, `unreviewed`, `approved` or `rejected` |
 | `reviewed_by`, `reviewed_at` | Set by an admin's review |
 | `created_by`, `created_at` | |

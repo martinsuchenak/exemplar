@@ -96,6 +96,9 @@ type Fixture struct {
 	RecordSchema string `json:"record_schema,omitempty"`
 	// People are the registry people the fixture mentions and their roles.
 	People []PersonLink `json:"people"`
+	// ImportedReviewer is the source instance's reviewer account ID for a
+	// fixture imported already reviewed; ReviewedBy is empty then.
+	ImportedReviewer string `json:"imported_reviewer,omitempty"`
 }
 
 // PersonLink ties a fixture to a person in the registry, with the person's

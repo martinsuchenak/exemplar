@@ -199,3 +199,14 @@ func (s *Storage) InsertIdentity(ctx context.Context, exec xdal.DBExecutor, hash
 	_, err = exec.Exec(ctx, query, args...)
 	return err
 }
+
+// IDByEmail returns the ID of the person with email.
+func (s *Storage) IDByEmail(ctx context.Context, exec xdal.DBExecutor, email string) (string, error) {
+	query, args, err := s.qb.Select("id").From("persons").Where("email = ?", email).Build()
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = exec.QueryRow(ctx, query, args...).Scan(&id)
+	return id, err
+}
