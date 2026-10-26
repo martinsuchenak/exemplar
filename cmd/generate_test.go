@@ -70,3 +70,26 @@ func TestParseSeed(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateFromTemplates(t *testing.T) {
+	s := startServer(t)
+	member := s.member(t, "alice")
+	var d dataset.Dataset
+	s.runJSON(t, member, &d, "datasets", "create", "--name", "mine")
+	var base generate.Result
+	s.runJSON(t, member, &base, "generate", d.ID, "--kind", "emails", "--count", "1", "--shapes", "reply", "--seed", "5")
+
+	var res generate.Result
+	s.runJSON(t, member, &res, "generate", d.ID, "--kind", "emails", "--count", "3", "--from", base.Fixtures[0].ID, "--seed", "9")
+	if len(res.Fixtures) != 3 {
+		t.Fatalf("generated %d", len(res.Fixtures))
+	}
+	for _, f := range res.Fixtures {
+		if f.Generator != "template:"+base.Fixtures[0].ID+" seed=9" || f.Tags[len(f.Tags)-1] != "template" {
+			t.Errorf("fixture = %+v", f)
+		}
+	}
+	if _, err := s.run(t, member, "generate", d.ID, "--kind", "emails", "--from", base.Fixtures[0].ID, "--shapes", "plain"); err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Errorf("shapes and from err = %v", err)
+	}
+}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/martinsuchenak/exemplar/internal/mimetree"
 	"github.com/martinsuchenak/exemplar/internal/synth"
+	"github.com/martinsuchenak/exemplar/internal/textswap"
 )
 
 func TestProfiles(t *testing.T) {
@@ -271,7 +272,11 @@ func TestReplacerBoundaries(t *testing.T) {
 	e := newEngine(t, newMemRegistry())
 	f := newFound(e.profile)
 	e.pairs = map[string]string{"Tom": "Ann", "A&B": "C&D", "acme.com": "fake.example"}
-	r, err := e.replacer(ctx, f)
+	pairs, err := e.replacements(ctx, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := textswap.New(pairs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,12 +287,12 @@ func TestReplacerBoundaries(t *testing.T) {
 		"A&amp;B and A&B":            "C&amp;D and C&D",
 		"nothing here":               "nothing here",
 	} {
-		if got := r.apply(in); got != want {
+		if got := r.Apply(in); got != want {
 			t.Errorf("apply(%q) = %q, want %q", in, got, want)
 		}
 	}
 	empty := &replacer{}
-	if empty.apply("x") != "x" {
+	if empty.Apply("x") != "x" {
 		t.Error("empty replacer changed text")
 	}
 }

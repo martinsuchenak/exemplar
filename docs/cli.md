@@ -124,11 +124,13 @@ export EXEMPLAR_API_KEY=exm_...
 ### `generate`
 
 ```bash
-exemplar generate <dataset-id> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--schemas contact,company] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
+exemplar generate <dataset-id> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--from <fixture-id>,...] [--schemas contact,company] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
 ```
 
 Fills a dataset with synthetic content about registry people and prints the
-seed; see [generation.md](generation.md).
+seed; see [generation.md](generation.md). `--from` renders emails from
+template emails (approved real-derived ones, or any email with linked
+people) instead of shapes.
 
 ### `upload`
 

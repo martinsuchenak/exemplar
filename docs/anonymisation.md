@@ -29,7 +29,10 @@ exemplar reject <fixture-id>...
 # 5. Copy the approved fixtures into the next version of a global dataset
 exemplar promote <dataset-id> --name inbox
 
-# Removal on request: delete a whole batch, wherever it was copied
+# 6. Use approved emails as templates for as many synthetic variants as you need
+exemplar generate <workspace-id> --kind emails --count 50 --from <global-fixture-id>
+
+# Removal on request: delete a whole batch, wherever it was copied or rendered
 exemplar purge inbox-2025-01 --yes
 ```
 

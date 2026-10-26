@@ -398,9 +398,14 @@ paths:
                 shapes:
                   type: array
                   items: { type: string, enum: [plain, html, reply, forward, forward-attached, attachment, inline-image, calendar, auto-reply, bounce, newsletter, thread] }
+                from:
+                  type: array
+                  maxItems: 50
+                  items: { type: string }
+                  description: Emails only, instead of shapes. Template email fixture IDs to render with registry people swapped in; real-derived ones must be approved. Generated emails keep the template's ingest_batch.
                 schemas: { type: array, items: { type: string, enum: [contact, company, project, opportunity, address] } }
                 profile: { type: string, enum: [insurance, manufacturing], default: insurance }
-                people: { type: integer, minimum: 1, maximum: 200 }
+                people: { type: integer, minimum: 1, maximum: 200, description: With from, at least the largest template's people }
                 seed: { type: integer, description: 0 or absent picks a random seed }
                 scenario: { type: string }
                 tags: { type: array, items: { type: string } }

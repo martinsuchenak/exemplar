@@ -42,9 +42,10 @@ generated mail can never reach a real mailbox.
 | `count` | required | 1–500 items; a thread email counts once but yields several messages |
 | `formats` | all | Files: `csv`, `docx`, `gif`, `html`, `jpg`, `pdf`, `png`, `rtf`, `txt`, `xlsx` |
 | `shapes` | all | Emails: see below |
+| `from` | | Emails: template email fixture IDs (1–50) to render instead of shapes; see [templates](#emails-from-templates) |
 | `schemas` | all | Records: `contact`, `company`, `project`, `opportunity`, `address` |
 | `profile` | `insurance` | Business vocabulary: `insurance` or `manufacturing` |
-| `people` | up to 10 | How many registry people the content is about (1–200; emails need 2) |
+| `people` | up to 10 | How many registry people the content is about (1–200; emails need 2; with `from`, at least the largest template's people, default twice that and at least 10) |
 | `seed` | random | Returned in the result; see reproducibility |
 | `scenario`, `tags` | | Labels for every fixture; emails default their scenario to their shape |
 
@@ -85,6 +86,40 @@ bounce's `mailer-daemon` and a newsletter's sender are not registry people and
 are not linked. With `--scenario`, the scenario applies to every email and the
 shape becomes a `shape-<name>` tag.
 
+## Emails from templates
+
+Hand-written shapes never quite match real mail: Outlook's nested
+`multipart/related`, a Gmail quote header, a signature image, a mailing-list
+footer. A template keeps that real shape. Any approved real-derived email is a
+template, and so is any email with linked people, such as a generated one:
+
+```bash
+exemplar generate <dataset-id> --kind emails --count 20 --from <fixture-id>,<fixture-id>
+```
+
+Each email is one of the templates, in turn, with its linked people (`from`,
+`to`, `cc`…) swapped for people picked from the registry:
+
+- Every form of a person's name (`First Last`, `Last, First`, each name alone, all capitals), their address, phone, job title and street.
+- Their company: name, stem (`Noosa Engineering`), the compact form a domain uses (`noosaengineering`), domain (including other addresses and subdomains at it), ABN and phone.
+- Message-ID, In-Reply-To and References get fresh IDs on the new domain; IDs that matched still match.
+
+People who worked for one company in the template get people from one company
+where the registry has them, and different companies stay different. The
+template's own people are not reused while others are free.
+
+Everything else is kept: MIME structure, encodings, wording, dates, and
+attachments (which the anonymiser has already replaced). People mentioned in
+the text but not linked, such as a third party in a forwarded message, keep
+their (already fake) names in every copy.
+
+Rules:
+
+- Real-derived templates must be approved, even for admins: rendering copies their wording out of quarantine.
+- The caller must be able to read the template and change the target dataset; members use the approved copy in a global dataset.
+- Generated emails are `source: synthetic` with `generator: template:<fixture-id> seed=<seed>`, tagged `template`, with the template's scenario (or `template`).
+- They keep the template's `ingest_batch`, so `exemplar purge <batch>` removes them along with the real-derived originals.
+
 ## Records
 
 Records are JSON fixtures (kind `record`) with a `record_schema`. Records
@@ -112,7 +147,9 @@ seeds never clash in one dataset, and rerunning a seed into the same dataset
 fails with a name conflict instead of duplicating it.
 
 Fixture provenance records `source: synthetic` and
-`generator: exemplar-synth/1 seed=<seed>`.
+`generator: exemplar-synth/1 seed=<seed>` (`template:<fixture-id> seed=<seed>`
+for emails from templates). The same seed, people and templates give the same
+emails.
 
 ## Into a mailbox
 

@@ -16,7 +16,8 @@ func init() {
 }
 
 // generateCmd fills a dataset with synthetic files, emails or records over the
-// REST API. The content is about people from the person registry.
+// REST API. The content is about people from the person registry. With
+// --from, emails are rendered from template emails instead of shapes.
 func generateCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "generate",
@@ -27,6 +28,7 @@ func generateCmd() *cli.Command {
 			&cli.IntFlag{Name: "count", DefaultValue: 10, Usage: fmt.Sprintf("How many items (1-%d); a thread email counts once", generate.MaxCount)},
 			&cli.StringFlag{Name: "formats", Usage: "Files: comma-separated, from " + strings.Join(synth.FileFormats(), ", ") + " (default all)"},
 			&cli.StringFlag{Name: "shapes", Usage: "Emails: comma-separated, from " + strings.Join(synth.ShapeNames(), ", ") + " (default all)"},
+			&cli.StringFlag{Name: "from", Usage: "Emails: comma-separated template email fixture IDs to render instead of shapes (real-derived ones must be approved)"},
 			&cli.StringFlag{Name: "schemas", Usage: "Records: comma-separated, from contact, company, project, opportunity, address (default all)"},
 			&cli.StringFlag{Name: "profile", DefaultValue: string(synth.ProfileInsurance), Usage: "Business vocabulary: insurance or manufacturing"},
 			&cli.IntFlag{Name: "people", Usage: "How many registry people the content is about (default up to 10)"},
@@ -47,6 +49,7 @@ func generateCmd() *cli.Command {
 				Kind:     generate.Kind(cmd.GetString("kind")),
 				Count:    cmd.GetInt("count"),
 				Formats:  splitList(cmd.GetString("formats")),
+				From:     splitList(cmd.GetString("from")),
 				Profile:  synth.Profile(cmd.GetString("profile")),
 				People:   cmd.GetInt("people"),
 				Seed:     seed,

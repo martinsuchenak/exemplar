@@ -1,5 +1,6 @@
 // Package generate fills datasets with synthetic fixtures: files, emails and
-// records about people from the person registry. It decides nothing about
+// records about people from the person registry, and emails rendered from
+// template emails (see emailtemplate). It decides nothing about
 // access itself: the dataset service authorises the dataset, and every item
 // is stored through the fixture service like an upload.
 package generate
@@ -38,6 +39,8 @@ const (
 	MaxCount = 500
 	// MaxPeople caps how many people one request involves.
 	MaxPeople = 200
+	// MaxTemplates caps the template emails one request names.
+	MaxTemplates = 50
 	// GeneratorName identifies this generator in fixture provenance.
 	GeneratorName = "exemplar-synth/1"
 	// contentStream separates the content generator's seed from the one
@@ -58,7 +61,12 @@ type Request struct {
 	Profile synth.Profile        `json:"profile,omitempty"`
 	// People is how many registry people the content is about; existing
 	// people are reused and new ones created when there are too few.
-	People   int      `json:"people,omitempty"`
+	People int `json:"people,omitempty"`
+	// From names template emails (fixture IDs) for kind emails, instead of
+	// shapes. Each generated email is one of them with its linked people
+	// swapped for registry people; see emailtemplate. Real-derived
+	// templates must be approved.
+	From     []string `json:"from,omitempty"`
 	Seed     uint64   `json:"seed,omitempty"`
 	Scenario string   `json:"scenario,omitempty"`
 	Tags     []string `json:"tags,omitempty"`
@@ -96,6 +104,10 @@ type item struct {
 	schema   string
 	people   []fixture.PersonLink
 	data     []byte
+	// generator overrides the request's generator string.
+	generator string
+	// ingestBatch is the template's batch, so purging it reaches the item.
+	ingestBatch string
 }
 
 // Generate creates synthetic fixtures in a dataset the caller may change.
@@ -110,6 +122,16 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 	}
 	if _, err := s.datasets.Authorize(ctx, nil, actor, datasetID, dataset.AccessWrite); err != nil {
 		return nil, err
+	}
+	var templates []*template
+	if len(req.From) > 0 {
+		var err error
+		if templates, err = s.loadTemplates(ctx, actor, req.From); err != nil {
+			return nil, err
+		}
+		if err := sizePool(&req, templates); err != nil {
+			return nil, err
+		}
 	}
 	if req.Seed == 0 {
 		req.Seed = s.seed()
@@ -129,12 +151,20 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 		res.PersonIDs = append(res.PersonIDs, p.ID)
 	}
 
-	items, err := build(g, req, people)
+	var items []item
+	if templates != nil {
+		items, err = buildFromTemplates(g, req, templates, people)
+	} else {
+		items, err = build(g, req, people)
+	}
 	if err != nil {
 		return nil, err
 	}
-	generator := fmt.Sprintf("%s seed=%d", GeneratorName, req.Seed)
 	for _, it := range items {
+		generator := it.generator
+		if generator == "" {
+			generator = fmt.Sprintf("%s seed=%d", GeneratorName, req.Seed)
+		}
 		f, err := s.fixtures.Create(ctx, actor, fixture.CreateInput{
 			DatasetID:    datasetID,
 			Name:         it.name,
@@ -144,6 +174,7 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 			Source:       fixture.SourceSynthetic,
 			Generator:    generator,
 			RecordSchema: it.schema,
+			IngestBatch:  it.ingestBatch,
 			People:       it.people,
 			Content:      bytes.NewReader(it.data),
 		})
@@ -153,10 +184,14 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 		res.Fixtures = append(res.Fixtures, *f)
 	}
 
+	details := map[string]any{"kind": req.Kind, "fixtures": len(res.Fixtures), "seed": req.Seed, "people": len(res.PersonIDs)}
+	if len(req.From) > 0 {
+		details["from"] = req.From
+	}
 	err = s.db.WithTx(ctx, nil, func(tx *xdal.Tx) error {
 		return s.audit.Record(ctx, tx, audit.Event{
 			AccountID: actor.AccountID, Action: audit.ActionFixtureGenerate, TargetType: "dataset", TargetID: datasetID,
-			Details: map[string]any{"kind": req.Kind, "fixtures": len(res.Fixtures), "seed": req.Seed, "people": len(res.PersonIDs)},
+			Details: details,
 		})
 	})
 	if err != nil {
@@ -175,6 +210,9 @@ func normalise(req *Request) error {
 	}
 	if !req.Profile.Valid() {
 		return fmt.Errorf("%w: profile must be insurance or manufacturing", apperr.ErrInvalid)
+	}
+	if len(req.From) > 0 {
+		return normaliseTemplates(req)
 	}
 	if req.People == 0 {
 		req.People = min(10, max(2, req.Count))

@@ -51,7 +51,7 @@ func (e *Engine) rewrite(ctx context.Context, msg *mimetree.Part, rep *replacer,
 		case idHeaders[name]:
 			field.Value = e.fakeMessageIDs(value)
 		case textHeaders[name]:
-			field.Value = mimetree.EncodeHeader(rep.apply(value))
+			field.Value = mimetree.EncodeHeader(rep.Apply(value))
 		case urlHeaders[name]:
 			var err error
 			v := urlInAngles.ReplaceAllStringFunc(value, func(m string) string {
@@ -65,7 +65,7 @@ func (e *Engine) rewrite(ctx context.Context, msg *mimetree.Part, rep *replacer,
 			if err != nil {
 				return err
 			}
-			field.Value = mimetree.EncodeHeader(rep.apply(v))
+			field.Value = mimetree.EncodeHeader(rep.Apply(v))
 		}
 		kept = append(kept, field)
 	}
@@ -98,7 +98,7 @@ func (e *Engine) rewriteAddresses(ctx context.Context, value string, rep *replac
 			fake, ferr = e.fakeEmail(ctx, a)
 			return fake
 		})
-		return mimetree.EncodeHeader(rep.apply(v)), nil, ferr
+		return mimetree.EncodeHeader(rep.Apply(v)), nil, ferr
 	}
 	var people []synth.Person
 	parts := make([]string, len(addrs))
@@ -114,7 +114,7 @@ func (e *Engine) rewriteAddresses(ctx context.Context, value string, rep *replac
 				people = append(people, id.person)
 			}
 		}
-		parts[i] = (&mail.Address{Name: rep.apply(a.Name), Address: fake}).String()
+		parts[i] = (&mail.Address{Name: rep.Apply(a.Name), Address: fake}).String()
 	}
 	return strings.Join(parts, ", "), people, nil
 }
@@ -162,7 +162,7 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		if err != nil {
 			return err
 		}
-		text := rep.apply(string(raw))
+		text := rep.Apply(string(raw))
 		var ferr error
 		text = emailRe.ReplaceAllStringFunc(text, func(a string) string {
 			if ferr != nil {
@@ -181,7 +181,7 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		if err != nil {
 			return err
 		}
-		p.SetText(rep.apply(text))
+		p.SetText(rep.Apply(text))
 	default:
 		data, err := p.Decoded()
 		if err != nil {

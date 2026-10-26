@@ -81,7 +81,8 @@ Only fixtures with source `anonymised` are derived from real data.
 - The anonymisation key is read from a file that group and others cannot read (the server refuses otherwise) or from `EXEMPLAR_ANON_KEY`, never from the config file. The registry keeps real identities only as HMACs under that key (`identity_keys`, `name_tokens`).
 - Presidio receives email text in plain form; run it next to the server on a private network or loopback. See [anonymisation.md](anonymisation.md).
 - Copies made by fork or promote keep the source's provenance (`ingest_batch`, review state, reviewer).
-- `exemplar purge <batch>` (admin) deletes a batch's fixtures from every dataset, frozen ones included, for removal on request.
+- `exemplar purge <batch>` (admin) deletes a batch's fixtures from every dataset, frozen ones included, for removal on request. That includes emails generated from the batch's emails as templates, which keep its `ingest_batch`.
+- Only approved real-derived emails can be templates, even for admins, since rendering copies their wording out of quarantine.
 
 ## Audit log
 

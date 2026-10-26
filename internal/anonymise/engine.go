@@ -9,11 +9,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/martinsuchenak/exemplar/internal/mimetree"
 	"github.com/martinsuchenak/exemplar/internal/synth"
+	"github.com/martinsuchenak/exemplar/internal/textswap"
 )
 
 // Header handling, ported from anonymise-corpus.py. Headers not in
@@ -254,11 +253,15 @@ func (e *Engine) Anonymise(ctx context.Context, data []byte) (*Output, error) {
 		return nil, err
 	}
 	f.dropFragments()
-	rep, err := e.replacer(ctx, f)
+	pairs, err := e.replacements(ctx, f)
 	if err != nil {
 		return nil, err
 	}
-	out := &Output{Replacements: rep.pairs, Entities: f.entities}
+	rep, err := textswap.New(pairs)
+	if err != nil {
+		return nil, err
+	}
+	out := &Output{Replacements: pairs, Entities: f.entities}
 	if err := e.rewrite(ctx, root, rep, out, true); err != nil {
 		return nil, err
 	}
@@ -412,15 +415,12 @@ func walkLeaves(p *mimetree.Part, fn func(*mimetree.Part)) {
 	}
 }
 
-// replacer applies every replacement at once, longest original first, only
-// at word boundaries. It replaces HTML-escaped forms too.
-type replacer struct {
-	pairs  map[string]string
-	lookup map[string]string
-	re     *regexp.Regexp
-}
+// replacer applies every replacement at once; see textswap.
+type replacer = textswap.Replacer
 
-func (e *Engine) replacer(ctx context.Context, f *found) (*replacer, error) {
+// replacements returns the replacements for one email: the corpus-wide
+// pairs plus a fake for every entity found in it.
+func (e *Engine) replacements(ctx context.Context, f *found) (map[string]string, error) {
 	pairs := map[string]string{}
 	for v, fake := range e.pairs {
 		pairs[v] = fake
@@ -437,86 +437,5 @@ func (e *Engine) replacer(ctx context.Context, f *found) (*replacer, error) {
 			pairs[v] = fake
 		}
 	}
-	r := &replacer{pairs: pairs, lookup: map[string]string{}}
-	esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
-	keys := make([]string, 0, len(pairs)*2)
-	for v, fake := range pairs {
-		r.lookup[strings.ToLower(v)] = fake
-		keys = append(keys, v)
-		if ev := esc.Replace(v); ev != v {
-			r.lookup[strings.ToLower(ev)] = esc.Replace(fake)
-			keys = append(keys, ev)
-		}
-	}
-	if len(keys) == 0 {
-		return r, nil
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if len(keys[i]) != len(keys[j]) {
-			return len(keys[i]) > len(keys[j])
-		}
-		return keys[i] < keys[j]
-	})
-	quoted := make([]string, len(keys))
-	for i, k := range keys {
-		quoted[i] = regexp.QuoteMeta(k)
-	}
-	re, err := regexp.Compile("(?i)(?:" + strings.Join(quoted, "|") + ")")
-	if err != nil {
-		return nil, err
-	}
-	r.re = re
-	return r, nil
-}
-
-func (r *replacer) apply(s string) string {
-	if r.re == nil {
-		return s
-	}
-	var b strings.Builder
-	last := 0
-	for _, m := range r.re.FindAllStringIndex(s, -1) {
-		if !boundaryBefore(s, m[0]) || !boundaryAfter(s, m[1]) {
-			continue
-		}
-		b.WriteString(s[last:m[0]])
-		orig := s[m[0]:m[1]]
-		fake := r.lookup[strings.ToLower(orig)]
-		if strings.ToUpper(orig) == orig && strings.ToLower(orig) != orig {
-			fake = strings.ToUpper(fake)
-		}
-		b.WriteString(fake)
-		last = m[1]
-	}
-	b.WriteString(s[last:])
-	return b.String()
-}
-
-func isWord(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
-}
-
-// boundaryBefore: not preceded by a word character, '@', '.' or '-'.
-func boundaryBefore(s string, i int) bool {
-	if i == 0 {
-		return true
-	}
-	r, _ := utf8.DecodeLastRuneInString(s[:i])
-	return !isWord(r) && r != '@' && r != '.' && r != '-'
-}
-
-// boundaryAfter: not followed by a word character, '@', '-' or '.' + word.
-func boundaryAfter(s string, i int) bool {
-	if i >= len(s) {
-		return true
-	}
-	r, n := utf8.DecodeRuneInString(s[i:])
-	if isWord(r) || r == '@' || r == '-' {
-		return false
-	}
-	if r == '.' && i+n < len(s) {
-		next, _ := utf8.DecodeRuneInString(s[i+n:])
-		return !isWord(next)
-	}
-	return true
+	return pairs, nil
 }
