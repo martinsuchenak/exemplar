@@ -93,3 +93,39 @@ func TestOversizedJSONIs413(t *testing.T) {
 		t.Errorf("empty fork body = %d %s", w.Code, w.Body)
 	}
 }
+
+func TestImportRefusesGzipBombs(t *testing.T) {
+	for name, cfg := range map[string]func(*app.Config){
+		// 64 KiB compressed limit: at most 640 KiB uncompressed.
+		"uncompressed total": func(c *app.Config) { c.MaxImportBytes = 64 << 10 },
+		// Content entries within the fixture limit, whatever the archive limit.
+		"content entry": func(c *app.Config) { c.MaxFixtureBytes = 1 << 20 },
+	} {
+		a := testutil.NewAppWith(t, cfg)
+		_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, a)
+
+		zeros := make([]byte, 8<<20)
+		hash := sha256.Sum256(zeros)
+		var buf bytes.Buffer
+		w, _ := archive.NewWriter(&buf, archive.Manifest{Kind: archive.KindExport, Counts: map[string]int{"datasets": 1, "blobs": 1}})
+		_ = archive.Records(w, "datasets.jsonl", []map[string]any{{"id": "d1", "name": "bomb", "scope": "workspace", "version": 1}})
+		_ = w.Blob(fmt.Sprintf("%x", hash), int64(len(zeros)), bytes.NewReader(zeros))
+		_ = w.Close()
+		if buf.Len() > 64<<10 {
+			t.Fatalf("bomb is %d bytes compressed", buf.Len())
+		}
+
+		req := httptest.NewRequest("POST", "/api/v1/import", bytes.NewReader(buf.Bytes()))
+		req.Header.Set("X-API-Key", issued.Secret)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("%s: import of an 8 MiB bomb = %d %s", name, rec.Code, rec.Body)
+		}
+	}
+}

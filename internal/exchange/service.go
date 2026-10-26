@@ -58,6 +58,18 @@ func NewService(dbi xdal.DBInterface, datasets *dataset.Service, fixtures *fixtu
 	return &Service{db: dbi, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, appVersion: appVersion, maxImport: maxImport}
 }
 
+// UncompressedFactor is how many times the import limit an archive may
+// expand to. Real exports (mail, JSON, office files) compress a few times;
+// a gzip bomb compresses thousands of times.
+const UncompressedFactor = 10
+
+// importLimits are the decompression limits of one import: content entries
+// within the fixture size limit, the whole archive within UncompressedFactor
+// times the import limit.
+func (s *Service) importLimits() archive.Limits {
+	return archive.Limits{Total: s.maxImport * UncompressedFactor, Blob: s.fixtures.MaxSize()}
+}
+
 // MaxImportBytes is the largest import archive accepted; 0 means no limit.
 func (s *Service) MaxImportBytes() int64 {
 	return s.maxImport
@@ -252,7 +264,7 @@ func (s *Service) Import(ctx context.Context, actor principal.Principal, r io.Re
 	if !actor.CanWrite() {
 		return nil, fmt.Errorf("%w: importing needs a write key", apperr.ErrForbidden)
 	}
-	ar, err := archive.NewReader(r)
+	ar, err := archive.NewLimitedReader(r, s.importLimits())
 	if err != nil {
 		return nil, err
 	}

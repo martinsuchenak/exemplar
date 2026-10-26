@@ -1,0 +1,14 @@
+# Keeps the commit-pinned GitHub Actions in .github/workflows up to date: a
+# weekly pull request moves each pin to the latest release, with the version
+# in the trailing comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

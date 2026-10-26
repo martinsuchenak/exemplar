@@ -35,6 +35,11 @@ Coverage across packages:
 go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 ```
 
+CI (`.github/workflows/ci.yml`) pins every action to a commit hash, with the
+version in a trailing comment, and `build/ci_test.go` fails on any action
+that is not pinned. Dependabot (`.github/dependabot.yml`) opens a weekly pull
+request moving the pins to the latest releases.
+
 Scratch code (experiments, a security tool's proof-of-concept tests) goes
 in `tmp/`, which git ignores. Give it its own module (`tmp/go.mod` with
 `module scratch`) so `go test ./...` and the linter in the repository root

@@ -16,6 +16,11 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/storeutil"
 )
 
+// MaxSize is the largest fixture content accepted, in bytes; 0 means no limit.
+func (s *Service) MaxSize() int64 {
+	return s.maxSize
+}
+
 // HoldContent stops content garbage collection until release is called.
 // An import holds it from EnsureContent until the fixtures that use the
 // content are inserted. Hold it briefly: while a collection waits for it,

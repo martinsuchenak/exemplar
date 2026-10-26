@@ -86,7 +86,12 @@ the `blobs` table or a fixture, so a hand-made backup cannot plant rows that
 break garbage collection.
 
 An archive is capped at `storage.max_import_mb` (default 2048 MiB; `413` over
-it), each record file at 64 MiB and 100,000 records.
+it), each record file at 64 MiB and 100,000 records. Because that limit is on
+the compressed upload, the archive may also expand to at most 10 times it
+uncompressed, and each content entry must fit the fixture limit
+(`storage.max_fixture_mb`), checked from its header before any of it is read.
+So a small, highly compressed archive (a gzip bomb) is refused in moments
+instead of keeping the server decompressing.
 
 ### Real-derived fixtures
 

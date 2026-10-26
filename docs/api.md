@@ -132,8 +132,10 @@ server with no anonymiser configured. See [anonymisation.md](anonymisation.md).
 
 Export decides and audits everything before the first byte, so errors come
 back with a status code; a failure while streaming aborts the connection, so
-the client sees an error rather than a short archive. A damaged or truncated archive gets `400`; one over
-`storage.max_import_mb` gets `413`. See
+the client sees an error rather than a short archive. A damaged or truncated
+archive gets `400`; one over `storage.max_import_mb`, over ten times that
+uncompressed, or with a content entry over `storage.max_fixture_mb` gets
+`413`. See
 [backup-and-exchange.md](backup-and-exchange.md).
 
 ### People and generation

@@ -187,3 +187,56 @@ func TestRecordCountLimit(t *testing.T) {
 		t.Errorf("too many records err = %v", err)
 	}
 }
+
+// bomb is an archive whose one content entry is size zero bytes: tiny
+// compressed, size uncompressed.
+func bomb(t *testing.T, size int) []byte {
+	t.Helper()
+	zeros := make([]byte, size)
+	var buf bytes.Buffer
+	w, err := NewWriter(&buf, Manifest{Kind: KindExport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Blob(sum(zeros), int64(size), bytes.NewReader(zeros)); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+func TestLimits(t *testing.T) {
+	data := bomb(t, 64<<20)
+	if len(data) > 1<<20 {
+		t.Fatalf("bomb is %d bytes compressed", len(data))
+	}
+
+	// The whole archive within Total.
+	r, err := NewLimitedReader(bytes.NewReader(data), Limits{Total: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := r.Next()
+	if err == nil {
+		_, err = io.Copy(io.Discard, e)
+	}
+	if !errors.Is(err, apperr.ErrTooLarge) {
+		t.Errorf("total limit err = %v", err)
+	}
+
+	// One content entry within Blob, refused from its header.
+	r, _ = NewLimitedReader(bytes.NewReader(data), Limits{Blob: 1 << 20})
+	if _, err := r.Next(); !errors.Is(err, apperr.ErrTooLarge) {
+		t.Errorf("blob limit err = %v", err)
+	}
+
+	// Within both limits it reads to the end.
+	r, _ = NewLimitedReader(bytes.NewReader(data), Limits{Total: 128 << 20, Blob: 64 << 20})
+	e, err = r.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := io.Copy(io.Discard, e); err != nil || n != 64<<20 {
+		t.Errorf("read %d, %v", n, err)
+	}
+}

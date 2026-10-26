@@ -171,6 +171,7 @@ func (w *Writer) Close() error {
 type Reader struct {
 	tr       *tar.Reader
 	manifest Manifest
+	limits   Limits
 }
 
 // Entry is one archive entry. Read it before calling Next again.
@@ -190,9 +191,26 @@ func (e *Entry) IsBlob() bool {
 	return strings.HasPrefix(e.Name, blobPrefix)
 }
 
+// Limits bound what a Reader decompresses, so a small, highly compressed
+// archive (a gzip bomb) cannot keep a reader busy for hours. Zero means no
+// limit.
+type Limits struct {
+	// Total caps the uncompressed bytes of the whole archive.
+	Total int64
+	// Blob caps one content entry's size; a larger one is refused from its
+	// header, before any of it is read.
+	Blob int64
+}
+
 // NewReader opens an archive and reads its manifest. Archives of another
 // format or a newer format version are rejected.
 func NewReader(r io.Reader) (*Reader, error) {
+	return NewLimitedReader(r, Limits{})
+}
+
+// NewLimitedReader is NewReader within limits; going over one is an
+// apperr.ErrTooLarge error.
+func NewLimitedReader(r io.Reader, limits Limits) (*Reader, error) {
 	gz, err := gzip.NewReader(r)
 	if errors.Is(err, apperr.ErrTooLarge) {
 		return nil, err
@@ -200,7 +218,11 @@ func NewReader(r io.Reader) (*Reader, error) {
 	if err != nil {
 		return nil, invalid("not a gzip stream")
 	}
-	ar := &Reader{tr: tar.NewReader(gz)}
+	var body io.Reader = gz
+	if limits.Total > 0 {
+		body = &capped{r: gz, left: limits.Total, limit: limits.Total}
+	}
+	ar := &Reader{tr: tar.NewReader(body), limits: limits}
 	hdr, err := ar.tr.Next()
 	if errors.Is(err, apperr.ErrTooLarge) {
 		return nil, err
@@ -254,11 +276,33 @@ func (r *Reader) Next() (*Entry, error) {
 	if hdr.Size < 0 {
 		return nil, invalid("%s has a negative size", name)
 	}
+	if r.limits.Blob > 0 && hdr.Size > r.limits.Blob && strings.HasPrefix(name, blobPrefix) {
+		return nil, fmt.Errorf("%w: archive: %s is %d bytes, over the %d-byte content limit", apperr.ErrTooLarge, name, hdr.Size, r.limits.Blob)
+	}
 	var body io.Reader = damaged{r: r.tr, name: name}
 	if strings.HasPrefix(name, blobPrefix) {
 		body = Verify(body, strings.TrimPrefix(name, blobPrefix))
 	}
 	return &Entry{Name: name, Size: hdr.Size, Reader: body}, nil
+}
+
+// capped fails once more than limit uncompressed bytes have been read.
+type capped struct {
+	r           io.Reader
+	left, limit int64
+}
+
+// Read implements io.Reader.
+func (c *capped) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, fmt.Errorf("%w: archive: over %d bytes uncompressed", apperr.ErrTooLarge, c.limit)
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 // damaged reports a read error inside an entry (a truncated or corrupt
