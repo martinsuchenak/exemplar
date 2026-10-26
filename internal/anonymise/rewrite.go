@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"mime"
 	"net/mail"
@@ -24,6 +25,13 @@ var urlInAngles = regexp.MustCompile(`<([^<>]+)>`)
 // rewrite replaces personal data in msg's headers and parts. top is true for
 // the outer message, whose people are linked to the fixture.
 func (e *Engine) rewrite(ctx context.Context, msg *mimetree.Part, rep *replacer, out *Output, top bool) error {
+	return e.rewriteAt(ctx, msg, rep, out, top, 0)
+}
+
+func (e *Engine) rewriteAt(ctx context.Context, msg *mimetree.Part, rep *replacer, out *Output, top bool, depth int) error {
+	if depth > mimetree.MaxDepth {
+		return fmt.Errorf("message nests attached emails more than %d levels deep", mimetree.MaxDepth)
+	}
 	var people []synth.Person
 	kept := msg.Header.Fields[:0:0]
 	for _, field := range msg.Header.Fields {
@@ -75,10 +83,25 @@ func (e *Engine) rewrite(ctx context.Context, msg *mimetree.Part, rep *replacer,
 	}
 
 	var err error
-	walkLeaves(msg, func(p *mimetree.Part) {
-		if err == nil {
-			err = e.rewriteLeaf(ctx, p, rep, out, people)
+	msg.Walk(func(p *mimetree.Part) {
+		if err != nil {
+			return
 		}
+		if p.IsMultipart() {
+			// A nested multipart's own headers get the same pass as a leaf's.
+			if p != msg {
+				dropPartHeaders(p, out)
+				if err = e.rewritePartHeaders(ctx, p, rep); err != nil {
+					return
+				}
+			}
+			// The preamble and epilogue are text around the boundary lines;
+			// mailing-list footers there often carry addresses.
+			p.Preamble = []byte(rep.Apply(string(p.Preamble)))
+			p.Epilogue = []byte(rep.Apply(string(p.Epilogue)))
+			return
+		}
+		err = e.rewriteLeaf(ctx, p, rep, out, people, p == msg, depth)
 	})
 	return err
 }
@@ -130,8 +153,14 @@ func appendRole(roles []PersonRole, r PersonRole) []PersonRole {
 
 // rewriteLeaf rewrites one leaf: attached messages recursively, reports and
 // body text in place, and every other leaf replaced by a dummy of its type.
-func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replacer, out *Output, people []synth.Person) error {
+func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replacer, out *Output, people []synth.Person, root bool, depth int) error {
 	mt, _ := p.MediaType()
+	if !root {
+		// The message's own headers were filtered by keepHeaders above; a
+		// part's headers have had no such pass, so drop the non-structural
+		// ones here (custom part headers can carry personal data).
+		dropPartHeaders(p, out)
+	}
 	if cid := p.Header.Get("Content-ID"); cid != "" {
 		p.Header.Set("Content-ID", "<"+e.fakeID(strings.Trim(cid, "<> "))+">")
 	}
@@ -139,10 +168,8 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		inline := strings.HasPrefix(strings.ToLower(p.Header.Get("Content-Disposition")), "inline") || p.Header.Get("Content-ID") != ""
 		e.renameAttachment(p, name, inline)
 	}
-	// A part's description often repeats its file name or what it is about
-	// ("acme.com.au!1792800000.xml.gz" on a DMARC report).
-	if desc := p.Header.Get("Content-Description"); desc != "" {
-		p.Header.Set("Content-Description", mimetree.EncodeHeader(rep.Apply(mimetree.DecodeHeader(desc))))
+	if err := e.rewritePartHeaders(ctx, p, rep); err != nil {
+		return err
 	}
 	switch {
 	case mt == "message/rfc822":
@@ -150,11 +177,11 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		if err != nil {
 			return err
 		}
-		inner, err := mimetree.Parse(raw)
+		inner, err := mimetree.ParseAt(raw, p.Depth+1)
 		if err != nil {
 			return err
 		}
-		if err := e.rewrite(ctx, inner, rep, out, false); err != nil {
+		if err := e.rewriteAt(ctx, inner, rep, out, false, depth+1); err != nil {
 			return err
 		}
 		if p.Encoding() == "base64" {
@@ -199,6 +226,60 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		out.Attachments++
 	}
 	return nil
+}
+
+// partHeaders are the headers a MIME part needs to parse; every other header
+// on a part is dropped, as unknown headers on a message are. Custom part
+// headers (X-*, Comments and the like) can carry addresses and names no
+// detector reads, so they must not reach the output.
+var partHeaders = set([]string{
+	"Content-Type", "Content-Transfer-Encoding", "Content-Disposition", "Content-ID",
+	"Content-Language", "Content-Description", "Content-Location", "Content-Features",
+	"Content-MD5", "MIME-Version",
+})
+
+// rewritePartHeaders rewrites the part headers that carry free text or a
+// URL: a description often repeats a file name or what the part is about
+// ("acme.com.au!1792800000.xml.gz" on a DMARC report), and Content-Location
+// names where the part came from.
+func (e *Engine) rewritePartHeaders(ctx context.Context, p *mimetree.Part, rep *replacer) error {
+	if desc := p.Header.Get("Content-Description"); desc != "" {
+		p.Header.Set("Content-Description", mimetree.EncodeHeader(rep.Apply(mimetree.DecodeHeader(desc))))
+	}
+	if loc := strings.Trim(strings.TrimSpace(p.Header.Get("Content-Location")), "<>"); loc != "" {
+		if !strings.Contains(loc, "://") && !strings.HasPrefix(strings.ToLower(loc), "www.") {
+			// A relative reference is a file name ("ann-lee-photo.png"):
+			// renamed like an attachment, keeping the extension. The same
+			// name gets the same fake, so references between parts still
+			// match.
+			fake := "part-" + e.key.Hex("location", loc, 6)
+			if ext := strings.TrimPrefix(path.Ext(loc), "."); ext != "" && len(ext) <= 5 {
+				fake += "." + strings.ToLower(ext)
+			}
+			p.Header.Set("Content-Location", fake)
+			return nil
+		}
+		fake, err := e.fakeURL(ctx, loc)
+		if err != nil {
+			return err
+		}
+		p.Header.Set("Content-Location", fake)
+	}
+	return nil
+}
+
+// dropPartHeaders removes p's headers that carry no structure, counting them
+// like dropped message headers.
+func dropPartHeaders(p *mimetree.Part, out *Output) {
+	kept := p.Header.Fields[:0:0]
+	for _, f := range p.Header.Fields {
+		if !partHeaders[strings.ToLower(f.Name)] {
+			out.DroppedHeaders = append(out.DroppedHeaders, f.Name)
+			continue
+		}
+		kept = append(kept, f)
+	}
+	p.Header.Fields = kept
 }
 
 // filename returns a part's file name from Content-Disposition or Content-Type.

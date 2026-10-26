@@ -419,6 +419,18 @@ func check(ctx context.Context, dbPath, blobDir string, sum *Summary) error {
 	if err != nil {
 		return err
 	}
+	// Every hash the database holds must be well formed: garbage collection
+	// derives file paths from the blobs table, and a tampered backup could
+	// otherwise plant a row it cannot handle.
+	for _, q := range []string{"SELECT hash FROM blobs", "SELECT DISTINCT blob_hash FROM fixtures"} {
+		bad, err := firstInvalidHash(ctx, conn.SQL, q)
+		if err != nil {
+			return err
+		}
+		if bad != "" {
+			return fmt.Errorf("the backup's database holds a malformed content hash %q; it was not made by exemplar backup", bad)
+		}
+	}
 	store, err := blob.NewStore(blobDir, nil)
 	if err != nil {
 		return err
@@ -435,6 +447,26 @@ func check(ctx context.Context, dbPath, blobDir string, sum *Summary) error {
 		return err
 	}
 	return nil
+}
+
+// firstInvalidHash returns the first value of query's single column that is
+// not a valid blob hash, or "".
+func firstInvalidHash(ctx context.Context, conn *sql.DB, query string) (string, error) {
+	rows, err := conn.QueryContext(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return "", err
+		}
+		if !blob.ValidHash(h) {
+			return h, nil
+		}
+	}
+	return "", rows.Err()
 }
 
 // RecordRestore records instance.restore in the audit log of the instance

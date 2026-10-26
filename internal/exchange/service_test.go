@@ -304,6 +304,12 @@ func TestImportRejects(t *testing.T) {
 			g.ReviewState = fixture.ReviewUnreviewed
 			return g
 		}()}, nil), apperr.ErrInvalid},
+		"path in fixture id": {craft(t, map[string]int{"datasets": 1, "fixtures": 1}, []dataset.Dataset{d}, nil, []fixture.Fixture{func() fixture.Fixture { g := f; g.ID, g.People = "../../etc/passwd", nil; return g }()}, nil), apperr.ErrInvalid},
+		"path in person id": {craft(t, one, []dataset.Dataset{d}, []person.Person{func() person.Person { q := p; q.ID = "../p1"; return q }()}, []fixture.Fixture{func() fixture.Fixture {
+			g := f
+			g.People = []fixture.PersonLink{{PersonID: "../p1", Role: "author"}}
+			return g
+		}()}, nil), apperr.ErrInvalid},
 		"bad dataset scope": {craft(t, map[string]int{"datasets": 1}, []dataset.Dataset{func() dataset.Dataset { e := d; e.Scope = "public"; return e }()}, nil, nil, nil), apperr.ErrInvalid},
 	}
 	for name, c := range cases {

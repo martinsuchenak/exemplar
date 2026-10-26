@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -585,5 +586,60 @@ func TestKeptLocalPartsAreScrubbed(t *testing.T) {
 	}
 	if got := e.scrubLocal("klix-noreply"); got != companyKey(e.fakeCompany("KLIX"))+"-noreply" {
 		t.Errorf("term in local part = %q", got)
+	}
+}
+
+// partHeaderMail hides personal data where Strix found the anonymiser did
+// not look: custom part headers (also on a nested multipart), a
+// Content-Location URL, and the multipart preamble and epilogue.
+const partHeaderMail = "From: Ann Lee <ann.lee@acme.com.au>\r\nTo: Bo Ray <bo.ray@other.com.au>\r\nSubject: parts\r\n" +
+	"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"OUT\"\r\n\r\n" +
+	"Mailing list for cy.dean@third.com.au\r\n" +
+	"--OUT\r\nContent-Type: multipart/related; boundary=\"IN\"\r\nX-Owner: dee.fox@fourth.com.au\r\n\r\n" +
+	"--IN\r\nContent-Type: text/plain; charset=utf-8\r\nX-Zimbra-Custom: owner eve.gray@fifth.com.au\r\nComments: from Ann\r\n\r\nbody\r\n" +
+	"--IN\r\nContent-Type: image/png\r\nContent-Location: https://intranet.acme.com.au/staff/ann-lee.png\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n" +
+	"--IN\r\nContent-Type: image/png\r\nContent-Location: ann-lee-photo.png\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n" +
+	"--IN--\r\n--OUT--\r\nAfter: also cc gus.hill@sixth.com.au\r\n"
+
+func TestPartHeadersPreambleAndEpilogue(t *testing.T) {
+	e, err := New(testKey(t), defaultProfile(t), wordDetector{names: []string{"Ann", "Ann Lee"}}, newMemRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := run(t, e, partHeaderMail)[0]
+	all := strings.ToLower(string(out.Data))
+	for _, s := range []string{"cy.dean", "dee.fox", "eve.gray", "gus.hill", "acme.com.au", "third.com.au", "ann-lee", "ann lee", "comments: from ann"} {
+		if strings.Contains(all, s) {
+			t.Errorf("%q survived:\n%s", s, out.Data)
+		}
+	}
+	dropped := strings.Join(out.DroppedHeaders, ",")
+	for _, h := range []string{"X-Owner", "X-Zimbra-Custom", "Comments"} {
+		if !strings.Contains(dropped, h) {
+			t.Errorf("%s not dropped: %v", h, out.DroppedHeaders)
+		}
+	}
+	root, _ := mimetree.Parse(out.Data)
+	related := root.Parts[0]
+	if loc := related.Parts[1].Header.Get("Content-Location"); !strings.HasPrefix(loc, "https://") || !strings.Contains(loc, ".example/") {
+		t.Errorf("absolute Content-Location = %q", loc)
+	}
+	if loc := related.Parts[2].Header.Get("Content-Location"); !strings.HasPrefix(loc, "part-") || !strings.HasSuffix(loc, ".png") {
+		t.Errorf("relative Content-Location = %q", loc)
+	}
+	if !strings.HasPrefix(string(root.Preamble), "Mailing list for ") || !strings.HasPrefix(string(root.Epilogue), "After: also cc ") {
+		t.Errorf("preamble %q, epilogue %q", root.Preamble, root.Epilogue)
+	}
+}
+
+func TestHostileNestingIsRefused(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("From: a@b.com.au\r\nTo: c@d.com.au\r\nContent-Type: multipart/mixed; boundary=q0\r\n\r\n")
+	for i := 0; i < 500; i++ {
+		fmt.Fprintf(&b, "--q%d\r\nContent-Type: multipart/mixed; boundary=q%d\r\n\r\n", i, i+1)
+	}
+	e := newEngine(t, newMemRegistry())
+	if _, err := e.Anonymise(ctx, []byte(b.String())); err == nil || !strings.Contains(err.Error(), "levels deep") {
+		t.Errorf("err = %v", err)
 	}
 }

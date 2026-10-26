@@ -3,9 +3,11 @@ package mimetree
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/mail"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/martinsuchenak/exemplar/internal/synth"
 )
@@ -171,5 +173,95 @@ func TestEdgeCases(t *testing.T) {
 	}
 	if mt, _ := (&Part{Header: Header{Fields: []Field{{"Content-Type", "text/html; ; bad=="}}}}).MediaType(); mt != "text/html" {
 		t.Errorf("malformed params type = %q", mt)
+	}
+}
+
+// deepMessage builds a message nesting levels multiparts, each with its own
+// boundary (the shape that made parsing quadratic), padded to about size
+// bytes.
+func deepMessage(levels, size int) []byte {
+	var b strings.Builder
+	b.WriteString("From: a@b.example\r\nContent-Type: multipart/mixed; boundary=\"q0\"\r\n\r\n")
+	for i := 0; i < levels; i++ {
+		fmt.Fprintf(&b, "--q%d\r\nContent-Type: multipart/mixed; boundary=\"q%d\"\r\n\r\n", i, i+1)
+	}
+	fmt.Fprintf(&b, "--q%d\r\nContent-Type: text/plain\r\n\r\n", levels)
+	pad := size - b.Len()
+	for pad > 0 {
+		b.WriteString("padding padding padding padding padding padding padding padding\r\n")
+		pad -= 66
+	}
+	for i := levels; i >= 0; i-- {
+		fmt.Fprintf(&b, "--q%d--\r\n", i)
+	}
+	return []byte(b.String())
+}
+
+func TestDepthAndPartLimits(t *testing.T) {
+	if _, err := Parse(deepMessage(MaxDepth-1, 0)); err != nil {
+		t.Errorf("%d levels: %v", MaxDepth-1, err)
+	}
+	if _, err := Parse(deepMessage(MaxDepth+1, 0)); err == nil || !strings.Contains(err.Error(), "levels deep") {
+		t.Errorf("%d levels err = %v", MaxDepth+1, err)
+	}
+
+	var many strings.Builder
+	many.WriteString("Content-Type: multipart/mixed; boundary=B\r\n\r\n")
+	for i := 0; i <= MaxParts; i++ {
+		many.WriteString("--B\r\n\r\nx\r\n")
+	}
+	many.WriteString("--B--\r\n")
+	if _, err := Parse([]byte(many.String())); err == nil || !strings.Contains(err.Error(), "parts") {
+		t.Errorf("%d parts err = %v", MaxParts+1, err)
+	}
+
+	// An attached message continues its parent's depth.
+	root, err := Parse(deepMessage(3, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := root
+	for leaf.IsMultipart() {
+		leaf = leaf.Parts[0]
+	}
+	if leaf.Depth != 4 {
+		t.Errorf("leaf depth = %d", leaf.Depth)
+	}
+	if _, err := ParseAt(deepMessage(3, 0), MaxDepth-2); err == nil {
+		t.Error("an attached message got a fresh depth budget")
+	}
+}
+
+func TestDeepLargeMessagesAreCheap(t *testing.T) {
+	// Strix's payloads: before, 10 MB at 150,000 levels did not finish in
+	// 20 s even with a depth cap, and 1.4 MB at 20,000 levels used 19 GB.
+	for _, tt := range []struct{ levels, size int }{{150000, 10 << 20}, {20000, 1 << 20}, {MaxDepth - 1, 10 << 20}} {
+		data := deepMessage(tt.levels, tt.size)
+		start := time.Now()
+		_, err := Parse(data)
+		if took := time.Since(start); took > 10*time.Second {
+			t.Errorf("%d levels, %d bytes: %v (err %v)", tt.levels, len(data), took, err)
+		}
+		if tt.levels > MaxDepth && err == nil {
+			t.Errorf("%d levels accepted", tt.levels)
+		}
+		if tt.levels < MaxDepth && err != nil {
+			t.Errorf("%d levels, %d bytes: %v", tt.levels, len(data), err)
+		}
+	}
+}
+
+func TestLineEndingsAreKept(t *testing.T) {
+	// LF-only input parses the same as CRLF input.
+	crlf := "Content-Type: multipart/mixed; boundary=B\r\n\r\npre\r\n--B\r\nContent-Type: text/plain\r\n\r\nline 1\r\nline 2\r\n--B--\r\npost\r\n"
+	lf := strings.ReplaceAll(crlf, "\r\n", "\n")
+	a, _ := Parse([]byte(crlf))
+	b, _ := Parse([]byte(lf))
+	if string(a.Parts[0].Body) != "line 1\r\nline 2" || string(b.Parts[0].Body) != string(a.Parts[0].Body) ||
+		string(a.Preamble) != "pre" || string(b.Epilogue) != "post" {
+		t.Errorf("bodies %q / %q, preamble %q, epilogue %q", a.Parts[0].Body, b.Parts[0].Body, a.Preamble, b.Epilogue)
+	}
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
+		t.Error("CRLF and LF input serialise differently")
 	}
 }

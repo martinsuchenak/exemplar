@@ -9,6 +9,7 @@ import (
 
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/auth"
+	"github.com/martinsuchenak/exemplar/internal/rest"
 )
 
 var registrations []func(*http.ServeMux)
@@ -27,7 +28,7 @@ func Register(fn func(*http.ServeMux)) {
 func RegisterRoutes(mux *http.ServeMux, a *app.App) {
 	services = a
 	mux.HandleFunc("GET /health", healthHandler)
-	mux.HandleFunc("GET /metrics", metricsHandler)
+	mux.Handle("GET /metrics", authenticated(metricsHandler))
 
 	for _, fn := range registrations {
 		fn(mux)
@@ -46,7 +47,18 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// metricsHandler reports process figures to admins. They say little, but
+// nothing about the process is anyone else's business.
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
+	p, ok := rest.Caller(w, r)
+	if !ok {
+		return
+	}
+	if !p.IsAdmin() {
+		rest.RespondError(w, http.StatusForbidden, "metrics need an admin key")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)

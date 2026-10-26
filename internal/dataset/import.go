@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -12,11 +11,8 @@ import (
 
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/storeutil"
 )
-
-// idRe matches the IDs exemplar makes (UUIDv7) and anything similar enough
-// to be safe as a key.
-var idRe = regexp.MustCompile(`^[0-9A-Za-z-]{1,64}$`)
 
 // CheckImport reports whether actor may import d: the rules Import applies,
 // without writing, so an import can fail before it stores any content.
@@ -27,7 +23,7 @@ func (s *Service) CheckImport(ctx context.Context, exec xdal.DBExecutor, actor p
 	if !actor.CanWrite() {
 		return fmt.Errorf("%w: importing needs a write key", apperr.ErrForbidden)
 	}
-	if !idRe.MatchString(d.ID) || !nameRe.MatchString(strings.TrimSpace(d.Name)) || d.Version < 1 {
+	if !storeutil.ValidID(d.ID) || !nameRe.MatchString(strings.TrimSpace(d.Name)) || d.Version < 1 {
 		return fmt.Errorf("%w: archive dataset %q has a bad id, name or version", apperr.ErrInvalid, d.ID)
 	}
 	if !d.Scope.Valid() {

@@ -74,6 +74,17 @@ just before the records are added, in one transaction at the end. A failed
 import adds no records, and the contents it stored are removed by the next
 garbage collection.
 
+The records transaction of a large import (up to 100,000 records per file)
+can hold the database's write lock for many seconds; other writers queue for
+it rather than fail, because SQLite's `busy_timeout` is 60 seconds. On slow
+storage, keep imports well below the record caps. Content stored for an
+upload whose registration fails anyway is removed at once, so it cannot be
+left behind where garbage collection would never find it.
+
+Restore refuses a backup whose database holds a malformed content hash, in
+the `blobs` table or a fixture, so a hand-made backup cannot plant rows that
+break garbage collection.
+
 An archive is capped at `storage.max_import_mb` (default 2048 MiB; `413` over
 it), each record file at 64 MiB and 100,000 records.
 

@@ -13,6 +13,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/blob"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/storeutil"
 )
 
 // HoldContent stops content garbage collection until release is called.
@@ -117,7 +118,7 @@ func (s *Service) Import(ctx context.Context, tx *xdal.Tx, actor principal.Princ
 // fixtures it will skip.
 func CheckImport(actor principal.Principal, d *dataset.Dataset, f *Fixture) error {
 	f.Name = strings.TrimSpace(f.Name)
-	if f.ID == "" || len(f.ID) > 64 || !validName(f.Name) ||
+	if !storeutil.ValidID(f.ID) || !validName(f.Name) ||
 		!f.Kind.Valid() || f.Format == "" || !f.Source.Valid() || !blob.ValidHash(f.BlobHash) {
 		return fmt.Errorf("%w: archive fixture %q is malformed", apperr.ErrInvalid, f.ID)
 	}
@@ -125,7 +126,7 @@ func CheckImport(actor principal.Principal, d *dataset.Dataset, f *Fixture) erro
 		return fmt.Errorf("%w: archive fixture %q: only records have a record schema", apperr.ErrInvalid, f.Name)
 	}
 	for _, l := range f.People {
-		if l.PersonID == "" || !roleRe.MatchString(l.Role) {
+		if !storeutil.ValidID(l.PersonID) || !roleRe.MatchString(l.Role) {
 			return fmt.Errorf("%w: archive fixture %q has a bad person link", apperr.ErrInvalid, f.Name)
 		}
 	}

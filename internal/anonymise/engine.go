@@ -108,14 +108,17 @@ func (e *Engine) Prepare(ctx context.Context, emails [][]byte) error {
 		if err != nil {
 			return err
 		}
-		if err := e.prepareMessage(ctx, root); err != nil {
+		if err := e.prepareMessage(ctx, root, 0); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (e *Engine) prepareMessage(ctx context.Context, msg *mimetree.Part) error {
+func (e *Engine) prepareMessage(ctx context.Context, msg *mimetree.Part, depth int) error {
+	if depth > mimetree.MaxDepth {
+		return fmt.Errorf("message nests attached emails more than %d levels deep", mimetree.MaxDepth)
+	}
 	for _, f := range msg.Header.Fields {
 		if !addressHeaders[strings.ToLower(f.Name)] {
 			continue
@@ -134,8 +137,8 @@ func (e *Engine) prepareMessage(ctx context.Context, msg *mimetree.Part) error {
 	walkLeaves(msg, func(p *mimetree.Part) {
 		if mt, _ := p.MediaType(); err == nil && mt == "message/rfc822" {
 			if raw, derr := p.Decoded(); derr == nil {
-				if inner, perr := mimetree.Parse(raw); perr == nil {
-					err = e.prepareMessage(ctx, inner)
+				if inner, perr := mimetree.ParseAt(raw, p.Depth+1); perr == nil {
+					err = e.prepareMessage(ctx, inner, depth+1)
 				}
 			}
 		}
@@ -260,7 +263,7 @@ func (e *Engine) Anonymise(ctx context.Context, data []byte) (*Output, error) {
 		return nil, fmt.Errorf("not a valid email: %w", err)
 	}
 	f := newFound(e.profile)
-	if err := e.collect(ctx, root, f); err != nil {
+	if err := e.collect(ctx, root, f, 0); err != nil {
 		return nil, err
 	}
 	f.dropFragments()
@@ -303,7 +306,10 @@ func (e *Engine) sets(pairs map[string]string, f *found) textswap.Sets {
 }
 
 // collect finds personal data in one message (and messages attached to it).
-func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found) error {
+func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found, depth int) error {
+	if depth > mimetree.MaxDepth {
+		return fmt.Errorf("message nests attached emails more than %d levels deep", mimetree.MaxDepth)
+	}
 	for _, field := range msg.Header.Fields {
 		name := strings.ToLower(field.Name)
 		value := mimetree.DecodeHeader(field.Value)
@@ -336,8 +342,21 @@ func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found) erro
 		}
 	}
 	var err error
-	walkLeaves(msg, func(p *mimetree.Part) {
+	msg.Walk(func(p *mimetree.Part) {
 		if err != nil {
+			return
+		}
+		if p.IsMultipart() {
+			// The preamble and epilogue are text around the boundary lines,
+			// where mailing-list footers carry addresses no header shows.
+			for _, text := range []string{string(p.Preamble), string(p.Epilogue)} {
+				if strings.TrimSpace(text) != "" {
+					if derr := e.detect(ctx, text, f); derr != nil {
+						err = derr
+						return
+					}
+				}
+			}
 			return
 		}
 		if cid := strings.Trim(p.Header.Get("Content-ID"), "<> "); cid != "" {
@@ -351,12 +370,12 @@ func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found) erro
 				err = derr
 				return
 			}
-			inner, perr := mimetree.Parse(raw)
+			inner, perr := mimetree.ParseAt(raw, p.Depth+1)
 			if perr != nil {
 				err = perr
 				return
 			}
-			err = e.collect(ctx, inner, f)
+			err = e.collect(ctx, inner, f, depth+1)
 		case reportTypes[mt]:
 			raw, _ := p.Decoded()
 			for _, a := range emailRe.FindAllString(string(raw), -1) {

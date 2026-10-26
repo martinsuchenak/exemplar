@@ -62,6 +62,11 @@ func TestAuditEventsAreAppendOnly(t *testing.T) {
 	if _, err := conn.SQL.Exec(`DELETE FROM audit_events`); err == nil {
 		t.Error("delete from audit_events succeeded, want error")
 	}
+	// REPLACE INTO deletes the conflicting row first; only recursive triggers
+	// fire the no-delete trigger for that implicit delete.
+	if _, err := conn.SQL.Exec(`REPLACE INTO audit_events (id, at, action) VALUES ('e1', '2026-10-26T00:00:00Z', 'changed')`); err == nil {
+		t.Error("replace into audit_events succeeded, want error")
+	}
 }
 
 func TestForeignKeysEnforced(t *testing.T) {
@@ -145,5 +150,16 @@ func TestOpenCurrent(t *testing.T) {
 	}
 	if v, _ := AppliedVersion(ctx, conn); v == LatestVersion() {
 		t.Error("OpenCurrent migrated the database")
+	}
+}
+
+func TestConnectionPragmas(t *testing.T) {
+	conn, _ := openTemp(t)
+	var busy, recursive int
+	if err := conn.SQL.QueryRow("PRAGMA busy_timeout").Scan(&busy); err != nil || busy < 60000 {
+		t.Errorf("busy_timeout = %d, %v; must outlast the longest transaction (a large import)", busy, err)
+	}
+	if err := conn.SQL.QueryRow("PRAGMA recursive_triggers").Scan(&recursive); err != nil || recursive != 1 {
+		t.Errorf("recursive_triggers = %d, %v; REPLACE INTO would bypass the audit log's triggers", recursive, err)
 	}
 }

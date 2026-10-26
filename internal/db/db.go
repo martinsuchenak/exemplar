@@ -79,7 +79,10 @@ func OpenCurrent(ctx context.Context, log logger.Logger, path string) (*Connecti
 func connect(ctx context.Context, log logger.Logger, path string) (*Connection, error) {
 	// WAL with synchronous(NORMAL) is SQLite's recommended pairing; _txlock=immediate
 	// takes the write lock at BEGIN so concurrent writers wait instead of failing.
-	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
+	// busy_timeout must exceed the longest single transaction (a large import
+	// commits hundreds of thousands of rows in one), or concurrent writers
+	// fail with SQLITE_BUSY instead of waiting.
+	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(60000)&_pragma=recursive_triggers(1)&_txlock=immediate"
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)

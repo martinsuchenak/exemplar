@@ -21,12 +21,13 @@ paths:
           description: Service is healthy
   /metrics:
     get:
-      summary: Application metrics
+      summary: Application metrics (admin key)
       operationId: getMetrics
-      security: []
       responses:
         "200":
           description: Current metrics
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v1/me:
     get:
       summary: The calling account and key

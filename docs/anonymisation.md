@@ -84,6 +84,21 @@ headers that hold free text (`Subject`, `Thread-Topic`, `Content-Description`,
 `X-Mailer`, `User-Agent`) go through the same replacements as bodies, and so
 does each MIME part's `Content-Description`.
 
+MIME parts (and nested multiparts) keep only the headers they need to parse
+(`Content-Type`, `Content-Transfer-Encoding`, `Content-Disposition`,
+`Content-ID`, `Content-Language`, `Content-Description`, `Content-Location`,
+`Content-Features`, `Content-MD5`, `MIME-Version`); any other part header,
+such as `X-*` or `Comments`, is dropped and counted with the dropped message
+headers. A part's `Content-Location` URL gets the fake domain; a relative one
+is renamed like an attachment. Text before the first boundary and after the
+last (preamble and epilogue, where list footers sit) goes through the same
+detection and replacement as bodies.
+
+A message may nest multiparts and attached emails at most 32 levels deep in
+all and have at most 10,000 parts; deeper or larger structures are refused
+(`mimetree.MaxDepth`, `mimetree.MaxParts`). Parsing costs one pass over the
+message per nesting level, so a hostile message cannot make it slow.
+
 ## Consistency and the key
 
 Fakes are derived from an HMAC of the real value under the anonymisation key.

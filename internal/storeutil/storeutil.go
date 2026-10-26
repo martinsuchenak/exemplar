@@ -5,11 +5,23 @@ package storeutil
 import (
 	"database/sql"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// idRe matches the IDs exemplar makes (UUIDv7) and anything close enough to
+// be safe in a URL path segment and as a key: letters, digits and '-'.
+var idRe = regexp.MustCompile(`^[0-9A-Za-z-]{1,64}$`)
+
+// ValidID reports whether id may be stored as an ID. Records that arrive with
+// their own IDs (imports) must pass it, so no ID carries path characters
+// into API URLs.
+func ValidID(id string) bool {
+	return idRe.MatchString(id)
+}
 
 // NewID returns a UUIDv7, which sorts by creation time.
 func NewID() string {

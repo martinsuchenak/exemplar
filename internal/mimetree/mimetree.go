@@ -19,6 +19,15 @@ import (
 // ErrCharset is returned for text in a charset this package cannot convert.
 var ErrCharset = errors.New("unsupported charset")
 
+// MaxDepth caps how deeply multiparts and attached messages may nest, counted
+// together (ParseAt continues the count into an attached message). Real mail
+// rarely nests a dozen levels; each level scans its part once, so the cap
+// also bounds parsing time to MaxDepth passes over the message.
+const MaxDepth = 32
+
+// MaxParts caps how many parts one message may have.
+const MaxParts = 10000
+
 // Field is one header field. Value is unfolded but otherwise raw, so it may
 // hold RFC 2047 encoded words.
 type Field struct {
@@ -82,12 +91,33 @@ type Part struct {
 	Boundary string
 	Preamble []byte
 	Epilogue []byte
+	// Depth is how deeply the part is nested: 0 for a message, one more per
+	// multipart level or attached message above it.
+	Depth int
 }
 
 // Parse reads a message or MIME entity.
 func Parse(data []byte) (*Part, error) {
+	return ParseAt(data, 0)
+}
+
+// ParseAt reads a message nested depth levels deep, such as an attached
+// message/rfc822 part (pass its Depth+1), so MaxDepth counts the whole
+// structure.
+func ParseAt(data []byte, depth int) (*Part, error) {
+	return parse(data, depth, new(int))
+}
+
+// parse reads one entity; parts counts every part of the message so far.
+func parse(data []byte, depth int, parts *int) (*Part, error) {
+	if depth > MaxDepth {
+		return nil, fmt.Errorf("message nests more than %d levels deep", MaxDepth)
+	}
+	if *parts++; *parts > MaxParts {
+		return nil, fmt.Errorf("message has more than %d parts", MaxParts)
+	}
 	head, body := splitHeader(data)
-	p := &Part{}
+	p := &Part{Depth: depth}
 	for _, line := range unfold(head) {
 		name, value, ok := strings.Cut(line, ":")
 		if !ok || strings.TrimSpace(name) == "" || strings.ContainsAny(name, " \t") {
@@ -97,10 +127,14 @@ func Parse(data []byte) (*Part, error) {
 	}
 	mt, params := p.MediaType()
 	if strings.HasPrefix(mt, "multipart/") && params["boundary"] != "" {
-		if err := p.parseMultipart(body, params["boundary"]); err != nil {
+		if err := p.parseMultipart(body, params["boundary"], depth, parts); err != nil {
 			return nil, err
 		}
 		return p, nil
+	}
+	if depth > 0 {
+		// A nested part's lines are CRLF-separated, without a final line end.
+		body = normalise(body)
 	}
 	p.Body = body
 	return p, nil
@@ -262,51 +296,56 @@ func (p *Part) write(b *bytes.Buffer) {
 	b.Write(toCRLF(p.Epilogue))
 }
 
-func (p *Part) parseMultipart(body []byte, boundary string) error {
+// parseMultipart splits body at the boundary lines. Children are slices of
+// body, not copies, so each nesting level costs one scan of its own part.
+func (p *Part) parseMultipart(body []byte, boundary string, depth int, parts *int) error {
 	p.Boundary = boundary
-	delim, closing := "--"+boundary, "--"+boundary+"--"
-	lines := splitLines(body)
-	var cur []string
-	inPart, closed := false, false
+	delim, closing := []byte("--"+boundary), []byte("--"+boundary+"--")
+	start, end := 0, 0 // the current section: from start to the end of its last line
+	inPart := false
 	flush := func() error {
+		section := body[start:end]
 		if !inPart {
-			p.Preamble = []byte(strings.Join(cur, "\r\n"))
+			p.Preamble = normalise(section)
 			return nil
 		}
-		child, err := Parse([]byte(strings.Join(cur, "\r\n")))
+		child, err := parse(section, depth+1, parts)
 		if err != nil {
 			return err
 		}
 		p.Parts = append(p.Parts, child)
 		return nil
 	}
-	for i, line := range lines {
-		trimmed := strings.TrimRight(line, " \t")
-		switch trimmed {
-		case closing:
+	for pos := 0; pos < len(body); {
+		next := len(body)
+		line := body[pos:]
+		if nl := bytes.IndexByte(line, '\n'); nl >= 0 {
+			line, next = line[:nl], pos+nl+1
+		}
+		line = bytes.TrimSuffix(line, []byte("\r"))
+		switch trimmed := bytes.TrimRight(line, " \t"); {
+		case bytes.Equal(trimmed, closing):
 			if err := flush(); err != nil {
 				return err
 			}
-			p.Epilogue = []byte(strings.Join(lines[i+1:], "\r\n"))
-			closed = true
-		case delim:
+			p.Epilogue = normalise(body[next:])
+			return nil
+		case bytes.Equal(trimmed, delim):
 			if err := flush(); err != nil {
 				return err
 			}
-			cur, inPart = nil, true
-			continue
+			start, end, inPart = next, next, true
 		default:
-			cur = append(cur, line)
-			continue
+			end = pos + len(line)
 		}
-		break
+		pos = next
 	}
-	if !closed {
-		if err := flush(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return flush()
+}
+
+// normalise joins b's lines with CRLF, without a final line end.
+func normalise(b []byte) []byte {
+	return []byte(strings.Join(splitLines(b), "\r\n"))
 }
 
 // splitHeader separates the header block from the body at the first blank line.

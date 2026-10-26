@@ -90,7 +90,8 @@ Only fixtures with source `anonymised` are derived from real data.
 ## Audit log
 
 `audit_events` is append-only: SQLite triggers reject every `UPDATE` and
-`DELETE`. Events are written in the same transaction as the change they record.
+`DELETE`, and connections enable `recursive_triggers`, so the implicit delete
+of a `REPLACE INTO` is rejected too. Events are written in the same transaction as the change they record.
 Only admin keys can read the log.
 
 | Action | Recorded when |

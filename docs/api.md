@@ -41,7 +41,7 @@ clients report something useful.
 | Method and path | Auth | Description |
 |-----------------|------|-------------|
 | `GET /health` | none | `{"status":"ok"}` |
-| `GET /metrics` | none | Goroutine count and memory |
+| `GET /metrics` | admin | Goroutine count and memory |
 
 ### Accounts and keys
 

@@ -231,6 +231,11 @@ func (s *Service) Create(ctx context.Context, actor principal.Principal, in Crea
 	// Registered on its own, so a failed insert below leaves a row that
 	// garbage collection will clean up rather than an untracked file.
 	if err := s.blobs.Register(ctx, s.db, f.BlobHash, f.Size); err != nil {
+		// The registration failed after the file was stored. Without a row,
+		// garbage collection can never see the file, so it would leak
+		// forever; remove it unless something else registered it meanwhile.
+		cleanup := context.WithoutCancel(ctx)
+		s.blobs.RemoveIfUnregistered(cleanup, s.db, f.BlobHash)
 		return nil, fmt.Errorf("registering blob: %w", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/storeutil"
 )
 
 // Import adds an exported person inside tx and returns the ID they have
@@ -23,7 +24,7 @@ func (s *Service) Import(ctx context.Context, tx *xdal.Tx, actor principal.Princ
 	if !actor.CanWrite() {
 		return "", false, fmt.Errorf("%w: importing people needs a write key", apperr.ErrForbidden)
 	}
-	if p.ID == "" || len(p.ID) > 64 || p.FirstName == "" || !strings.HasSuffix(strings.ToLower(p.Email), ".example") || !strings.Contains(p.Email, "@") {
+	if !storeutil.ValidID(p.ID) || p.FirstName == "" || !strings.HasSuffix(strings.ToLower(p.Email), ".example") || !strings.Contains(p.Email, "@") {
 		return "", false, fmt.Errorf("%w: archive person %q needs an id, a name and a .example address", apperr.ErrInvalid, p.ID)
 	}
 	if _, err := s.storage.Get(ctx, tx, p.ID); err == nil {

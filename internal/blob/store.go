@@ -47,9 +47,11 @@ func NewStore(root string, qb *xdal.QueryBuilder) (*Store, error) {
 }
 
 // Acquire blocks garbage collection until the returned release is called.
+// The release is safe to call more than once.
 func (s *Store) Acquire() (release func()) {
 	s.mu.RLock()
-	return s.mu.RUnlock
+	var once sync.Once
+	return func() { once.Do(s.mu.RUnlock) }
 }
 
 // Put streams r to disk and returns its hash and size. Identical content is
@@ -115,6 +117,31 @@ func (s *Store) Register(ctx context.Context, exec xdal.DBExecutor, hash string,
 	}
 	_, err = exec.Exec(ctx, query, args...)
 	return err
+}
+
+// RemoveIfUnregistered removes the file for hash when no blobs row refers to
+// it. It is the cleanup path for a registration that failed after Put stored
+// the file: without a row, garbage collection can never see the file, so it
+// would otherwise stay forever. When a row exists (another fixture shares the
+// content, or the registration raced one in) the file stays.
+func (s *Store) RemoveIfUnregistered(ctx context.Context, db xdal.DBInterface, hash string) {
+	if !ValidHash(hash) {
+		return
+	}
+	query, args, err := s.qb.Select("1").From("blobs").Where("hash = ?", hash).Limit(1).Build()
+	if err != nil {
+		return
+	}
+	rows, err := db.Query(ctx, query, args...)
+	if err != nil {
+		return
+	}
+	registered := rows.Next()
+	_ = rows.Close()
+	if registered {
+		return
+	}
+	_ = os.Remove(s.path(hash))
 }
 
 // backupLock is the file that tells garbage collection in every process
@@ -209,6 +236,11 @@ func (s *Store) Collect(ctx context.Context, db xdal.DBInterface) (int, error) {
 		return 0, fmt.Errorf("collecting blobs: %w", err)
 	}
 	for _, h := range hashes {
+		// A malformed row (only possible through a tampered database) has
+		// no file to remove and must not become a path.
+		if !ValidHash(h) {
+			continue
+		}
 		if err := os.Remove(s.path(h)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return 0, fmt.Errorf("removing blob %s: %w", h, err)
 		}
@@ -216,7 +248,13 @@ func (s *Store) Collect(ctx context.Context, db xdal.DBInterface) (int, error) {
 	return len(hashes), nil
 }
 
+// path is where a blob lives. Callers pass validated hashes (ValidHash);
+// anything else maps to one fixed name that no blob uses, so a malformed hash
+// can neither panic nor point at another path.
 func (s *Store) path(hash string) string {
+	if !ValidHash(hash) {
+		return filepath.Join(s.root, "objects", "invalid-hash")
+	}
 	return filepath.Join(s.root, "objects", hash[:2], hash[2:4], hash)
 }
 

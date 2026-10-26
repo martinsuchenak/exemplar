@@ -21,13 +21,39 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
-func TestMetricsHandler(t *testing.T) {
-	req := httptest.NewRequest("GET", "/metrics", nil)
+func TestMetricsNeedAnAdminKey(t *testing.T) {
+	a := testutil.NewApp(t)
+	_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := testutil.Authenticate(t, a, issued.Secret)
+	member, err := a.Accounts.CreateAccount(context.Background(), admin, account.CreateAccountInput{Name: "m", Kind: account.KindDeveloper})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mkey, err := a.Accounts.CreateKey(context.Background(), admin, account.CreateKeyInput{AccountID: member.ID, Name: "k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, a)
+	for key, want := range map[string]int{"": http.StatusUnauthorized, mkey.Secret: http.StatusForbidden, issued.Secret: http.StatusOK} {
+		req := httptest.NewRequest("GET", "/metrics", nil)
+		if key != "" {
+			req.Header.Set("X-API-Key", key)
+		}
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Errorf("metrics with key %q... = %d, want %d", key[:min(len(key), 8)], w.Code, want)
+		}
+	}
+	// Health stays open, for load balancers and container checks.
 	w := httptest.NewRecorder()
-	metricsHandler(w, req)
-
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/health", nil))
 	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+		t.Errorf("health = %d", w.Code)
 	}
 }
 

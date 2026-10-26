@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -69,5 +70,17 @@ func TestIsUniqueViolation(t *testing.T) {
 	}
 	if !IsUniqueViolation(errors.New("constraint failed: UNIQUE constraint failed: accounts.name (2067)")) {
 		t.Error("missed a unique violation")
+	}
+}
+
+func TestValidID(t *testing.T) {
+	for id, ok := range map[string]bool{
+		NewID(): true, "f1": true, "other-dataset": true,
+		"": false, "../../etc/passwd": false, "a/b": false, "a%2Fb": false, "a b": false, "a.b": false,
+		strings.Repeat("a", 64): true, strings.Repeat("a", 65): false,
+	} {
+		if ValidID(id) != ok {
+			t.Errorf("ValidID(%q) != %v", id, ok)
+		}
 	}
 }

@@ -165,7 +165,7 @@ func (r *renderer) leaves(p *mimetree.Part) error {
 		if err != nil {
 			return err
 		}
-		inner, err := mimetree.Parse(raw)
+		inner, err := mimetree.ParseAt(raw, p.Depth+1)
 		if err != nil {
 			return err
 		}

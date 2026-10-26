@@ -34,6 +34,8 @@ func TestCheckImport(t *testing.T) {
 		want error
 	}{
 		"no id":           {mod(func(f *fixture.Fixture) { f.ID = "" }), ws, apperr.ErrInvalid},
+		"path in id":      {mod(func(f *fixture.Fixture) { f.ID = "../../etc/passwd" }), ws, apperr.ErrInvalid},
+		"path in link":    {mod(func(f *fixture.Fixture) { f.People = []fixture.PersonLink{{PersonID: "../p", Role: "from"}} }), ws, apperr.ErrInvalid},
 		"slash in name":   {mod(func(f *fixture.Fixture) { f.Name = "a/b" }), ws, apperr.ErrInvalid},
 		"dot-dot name":    {mod(func(f *fixture.Fixture) { f.Name = " .. " }), ws, apperr.ErrInvalid},
 		"dot name":        {mod(func(f *fixture.Fixture) { f.Name = "." }), ws, apperr.ErrInvalid},

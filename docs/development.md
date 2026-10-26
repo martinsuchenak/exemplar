@@ -35,6 +35,11 @@ Coverage across packages:
 go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 ```
 
+Scratch code (experiments, a security tool's proof-of-concept tests) goes
+in `tmp/`, which git ignores. Give it its own module (`tmp/go.mod` with
+`module scratch`) so `go test ./...` and the linter in the repository root
+skip it.
+
 ## Expectations
 
 - Every change is covered by tests, as fully as practical: the success path,

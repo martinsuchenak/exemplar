@@ -187,3 +187,54 @@ func TestBackupLockHoldsCollection(t *testing.T) {
 	}
 	release()
 }
+
+func TestCollectSurvivesMalformedRows(t *testing.T) {
+	s, conn := newStore(t)
+	ctx := context.Background()
+	// Only a tampered database (a crafted backup) could hold these.
+	for _, h := range []string{"..", "", "ab"} {
+		if _, err := conn.SQL.ExecContext(ctx, "INSERT INTO blobs (hash, size, created_at) VALUES (?, 1, 'x')", h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.Collect(ctx, conn.DB)
+	if err != nil || n != 3 {
+		t.Fatalf("collect = %d, %v", n, err)
+	}
+	var left int
+	_ = conn.SQL.QueryRow("SELECT COUNT(*) FROM blobs").Scan(&left)
+	if left != 0 {
+		t.Errorf("%d malformed rows left", left)
+	}
+	for _, h := range []string{"..", "", "ab", "../../../etc/passwd"} {
+		if p := s.path(h); filepath.Base(p) != "invalid-hash" {
+			t.Errorf("path(%q) = %s", h, p)
+		}
+	}
+}
+
+func TestRemoveIfUnregistered(t *testing.T) {
+	s, conn := newStore(t)
+	ctx := context.Background()
+	orphan, _, _ := s.Put(strings.NewReader("orphan"))
+	shared, size, _ := s.Put(strings.NewReader("shared"))
+	if err := s.Register(ctx, conn.DB, shared, size); err != nil {
+		t.Fatal(err)
+	}
+	s.RemoveIfUnregistered(ctx, conn.DB, orphan)
+	s.RemoveIfUnregistered(ctx, conn.DB, shared)
+	s.RemoveIfUnregistered(ctx, conn.DB, "../../etc/passwd") // ignored
+	if _, err := os.Stat(s.path(orphan)); !errors.Is(err, os.ErrNotExist) {
+		t.Error("unregistered file kept")
+	}
+	if _, err := os.Stat(s.path(shared)); err != nil {
+		t.Errorf("registered file removed: %v", err)
+	}
+
+	release := s.Acquire()
+	release()
+	release() // a second call must not unlock a lock it does not hold
+	if n, err := s.Collect(ctx, conn.DB); err != nil || n != 1 {
+		t.Errorf("collect after double release = %d, %v", n, err)
+	}
+}

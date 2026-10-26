@@ -16,6 +16,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/audit"
 	"github.com/martinsuchenak/exemplar/internal/backup"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
+	"github.com/martinsuchenak/exemplar/internal/db"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/testutil"
@@ -300,4 +301,33 @@ func TestRestoreHandlesLeftoverWAL(t *testing.T) {
 		t.Fatalf("restored database does not open: %v", err)
 	}
 	_ = b.Close()
+}
+
+func TestRestoreRefusesMalformedBlobRows(t *testing.T) {
+	dir := t.TempDir()
+	conn, err := db.Open(ctx, nil, filepath.Join(dir, "x.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.SQL.ExecContext(ctx, "INSERT INTO blobs (hash, size, created_at) VALUES ('..', 1, 'x')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.SQL.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	snapshot, _ := os.ReadFile(filepath.Join(dir, "x.db"))
+
+	var buf bytes.Buffer
+	w, _ := archive.NewWriter(&buf, archive.Manifest{Kind: archive.KindBackup, SchemaVersion: db.LatestVersion(), Counts: map[string]int{"blobs": 0}})
+	_ = w.Database(int64(len(snapshot)), bytes.NewReader(snapshot))
+	_ = w.Close()
+
+	tgt := target(t)
+	if _, err := backup.Restore(ctx, &buf, tgt, false); err == nil || !strings.Contains(err.Error(), "malformed content hash") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := os.Stat(tgt.DBPath); !errors.Is(err, os.ErrNotExist) {
+		t.Error("a refused restore left a database")
+	}
 }
