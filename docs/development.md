@@ -20,6 +20,15 @@ task test:mailpit
 It sets `EXEMPLAR_TEST_MAILPIT_SMTP` and `EXEMPLAR_TEST_MAILPIT_API`; without
 them `TestRealMailpit` is skipped, so `task test` needs no Docker.
 
+Integration test of the anonymiser against a real Presidio Analyzer (needs
+Docker; the image is about 1 GB):
+
+```bash
+task test:presidio
+```
+
+It sets `EXEMPLAR_TEST_PRESIDIO_URL`; without it `TestRealPresidio` is skipped.
+
 Coverage across packages:
 
 ```bash
@@ -66,6 +75,13 @@ go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cov
   `httptest.Server` and exercise every client method, including how each
   status maps back to an `apperr` kind.
 
+- **Anonymiser tests** run the engine with an in-memory registry and a
+  detector that tags given words as names. Outside the package, use
+  `internal/anonymise/anonymisetest`: `Detector{Names: …}`, `Key` and `Email(…)`
+  for small real-looking emails. Configure an app with
+  `testutil.NewAppWith(t, func(c *app.Config) { c.AnonKey = anonymisetest.Key; c.AnonDetector = … })`.
+  Tests assert that no original value survives anywhere in the output.
+
 - **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
   that records envelopes and data, can require AUTH PLAIN and can reject a
   recipient.
@@ -74,7 +90,8 @@ go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cov
   `httptest`, generate data, and call the tools with the MCP library's own
   client and a bearer key, checking results, access rules and error codes.
 
-- **Remote CLI tests** start the same server with `startServer(t)` in
+- **Remote CLI tests** start the same server with `startServer(t)` (or
+  `startServerWith(t, configure)` to change the app config) in
   `cmd/remote_test.go` and run commands with `s.run(t, key, args...)` or decode
   `--json` output with `s.runJSON`. `s.member(t, name)` creates a member and
   returns its key.

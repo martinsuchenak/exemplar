@@ -5,6 +5,7 @@
 | [architecture.md](architecture.md) | Layers, packages, errors, transactions, blob storage, adding a resource |
 | [security.md](security.md) | Accounts, keys and scopes, bootstrap, dataset visibility, real-derived data, audit log |
 | [generation.md](generation.md) | Person registry, synthetic files, email shapes, records, seeds |
+| [anonymisation.md](anonymisation.md) | Ingesting real email: workflow, what is replaced and kept, the key, Presidio, profiles, limits |
 | [data-model.md](data-model.md) | Tables, columns and migrations |
 | [cli.md](cli.md) | Commands and flags |
 | [mcp.md](mcp.md) | The read-only MCP server: connecting, tools, errors |

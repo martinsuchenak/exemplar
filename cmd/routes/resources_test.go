@@ -75,6 +75,7 @@ func TestEveryAPIRouteNeedsAKey(t *testing.T) {
 		{"POST", "/api/v1/persons"},
 		{"GET", "/api/v1/persons/x"},
 		{"POST", "/api/v1/datasets/x/generate"},
+		{"POST", "/api/v1/datasets/x/ingest"},
 	} {
 		if w := call(mux, r.method, r.path, "", ""); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without key: %d, want 401", r.method, r.path, w.Code)

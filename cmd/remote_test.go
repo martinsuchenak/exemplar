@@ -23,7 +23,13 @@ type liveServer struct {
 
 func startServer(t *testing.T) *liveServer {
 	t.Helper()
-	a := testutil.NewApp(t)
+	return startServerWith(t, nil)
+}
+
+// startServerWith is startServer with a chance to change the app config.
+func startServerWith(t *testing.T, configure func(*app.Config)) *liveServer {
+	t.Helper()
+	a := testutil.NewAppWith(t, configure)
 	_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)

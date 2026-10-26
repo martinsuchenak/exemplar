@@ -89,6 +89,10 @@ Configuration is loaded from `exemplar-config.toml` and can be overridden via en
 | `database.path` | `DB_PATH` | `data/exemplar.db` | SQLite database file (created with mode 600) |
 | `storage.blob_dir` | `BLOB_DIR` | `data/blobs` | Fixture contents, stored once per SHA-256 |
 | `storage.max_fixture_mb` | `MAX_FIXTURE_MB` | `100` | Largest fixture accepted (0 for no limit) |
+| `storage.max_ingest_mb` | `MAX_INGEST_MB` | `200` | Largest ingest request (0 for no limit) |
+| `anonymiser.key_file` | `ANON_KEY_FILE` | | Anonymisation key file, mode 600; or the key in `EXEMPLAR_ANON_KEY` |
+| `anonymiser.presidio_url` | `PRESIDIO_URL` | | Presidio Analyzer, e.g. `http://localhost:3000`; with a key, turns ingest on |
+| `anonymiser.profiles_dir` | `ANON_PROFILES_DIR` | | Extra anonymisation profiles (`*.toml`) |
 | `mcp.host`, `mcp.port` | `MCP_HOST`, `MCP_PORT` | `0.0.0.0`, `9000` | Read-only MCP server at `/mcp`; port 0 turns it off |
 | `client.server` | `EXEMPLAR_SERVER` | `http://localhost:8080` | Server the remote CLI commands call |
 | `mailpit.smtp` | `MAILPIT_SMTP` | `localhost:1025` | Where `push-mailpit` sends emails |

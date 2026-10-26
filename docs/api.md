@@ -94,6 +94,24 @@ browser never runs fixture HTML or scripts.
 Purge removes the batch's fixtures from every dataset they were copied to,
 frozen ones included, and is audit-logged.
 
+### Ingest
+
+| Method and path | Who | Body | Response |
+|-----------------|-----|------|----------|
+| `POST /api/v1/datasets/{id}/ingest` | admin; quarantine datasets only | `multipart/form-data`: one or more `file` parts (`.eml`), optional `profile`, `batch`, `dry_run` fields | `201` IngestResult; `200` for a dry run |
+
+An **IngestResult** is `{"batch", "profile", "key_id", "dry_run", "files":
+[…]}`. Each file is `{"name", "fixture_id", "fixture_name", "replacements",
+"attachments", "dropped_headers", "error", "report"}`; `error` is set for a
+file that failed while the others went ahead, and `report` (dry run only)
+lists `{"entity", "original", "fake"}`. The report is original personal data;
+responses carry `Cache-Control: no-store`.
+
+Parts are read into memory, never into temporary files. A request over
+`storage.max_ingest_mb` gets `413`; more than 1000 files, an unknown profile, a
+bad batch name or a dataset that is not quarantine get `400`, and so does a
+server with no anonymiser configured. See [anonymisation.md](anonymisation.md).
+
 ### People and generation
 
 | Method and path | Who | Body / query | Response |

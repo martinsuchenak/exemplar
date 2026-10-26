@@ -35,6 +35,7 @@ const (
 	ActionFixtureReject   = "fixture.reject"
 	ActionFixturePurge    = "fixture.purge"
 	ActionFixtureGenerate = "fixture.generate"
+	ActionFixtureIngest   = "fixture.ingest"
 	ActionPersonGenerate  = "person.generate"
 )
 

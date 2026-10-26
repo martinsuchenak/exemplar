@@ -3,6 +3,7 @@ module github.com/martinsuchenak/exemplar
 go 1.27.3
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/martinsuchenak/xdal v0.1.0
 	github.com/paularlott/cli v0.10.2
@@ -12,7 +13,6 @@ require (
 )
 
 require (
-	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

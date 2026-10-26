@@ -23,6 +23,7 @@ Two kinds of command:
 | `--db-path` | `DB_PATH` | `database.path` | `data/exemplar.db` |
 | `--blob-dir` | `BLOB_DIR` | `storage.blob_dir` | `data/blobs` |
 | `--max-fixture-mb` | `MAX_FIXTURE_MB` | `storage.max_fixture_mb` | `100` (0 for no limit) |
+| `--max-ingest-mb` | `MAX_INGEST_MB` | `storage.max_ingest_mb` | `200` (0 for no limit); `serve` only |
 
 ### `serve`
 
@@ -35,6 +36,13 @@ MCP server.
 | `--server-port` | `SERVER_PORT` | `server.port` | `8080` |
 | `--mcp-host` | `MCP_HOST` | `mcp.host` | `0.0.0.0` |
 | `--mcp-port` | `MCP_PORT` | `mcp.port` | `9000` (0 turns MCP off; see [mcp.md](mcp.md)) |
+| `--anon-key-file` | `ANON_KEY_FILE` | `anonymiser.key_file` | none; or the key itself in `EXEMPLAR_ANON_KEY` |
+| `--presidio-url` | `PRESIDIO_URL` | `anonymiser.presidio_url` | none |
+| `--anon-profiles-dir` | `ANON_PROFILES_DIR` | `anonymiser.profiles_dir` | none: built-in profiles only |
+
+Ingest of real email is on only with both an anonymisation key and a Presidio
+URL. The key file must not be readable by group or others (`chmod 600`), or
+`serve` refuses to start. See [anonymisation.md](anonymisation.md).
 
 ### `bootstrap`
 
@@ -194,6 +202,35 @@ exemplar purge <ingest-batch> --yes
 
 Admin key. Deletes every fixture from an ingest batch, in every dataset it was
 copied to. It cannot be undone, so it needs `--yes`.
+
+### `ingest`
+
+```bash
+exemplar ingest <dataset-id> <file-or-directory>... [--profile P] [--batch B] [--dry-run]
+```
+
+Admin key. Sends real `.eml` files to the server, which anonymises them and
+stores them in the quarantine dataset as unreviewed fixtures named
+`<batch>-001.eml`, `<batch>-002.eml`, …. Without `--batch` a new batch name is
+made up and printed; purge takes it. Directories are read as for `upload`.
+
+`--dry-run` stores nothing and prints every replacement, original next to
+fake. That output is original personal data: read it, don't save or share it.
+A file that fails (a `.msg`, an unsupported charset) is reported and the rest
+go ahead; the command then exits non-zero. See
+[anonymisation.md](anonymisation.md).
+
+### `approve`, `reject`
+
+```bash
+exemplar approve <fixture-id>...
+exemplar reject <fixture-id>...
+```
+
+Admin key. Records the review of real-derived fixtures. Only approved fixtures
+are copied by fork and promote; rejected ones stay in quarantine until the
+dataset or batch is deleted. Each id is reviewed on its own; failures are
+listed and make the command exit non-zero.
 
 ## Example
 

@@ -24,7 +24,7 @@ func serveCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "serve",
 		Usage: "Start the exemplar service",
-		Flags: append(storageFlags(),
+		Flags: append(append(storageFlags(), anonymiserFlags()...),
 			&cli.StringFlag{
 				Name:         "server-host",
 				DefaultValue: "0.0.0.0",
@@ -63,7 +63,7 @@ func serveCmd() *cli.Command {
 			})
 			log.Info("starting exemplar service")
 
-			services, err := openApp(ctx, cmd, log)
+			services, err := openServerApp(ctx, cmd, log)
 			if err != nil {
 				return err
 			}

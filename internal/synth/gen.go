@@ -260,3 +260,24 @@ var suburbs = []suburb{
 	{"Mount Gambier", "SA", "5290"}, {"Sandy Bay", "TAS", "7005"}, {"Launceston", "TAS", "7250"},
 	{"Belconnen", "ACT", "2617"}, {"Braddon", "ACT", "2612"}, {"Palmerston", "NT", "0830"},
 }
+
+// FirstName returns a first name from the pool.
+func (g *Gen) FirstName() string {
+	return g.pick(firstNames)
+}
+
+// LastName returns a last name from the pool.
+func (g *Gen) LastName() string {
+	return g.pick(lastNames)
+}
+
+// CompanyStem returns name without its company suffix ("Harlow Civil
+// Engineering Pty Ltd" -> "Harlow Civil Engineering").
+func CompanyStem(name string) string {
+	return trimSuffix(name)
+}
+
+// EmailLocal returns the address local part for a name: "O'Brien" -> "obrien".
+func EmailLocal(first, last string) string {
+	return emailLocal(first, last)
+}

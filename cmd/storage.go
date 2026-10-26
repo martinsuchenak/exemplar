@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/paularlott/cli"
 	"github.com/paularlott/logger"
@@ -36,6 +38,38 @@ func storageFlags() []cli.Flag {
 	}
 }
 
+// anonymiserFlags configure ingest of real emails. Only serve takes them:
+// ingest runs on the server, which holds the key.
+func anonymiserFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:       "anon-key-file",
+			Usage:      "File holding the anonymisation key (mode 600); or set EXEMPLAR_ANON_KEY",
+			ConfigPath: []string{"anonymiser.key_file"},
+			EnvVars:    []string{"ANON_KEY_FILE"},
+		},
+		&cli.StringFlag{
+			Name:       "presidio-url",
+			Usage:      "Presidio Analyzer URL, e.g. http://localhost:3000",
+			ConfigPath: []string{"anonymiser.presidio_url"},
+			EnvVars:    []string{"PRESIDIO_URL"},
+		},
+		&cli.StringFlag{
+			Name:       "anon-profiles-dir",
+			Usage:      "Directory of extra anonymisation profiles (*.toml)",
+			ConfigPath: []string{"anonymiser.profiles_dir"},
+			EnvVars:    []string{"ANON_PROFILES_DIR"},
+		},
+		&cli.IntFlag{
+			Name:         "max-ingest-mb",
+			DefaultValue: 200,
+			Usage:        "Largest total upload one ingest accepts, in MiB (0 for no limit)",
+			ConfigPath:   []string{"storage.max_ingest_mb"},
+			EnvVars:      []string{"MAX_INGEST_MB"},
+		},
+	}
+}
+
 // openApp opens the database and blob store named by storageFlags.
 func openApp(ctx context.Context, cmd *cli.Command, log logger.Logger) (*app.App, error) {
 	return app.Open(ctx, log, app.Config{
@@ -43,4 +77,37 @@ func openApp(ctx context.Context, cmd *cli.Command, log logger.Logger) (*app.App
 		BlobDir:         cmd.GetString("blob-dir"),
 		MaxFixtureBytes: int64(cmd.GetInt("max-fixture-mb")) << 20,
 	})
+}
+
+// openServerApp is openApp plus the anonymiser settings serve takes.
+func openServerApp(ctx context.Context, cmd *cli.Command, log logger.Logger) (*app.App, error) {
+	key, err := anonymiserKey(cmd.GetString("anon-key-file"), os.Getenv("EXEMPLAR_ANON_KEY"))
+	if err != nil {
+		return nil, err
+	}
+	return app.Open(ctx, log, app.Config{
+		DBPath:          cmd.GetString("db-path"),
+		BlobDir:         cmd.GetString("blob-dir"),
+		MaxFixtureBytes: int64(cmd.GetInt("max-fixture-mb")) << 20,
+		MaxIngestBytes:  int64(cmd.GetInt("max-ingest-mb")) << 20,
+		AnonKey:         key,
+		PresidioURL:     cmd.GetString("presidio-url"),
+		AnonProfilesDir: cmd.GetString("anon-profiles-dir"),
+	})
+}
+
+// anonymiserKey reads the key from file, which other users must not be able
+// to read, or takes it from the environment. Neither set means no key.
+func anonymiserKey(file, env string) ([]byte, error) {
+	if file == "" {
+		return []byte(env), nil
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return nil, fmt.Errorf("anonymisation key file: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("anonymisation key file %s is readable by other users; chmod 600 it", file)
+	}
+	return os.ReadFile(file)
 }

@@ -94,6 +94,28 @@ The person registry: fake people that records, files and emails refer to.
 The primary key is `(fixture_id, person_id, role)`. Fork and promote copy the
 links with the fixture.
 
+### identity_keys
+
+Links real identities to registry people for the anonymiser, without storing
+them.
+
+| Column | Notes |
+|--------|-------|
+| `hash` | Primary key; HMAC of a real address or display name under the anonymisation key |
+| `person_id` | The registry person it maps to; must exist in `persons` |
+| `key_id` | The anonymisation key's id (`k-…`) |
+| `created_at` | |
+
+### name_tokens
+
+| Column | Notes |
+|--------|-------|
+| `hash` | Primary key; HMAC of a real name token (`priya`, `shah`) |
+| `value` | Its fake (`Tomasz`), so the same real name gets the same fake in every batch |
+| `key_id`, `created_at` | |
+
+Neither table holds a real value; see [anonymisation.md](anonymisation.md).
+
 ### audit_events
 
 | Column | Notes |

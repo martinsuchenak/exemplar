@@ -39,3 +39,28 @@ func TestOpenFailsOnUnusableBlobDir(t *testing.T) {
 		t.Error("Open with a file as blob dir succeeded")
 	}
 }
+
+func TestAnonymiserConfig(t *testing.T) {
+	key := []byte("0123456789abcdef")
+	if c, err := anonymiserConfig(Config{}); c != nil || err != nil {
+		t.Errorf("no key = %+v, %v", c, err)
+	}
+	if c, err := anonymiserConfig(Config{AnonKey: key}); c != nil || err != nil {
+		t.Errorf("key without Presidio = %+v, %v", c, err)
+	}
+	if _, err := anonymiserConfig(Config{AnonKey: []byte("short"), PresidioURL: "http://x"}); err == nil {
+		t.Error("short key accepted")
+	}
+	c, err := anonymiserConfig(Config{AnonKey: key, PresidioURL: "http://localhost:3000"})
+	if err != nil || c == nil || c.Detector == nil || !c.Key.Valid() || c.Profiles["default"] == nil {
+		t.Errorf("configured = %+v, %v", c, err)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bad.toml"), []byte("name = ["), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(context.Background(), nil, Config{DBPath: filepath.Join(dir, "x.db"), BlobDir: filepath.Join(dir, "b"), AnonProfilesDir: dir}); err == nil {
+		t.Error("Open with a broken profile succeeded")
+	}
+}

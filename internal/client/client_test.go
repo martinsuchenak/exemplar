@@ -11,6 +11,7 @@ import (
 
 	"github.com/martinsuchenak/exemplar/cmd/routes"
 	"github.com/martinsuchenak/exemplar/internal/account"
+	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/audit"
@@ -18,6 +19,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/generate"
+	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
 	"github.com/martinsuchenak/exemplar/internal/synth"
@@ -374,5 +376,40 @@ func TestPersonsAndGenerate(t *testing.T) {
 	}
 	if _, err := alice.Generate(ctx, ds.ID, generate.Request{Kind: "videos", Count: 1}); !errors.Is(err, apperr.ErrInvalid) {
 		t.Errorf("bad kind err = %v", err)
+	}
+}
+
+func TestIngest(t *testing.T) {
+	admin, member, _, _ := server(t, func(c *app.Config) {
+		c.AnonKey = anonymisetest.Key
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+	})
+	d, err := admin.CreateDataset(ctx, dataset.CreateInput{Name: "q", Scope: dataset.ScopeQuarantine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mail := anonymisetest.Email("Priya Shah", "Tom Reid", "acme.com.au", "Hi", "Hello Tom, Priya")
+	file := func(name string, data []byte) client.IngestFile {
+		return client.IngestFile{Name: name, Open: func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(string(data))), nil }}
+	}
+
+	dry, err := admin.Ingest(ctx, d.ID, ingest.Request{DryRun: true, Profile: "default"}, []client.IngestFile{file("a.eml", mail)})
+	if err != nil || !dry.DryRun || len(dry.Files[0].Report) == 0 {
+		t.Fatalf("dry run = %+v, %v", dry, err)
+	}
+	res, err := admin.Ingest(ctx, d.ID, ingest.Request{Batch: "b"}, []client.IngestFile{file("a.eml", mail), file("b.eml", mail)})
+	if err != nil || len(res.Files) != 2 || res.Files[1].FixtureName != "b-002.eml" {
+		t.Fatalf("ingest = %+v, %v", res, err)
+	}
+	if fx, _ := admin.ListFixtures(ctx, d.ID, fixture.ListFilter{}); len(fx) != 2 {
+		t.Errorf("stored %d fixtures", len(fx))
+	}
+
+	if _, err := member.Ingest(ctx, d.ID, ingest.Request{}, []client.IngestFile{file("a.eml", mail)}); !errors.Is(err, apperr.ErrForbidden) {
+		t.Errorf("member err = %v", err)
+	}
+	broken := client.IngestFile{Name: "x.eml", Open: func() (io.ReadCloser, error) { return nil, errors.New("disk gone") }}
+	if _, err := admin.Ingest(ctx, d.ID, ingest.Request{}, []client.IngestFile{broken}); err == nil {
+		t.Error("unreadable file accepted")
 	}
 }

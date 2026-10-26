@@ -36,6 +36,7 @@
 - `internal/principal/`: the authenticated caller passed to every service method.
 - `internal/apperr/`: error kinds services return; `rest.RespondServiceError` maps them to HTTP.
 - `cmd/mcp/`: read-only MCP server and its tools; same API key auth and services as REST.
+- `internal/ingest/`, `internal/anonymise/`, `internal/mimetree/`: real-email ingest into quarantine; the anonymiser touches no storage (registry and Presidio sit behind interfaces). Never log or store raw input or dry-run reports. See `docs/anonymisation.md`.
 - `internal/db/`: SQLite connection and migrations.
   The DB package returns a `Connection` wrapper with:
   `SQL` for raw `*sql.DB`

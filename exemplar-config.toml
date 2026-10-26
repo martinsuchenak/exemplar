@@ -12,6 +12,12 @@ path = "data/exemplar.db"
 [storage]
 blob_dir = "data/blobs"
 max_fixture_mb = 100
+max_ingest_mb = 200
+
+[anonymiser]
+# key_file = "/etc/exemplar/anon.key"   # or set EXEMPLAR_ANON_KEY
+# presidio_url = "http://localhost:3000"
+# profiles_dir = "profiles"
 
 [mcp]
 host = "0.0.0.0"

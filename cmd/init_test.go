@@ -26,7 +26,7 @@ func TestInitWritesConfigOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading config: %v", err)
 	}
-	for _, section := range []string{"[log]", "[server]", "[database]", "[storage]", "[mcp]", "[client]", "[mailpit]"} {
+	for _, section := range []string{"[log]", "[server]", "[database]", "[storage]", "[mcp]", "[client]", "[mailpit]", "[anonymiser]"} {
 		if !strings.Contains(string(b), section) {
 			t.Errorf("config missing %s:\n%s", section, b)
 		}

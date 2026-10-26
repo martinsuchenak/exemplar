@@ -32,7 +32,7 @@ func TestOpenCreatesPrivateFileAndMigrates(t *testing.T) {
 		t.Errorf("database file mode = %o, want 600", perm)
 	}
 
-	for _, table := range []string{"accounts", "api_keys", "datasets", "blobs", "fixtures", "audit_events", "persons", "fixture_persons"} {
+	for _, table := range []string{"accounts", "api_keys", "datasets", "blobs", "fixtures", "audit_events", "persons", "fixture_persons", "identity_keys", "name_tokens"} {
 		var n int
 		err := conn.SQL.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n)
 		if err != nil || n != 1 {
@@ -98,7 +98,7 @@ func TestMigrationsRollBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrator: %v", err)
 	}
-	if _, err := m.Down(ctx, 2); err != nil {
+	if _, err := m.Down(ctx, 3); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	var n int

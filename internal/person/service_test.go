@@ -153,3 +153,67 @@ func TestPickReusesThenCreates(t *testing.T) {
 		t.Errorf("pick 0 err = %v, want ErrInvalid", err)
 	}
 }
+
+func TestIdentities(t *testing.T) {
+	a := testutil.NewApp(t)
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	if _, err := a.Persons.Identities(alice, "k-1", true); !errors.Is(err, apperr.ErrForbidden) {
+		t.Errorf("member err = %v", err)
+	}
+	if _, err := a.Persons.Identities(admin, "", true); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("no key id err = %v", err)
+	}
+	draw := synth.New(5).Person("Acme Pty Ltd")
+
+	// A dry run reads nothing back and writes nothing.
+	dry, _ := a.Persons.Identities(admin, "k-1", false)
+	if v, _ := dry.Token(ctx, "h-name", "Kent"); v != "Kent" {
+		t.Errorf("dry token = %s", v)
+	}
+	if v, _ := dry.Token(ctx, "h-name", "Other"); v != "Kent" {
+		t.Errorf("dry token not remembered in memory: %s", v)
+	}
+	p, err := dry.Person(ctx, []string{"h-email"}, draw)
+	if err != nil || p.ID != "" || p.Email != draw.Email {
+		t.Errorf("dry person = %+v, %v", p, err)
+	}
+	if again, _ := dry.Person(ctx, []string{"h-other", "h-email"}, synth.New(6).Person("X")); again.Email != draw.Email {
+		t.Errorf("dry run lost the identity link: %+v", again)
+	}
+	if all, _ := a.Persons.List(ctx, admin, person.ListFilter{}); len(all) != 0 {
+		t.Errorf("dry run stored %d people", len(all))
+	}
+
+	// A real run stores tokens and people, and a later resolver finds them.
+	live, _ := a.Persons.Identities(admin, "k-1", true)
+	if v, _ := live.Token(ctx, "h-name", "Kent"); v != "Kent" {
+		t.Errorf("token = %s", v)
+	}
+	stored, err := live.Person(ctx, []string{"h-email"}, draw)
+	if err != nil || stored.ID == "" {
+		t.Fatalf("person = %+v, %v", stored, err)
+	}
+	if _, err := live.Person(ctx, []string{"h-email", "h-display"}, synth.New(7).Person("Y")); err != nil {
+		t.Fatal(err)
+	}
+
+	later, _ := a.Persons.Identities(admin, "k-1", false)
+	if v, ok, err := later.LookupToken(ctx, "h-name"); !ok || v != "Kent" || err != nil {
+		t.Errorf("lookup = %s %v %v", v, ok, err)
+	}
+	if _, ok, _ := later.LookupToken(ctx, "h-missing"); ok {
+		t.Error("missing token found")
+	}
+	if v, _ := later.Token(ctx, "h-name", "Other"); v != "Kent" {
+		t.Errorf("stored token overwritten: %s", v)
+	}
+	// Linked through the second hash alone.
+	found, err := later.Person(ctx, []string{"h-display"}, synth.New(8).Person("Z"))
+	if err != nil || found.ID != stored.ID {
+		t.Errorf("found = %+v, want %s", found, stored.ID)
+	}
+	if all, _ := a.Persons.List(ctx, admin, person.ListFilter{}); len(all) != 1 {
+		t.Errorf("registry has %d people, want 1", len(all))
+	}
+}

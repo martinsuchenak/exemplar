@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/generate"
+	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
 )
 
@@ -285,6 +288,54 @@ func (c *Client) GeneratePersons(ctx context.Context, in person.GenerateInput) (
 func (c *Client) Generate(ctx context.Context, datasetID string, req generate.Request) (*generate.Result, error) {
 	var out generate.Result
 	return &out, c.do(ctx, http.MethodPost, "/api/v1/datasets/"+url.PathEscape(datasetID)+"/generate", nil, req, &out)
+}
+
+// IngestFile is one raw email to ingest; Open is called once, while uploading.
+type IngestFile struct {
+	Name string
+	Open func() (io.ReadCloser, error)
+}
+
+// Ingest uploads raw emails to be anonymised into a quarantine dataset
+// (admin key). The files stream as multipart/form-data.
+func (c *Client) Ingest(ctx context.Context, datasetID string, req ingest.Request, files []IngestFile) (*ingest.Result, error) {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		pw.CloseWithError(writeIngestForm(mw, req, files))
+	}()
+	var out ingest.Result
+	err := c.send(ctx, http.MethodPost, "/api/v1/datasets/"+url.PathEscape(datasetID)+"/ingest", nil, pr, mw.FormDataContentType(), &out)
+	_ = pr.Close()
+	return &out, err
+}
+
+func writeIngestForm(mw *multipart.Writer, req ingest.Request, files []IngestFile) error {
+	fields := [][2]string{{"profile", req.Profile}, {"batch", req.Batch}, {"dry_run", strconv.FormatBool(req.DryRun)}}
+	for _, f := range fields {
+		if f[1] == "" {
+			continue
+		}
+		if err := mw.WriteField(f[0], f[1]); err != nil {
+			return err
+		}
+	}
+	for _, f := range files {
+		w, err := mw.CreateFormFile("file", f.Name)
+		if err != nil {
+			return err
+		}
+		r, err := f.Open()
+		if err != nil {
+			return fmt.Errorf("opening %s: %w", f.Name, err)
+		}
+		_, err = io.Copy(w, r)
+		_ = r.Close()
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", f.Name, err)
+		}
+	}
+	return mw.Close()
 }
 
 // Purge deletes every fixture from an ingest batch (admin key).

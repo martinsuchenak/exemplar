@@ -48,6 +48,17 @@ tasks:
       - for i in $(seq 1 50); do curl -sf -o /dev/null http://127.0.0.1:18025/api/v1/info && break; sleep 0.2; done
       - EXEMPLAR_TEST_MAILPIT_SMTP=127.0.0.1:11025 EXEMPLAR_TEST_MAILPIT_API=http://127.0.0.1:18025 go test ./internal/mailpit/ -run TestRealMailpit -count=1 -v
 
+  test:presidio:
+    desc: Run the anonymiser against a throwaway Presidio Analyzer container (needs Docker; the model takes a minute to load)
+    vars:
+      PRESIDIO_IMAGE: mcr.microsoft.com/presidio-analyzer:latest
+    cmds:
+      # Gunicorn's default 30s worker timeout kills the worker while the model loads.
+      - docker run -d --rm --name exemplar-test-presidio -e GUNICORN_CMD_ARGS="--timeout 300" -p 127.0.0.1:15003:3000 {{.PRESIDIO_IMAGE}}
+      - defer: docker stop exemplar-test-presidio
+      - for i in $(seq 1 180); do curl -sf -o /dev/null http://127.0.0.1:15003/health && break; sleep 1; done
+      - EXEMPLAR_TEST_PRESIDIO_URL=http://127.0.0.1:15003 go test ./internal/anonymise/ -run TestRealPresidio -count=1 -v
+
   clean:
     desc: Clean build artifacts
     cmds:

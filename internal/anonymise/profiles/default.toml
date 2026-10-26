@@ -1,0 +1,49 @@
+# The default anonymisation profile. Its lists come from mail-processor's
+# anonymise-corpus.py, where they were tuned against real Australian business
+# mail. Copy this file into the profiles directory under another name to make
+# a profile of your own.
+
+name = "default"
+description = "Australian business email (mail-processor settings)"
+
+# Presidio scores below this are ignored. Lower catches more names and also
+# replaces more ordinary words.
+score_threshold = 0.5
+
+# Domains and their subdomains left as they are: public mail providers and
+# reserved example domains.
+keep_domains = [
+  "gmail.com", "googlemail.com", "google.com", "outlook.com", "hotmail.com", "live.com",
+  "microsoft.com", "office.com", "office365.com", "aka.ms", "yahoo.com", "icloud.com",
+  "me.com", "apple.com", "bigpond.com", "example.com", "example.net", "example.org",
+]
+
+# Address local parts left as they are, because mail classification depends
+# on system senders.
+keep_local_parts = [
+  "noreply", "no-reply", "no_reply", "donotreply", "do-not-reply", "do_not_reply",
+  "mailer-daemon", "postmaster", "bounce", "bounces", "notifications", "info", "admin",
+  "accounts", "sales", "support", "enquiries", "reception",
+]
+
+# Words named-entity recognition sometimes tags as names or organisations,
+# never replaced: greetings, sign-offs and client markers that segmentation
+# depends on.
+stop_words = [
+  "hi", "hello", "dear", "thanks", "thank", "regards", "kind", "best", "cheers", "sincerely",
+  "warm", "many", "yours", "team", "all", "sent", "from", "my", "iphone", "ipad", "android",
+  "outlook", "gmail", "mail", "yahoo", "samsung", "galaxy", "get", "ios", "windows", "original",
+  "message", "forwarded", "wrote", "subject", "to", "cc", "date", "re", "fw", "fwd", "caution",
+  "warning", "external", "notice", "attention", "monday", "tuesday", "wednesday", "thursday",
+  "friday", "saturday", "sunday", "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december", "am", "pm", "microsoft",
+  "google", "apple", "teams", "zoom", "office", "word", "excel", "pdf", "confidential",
+  "disclaimer", "privileged",
+]
+
+# Two-label public suffixes, so "acme.com.au" keeps ".com.au" and maps only "acme".
+two_level_suffixes = [
+  "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au", "co.nz", "net.nz",
+  "org.nz", "govt.nz", "co.uk", "org.uk", "ac.uk", "gov.uk", "co.za", "com.sg", "com.hk",
+  "co.jp", "com.cn",
+]

@@ -46,6 +46,14 @@ func migrations() []migrate.Migration {
 				)
 			},
 		},
+		{
+			Version: "20261028000001",
+			Name:    "identities",
+			Up:      execFile("migrations/20261028000001_identities.sql"),
+			Down: func(ctx context.Context, tx *migrate.Tx) error {
+				return tx.ExecSQL(ctx, `DROP TABLE name_tokens`, `DROP TABLE identity_keys`)
+			},
+		},
 	}
 }
 

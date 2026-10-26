@@ -41,6 +41,23 @@ generate.Service ─> dataset.Service.Authorize (write)
 `synth` never touches storage, so it is tested on its own, byte for byte. See
 [generation.md](generation.md).
 
+## Ingest
+
+```
+ingest.Service ─> admin check, dataset.Service.Authorize (write, quarantine only)
+               ─> person.Service.Identities (hashed identity and name-token registry)
+               ─> anonymise.Engine.Prepare (every header in the batch)
+               ─> anonymise.Engine.Anonymise (each email: mimetree, Presidio, patterns, synth)
+               ─> fixture.Service.Create (each email: blob, provenance, people, audit)
+               ─> audit (fixture.ingest)
+```
+
+`anonymise` reaches storage only through its `Registry` interface and Presidio
+only through its `Detector` interface, so it is tested with in-memory fakes.
+`app.Open` builds the anonymiser from the key, Presidio URL and profiles; with
+no key or no Presidio URL, ingest reports that it is not configured. See
+[anonymisation.md](anonymisation.md).
+
 ## CLI and API
 
 The MCP server (`cmd/mcp`) is another entry point of the same kind: each tool
@@ -80,6 +97,9 @@ bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
 | `internal/generate` | Fills datasets with synthetic fixtures; stores each through the fixture service. |
 | `internal/synth` | Pure, seeded content generation: people, companies, text, files, emails, records. No database. |
 | `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
+| `internal/ingest` | Takes real emails into quarantine: access checks, the anonymiser, storing fixtures, the dry-run report. |
+| `internal/anonymise` | The anonymisation engine: detection (Presidio client and patterns), keyed pseudonyms, MIME rewriting, profiles. No database; `anonymisetest` has a fake detector. |
+| `internal/mimetree` | Parses and re-serialises MIME messages losslessly enough to rewrite parts in place; charsets and transfer encodings. |
 | `internal/mailpit` | Sends email bytes over SMTP with run tags; `mailpittest` is a fake SMTP server for tests. |
 | `internal/testutil` | Builds a real app in a temp directory plus admin and member principals for tests. |
 

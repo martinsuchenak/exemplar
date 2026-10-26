@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"errors"
+	"time"
 
 	"github.com/martinsuchenak/xdal/pkg/xdal"
 
@@ -149,4 +150,52 @@ func randomSeed() uint64 {
 		return v
 	}
 	return 1
+}
+
+// Token returns the fake name token stored for hash (sql.ErrNoRows if none).
+func (s *Storage) Token(ctx context.Context, exec xdal.DBExecutor, hash string) (string, error) {
+	query, args, err := s.qb.Select("value").From("name_tokens").Where("hash = ?", hash).Build()
+	if err != nil {
+		return "", err
+	}
+	var v string
+	err = exec.QueryRow(ctx, query, args...).Scan(&v)
+	return v, err
+}
+
+// InsertToken stores a fake name token; an existing hash is left unchanged.
+func (s *Storage) InsertToken(ctx context.Context, exec xdal.DBExecutor, hash, value, keyID string, at time.Time) error {
+	query, args, err := s.qb.Insert("name_tokens").
+		Set("hash", hash).Set("value", value).Set("key_id", keyID).Set("created_at", storeutil.FormatTime(at)).
+		OnConflict("hash").DoNothing().
+		Build()
+	if err != nil {
+		return err
+	}
+	_, err = exec.Exec(ctx, query, args...)
+	return err
+}
+
+// IdentityPerson returns the person an identity hash points to (sql.ErrNoRows if none).
+func (s *Storage) IdentityPerson(ctx context.Context, exec xdal.DBExecutor, hash string) (string, error) {
+	query, args, err := s.qb.Select("person_id").From("identity_keys").Where("hash = ?", hash).Build()
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = exec.QueryRow(ctx, query, args...).Scan(&id)
+	return id, err
+}
+
+// InsertIdentity links an identity hash to a person; an existing hash is left unchanged.
+func (s *Storage) InsertIdentity(ctx context.Context, exec xdal.DBExecutor, hash, personID, keyID string, at time.Time) error {
+	query, args, err := s.qb.Insert("identity_keys").
+		Set("hash", hash).Set("person_id", personID).Set("key_id", keyID).Set("created_at", storeutil.FormatTime(at)).
+		OnConflict("hash").DoNothing().
+		Build()
+	if err != nil {
+		return err
+	}
+	_, err = exec.Exec(ctx, query, args...)
+	return err
 }
