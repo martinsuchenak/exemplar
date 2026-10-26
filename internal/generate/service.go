@@ -302,7 +302,8 @@ func build(g *synth.Gen, req Request, people []synth.Person) ([]item, error) {
 			}
 		case KindRecords:
 			schema := req.Schemas[i%len(req.Schemas)]
-			r, err := g.Record(schema, synth.RecordInput{Profile: req.Profile, People: people}, i)
+			// The i-th item is record i/len(Schemas) of its schema.
+			r, err := g.Record(schema, synth.RecordInput{Profile: req.Profile, People: people}, i/len(req.Schemas))
 			if err != nil {
 				return nil, err
 			}

@@ -48,6 +48,13 @@ tasks:
       - for i in $(seq 1 50); do curl -sf -o /dev/null http://127.0.0.1:18025/api/v1/info && break; sleep 0.2; done
       - EXEMPLAR_TEST_MAILPIT_SMTP=127.0.0.1:11025 EXEMPLAR_TEST_MAILPIT_API=http://127.0.0.1:18025 go test ./internal/mailpit/ -run TestRealMailpit -count=1 -v
 
+  sample-data:
+    desc: Fill a server (EXEMPLAR_SERVER, default localhost:8080) with sample emails, documents and records about 20 people
+    deps: [build-local]
+    interactive: true
+    cmds:
+      - zsh scripts/sample-data.zsh
+
   test:presidio:
     desc: Run the anonymiser against a throwaway Presidio Analyzer container (needs Docker; the model takes a minute to load)
     vars:

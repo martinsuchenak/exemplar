@@ -601,3 +601,33 @@ func TestSmallHelpers(t *testing.T) {
 		t.Errorf("htmlFromText = %q", htmlFromText("a<b\r\nc\r\n\r\nd"))
 	}
 }
+
+func TestRecordRotation(t *testing.T) {
+	// 20 people: the five schemas start 4 people apart.
+	for schema, want := range map[RecordSchema][]int{
+		SchemaContact: {0, 1, 2}, SchemaProject: {8, 9, 10}, SchemaAddress: {16, 17, 18},
+	} {
+		for k, w := range want {
+			if got := personIndex(schema, k, 20); got != w {
+				t.Errorf("%s record %d: person %d, want %d", schema, k, got, w)
+			}
+		}
+	}
+	// Fewer people than schemas still stays in range, and a schema uses
+	// every person before repeating one.
+	seen := map[int]bool{}
+	for k := 0; k < 3; k++ {
+		i := personIndex(SchemaAddress, k, 3)
+		if i < 0 || i >= 3 || seen[i] {
+			t.Errorf("address record %d: person %d", k, i)
+		}
+		seen[i] = true
+	}
+
+	ps := []Person{{ID: "a", Company: "X"}, {ID: "b", Company: "X"}, {ID: "c", Company: "Y"}}
+	for k, want := range []string{"a", "c", "a"} {
+		if got := companyPerson(ps, k).ID; got != want {
+			t.Errorf("company record %d is about %s, want %s", k, got, want)
+		}
+	}
+}

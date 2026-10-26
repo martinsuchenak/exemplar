@@ -54,8 +54,12 @@ type RecordInput struct {
 	People []Person
 }
 
-// Record generates the index-th record of schema. Records rotate through the
-// people, so contact 3 is about People[3 % len(People)].
+// Record generates the index-th record of schema, counting records of that
+// schema only. Each schema starts at a different person, spaced evenly
+// through People, and steps on one person per record, so records of every
+// schema between them cover all the people, and a schema repeats a person
+// only after it has used every one. Company records step through the
+// distinct companies instead, so no company repeats before all have appeared.
 func (g *Gen) Record(schema RecordSchema, in RecordInput, index int) (Record, error) {
 	if len(in.People) == 0 {
 		return Record{}, fmt.Errorf("a record needs at least one person")
@@ -63,7 +67,10 @@ func (g *Gen) Record(schema RecordSchema, in RecordInput, index int) (Record, er
 	if !in.Profile.Valid() {
 		in.Profile = ProfileInsurance
 	}
-	p := in.People[index%len(in.People)]
+	p := in.People[personIndex(schema, index, len(in.People))]
+	if schema == SchemaCompany {
+		p = companyPerson(in.People, index)
+	}
 	company := CompanyFor(p.Company)
 	var rec Record
 	switch schema {
@@ -112,6 +119,34 @@ func (g *Gen) Record(schema RecordSchema, in RecordInput, index int) (Record, er
 	}
 	rec.Schema = schema
 	return rec, nil
+}
+
+// personIndex is the person the index-th record of schema is about. Schema
+// number s (in Schemas order) starts at s*ceil(n/len(Schemas)), so with 20
+// people the five schemas start at 0, 4, 8, 12 and 16.
+func personIndex(schema RecordSchema, index, n int) int {
+	pos := 0
+	for i, s := range Schemas {
+		if s == schema {
+			pos = i
+		}
+	}
+	step := (n + len(Schemas) - 1) / len(Schemas)
+	return (index + pos*step) % n
+}
+
+// companyPerson returns the first person of the index-th distinct company
+// among people, in the order the people come.
+func companyPerson(people []Person, index int) Person {
+	var firsts []Person
+	seen := map[string]bool{}
+	for _, p := range people {
+		if !seen[p.Company] {
+			seen[p.Company] = true
+			firsts = append(firsts, p)
+		}
+	}
+	return firsts[index%len(firsts)]
 }
 
 // mustJSON encodes v (encoding/json sorts map keys, so output is stable);

@@ -254,3 +254,39 @@ func TestSameSeedSamePeopleSameContent(t *testing.T) {
 		t.Errorf("rerun into the same dataset err = %v, want a name conflict", err)
 	}
 }
+
+func TestRecordsSpreadAcrossPeople(t *testing.T) {
+	a, _, alice, d := setup(t)
+	res, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{Kind: generate.KindRecords, Count: 30, People: 20, Seed: 2026})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobs := map[string]string{}
+	linked := map[string]bool{}
+	perSchema := map[string]map[string]bool{} // schema → first linked person (or company record person set)
+	for _, f := range res.Fixtures {
+		if other, dup := blobs[f.BlobHash]; dup {
+			t.Errorf("%s has the same content as %s", f.Name, other)
+		}
+		blobs[f.BlobHash] = f.Name
+		if perSchema[f.RecordSchema] == nil {
+			perSchema[f.RecordSchema] = map[string]bool{}
+		}
+		key := f.People[0].PersonID
+		if perSchema[f.RecordSchema][key] {
+			t.Errorf("%s repeats a %s about the same person", f.Name, f.RecordSchema)
+		}
+		perSchema[f.RecordSchema][key] = true
+		for _, l := range f.People {
+			linked[l.PersonID] = true
+		}
+	}
+	if len(linked) != 20 {
+		t.Errorf("records link %d of the 20 people", len(linked))
+	}
+	for schema, people := range perSchema {
+		if len(people) != 6 {
+			t.Errorf("%s records are about %d different people or companies, want 6", schema, len(people))
+		}
+	}
+}

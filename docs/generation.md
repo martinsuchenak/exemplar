@@ -20,6 +20,14 @@ exemplar fixtures list <dataset-id> --person <person-id>           # everything 
 The same request over the API is `POST /api/v1/datasets/{id}/generate` with a
 JSON body (see [api.md](api.md)).
 
+`task sample-data` fills a server with a ready-made set: workspaces
+`sample-emails` (every shape), `sample-documents` (every format) and
+`sample-records` (every schema), all about the same 20 people, from one
+seed. It uses `EXEMPLAR_SERVER` (default `http://localhost:8080`) and
+`EXEMPLAR_API_KEY`, asking for the key when it is not set, and leaves
+workspaces that already hold fixtures alone; `scripts/sample-data.zsh
+--replace sample-records` deletes one and generates it again.
+
 ## The person registry
 
 A person has a name, email, mobile, job title, company and postal address.
@@ -122,9 +130,13 @@ Rules:
 
 ## Records
 
-Records are JSON fixtures (kind `record`) with a `record_schema`. Records
-rotate through the request's people, so with `--people 4` contact 5 is about
-the first person again.
+Records are JSON fixtures (kind `record`) with a `record_schema`. The
+request cycles through its schemas; each schema starts at a different person,
+spaced evenly through the request's people, and moves on one person per
+record. So `--count 30 --people 20` gives 6 of each schema, the contacts
+about 6 different people and the five schemas between them about all 20,
+with no two records alike. A schema repeats a person only once it has used
+every one. Company records go through the distinct companies instead.
 
 | Schema | Fields | Links |
 |--------|--------|-------|
