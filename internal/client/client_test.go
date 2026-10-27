@@ -176,8 +176,8 @@ func TestDatasetsFixturesAndCopies(t *testing.T) {
 	if _, err := alice.Promote(ctx, fork.Dataset.ID, dataset.PromoteInput{}); !errors.Is(err, apperr.ErrForbidden) {
 		t.Errorf("member promote err = %v, want ErrForbidden", err)
 	}
-	promoted, err := admin.Promote(ctx, fork.Dataset.ID, dataset.PromoteInput{Name: "emails"})
-	if err != nil || promoted.Dataset.Version != 2 || promoted.Dataset.FrozenAt == nil {
+	promoted, err := admin.Promote(ctx, fork.Dataset.ID, dataset.PromoteInput{Name: "emails", Description: "reviewed"})
+	if err != nil || promoted.Dataset.Version != 2 || promoted.Dataset.FrozenAt == nil || promoted.Dataset.Description != "reviewed" {
 		t.Errorf("promote = %+v, %v", promoted, err)
 	}
 

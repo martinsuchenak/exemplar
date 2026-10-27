@@ -21,6 +21,7 @@ func promoteCmd() *cli.Command {
 		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Dataset to promote", Required: true}},
 		Flags: withClientFlags(
 			&cli.StringFlag{Name: "name", Usage: "Global dataset name (default: the source's name)"},
+			&cli.StringFlag{Name: "description", Usage: "Global dataset description (default: the source's)"},
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
 			id, err := requireArg(cmd, "dataset-id")
@@ -31,7 +32,10 @@ func promoteCmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			res, err := c.Promote(ctx, id, dataset.PromoteInput{Name: cmd.GetString("name")})
+			res, err := c.Promote(ctx, id, dataset.PromoteInput{
+				Name:        cmd.GetString("name"),
+				Description: cmd.GetString("description"),
+			})
 			if err != nil {
 				return err
 			}

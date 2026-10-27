@@ -253,16 +253,19 @@ func TestForkAndPromote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("promote: %v", err)
 	}
-	if v2.Dataset.Scope != dataset.ScopeGlobal || v2.Dataset.Version != 2 || !v2.Dataset.Frozen() || v2.Copied != 3 {
-		t.Errorf("promoted = %+v copied %d; want global v2, frozen, 3 copied", v2.Dataset, v2.Copied)
+	if v2.Dataset.Scope != dataset.ScopeGlobal || v2.Dataset.Version != 2 || !v2.Dataset.Frozen() || v2.Copied != 3 || v2.Dataset.Description != "base" {
+		t.Errorf("promoted = %+v copied %d; want global v2, frozen, 3 copied, the source's description", v2.Dataset, v2.Copied)
 	}
 	v3, err := a.Datasets.Promote(ctx, admin, d.ID, dataset.PromoteInput{})
 	if err != nil || v3.Dataset.Version != 3 {
 		t.Errorf("second promote = %+v, %v; want version 3", v3, err)
 	}
-	renamed, err := a.Datasets.Promote(ctx, admin, d.ID, dataset.PromoteInput{Name: "emails-v2"})
-	if err != nil || renamed.Dataset.Version != 1 || renamed.Dataset.Name != "emails-v2" {
-		t.Errorf("renamed promote = %+v, %v; want emails-v2 v1", renamed, err)
+	renamed, err := a.Datasets.Promote(ctx, admin, d.ID, dataset.PromoteInput{Name: "emails-v2", Description: "reviewed emails"})
+	if err != nil || renamed.Dataset.Version != 1 || renamed.Dataset.Name != "emails-v2" || renamed.Dataset.Description != "reviewed emails" {
+		t.Errorf("renamed promote = %+v, %v; want emails-v2 v1, described", renamed, err)
+	}
+	if src, _ := a.Datasets.Get(ctx, alice, d.ID); src.Description != "base" {
+		t.Errorf("promoting changed the source's description to %q", src.Description)
 	}
 }
 

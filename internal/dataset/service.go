@@ -91,10 +91,13 @@ type ForkInput struct {
 	Description string `json:"description"`
 }
 
-// PromoteInput names the global dataset a promotion creates. Name defaults to
-// the source dataset's name; the version is the next free one for that name.
+// PromoteInput names and describes the global dataset a promotion creates.
+// Name and Description default to the source dataset's; the version is the
+// next free one for that name. A quarantine source's description is about
+// review ("awaiting review"), so a promotion usually gives its own.
 type PromoteInput struct {
-	Name string `json:"name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 // CopyResult is a dataset created by Fork or Promote and what was copied into it.
@@ -281,7 +284,11 @@ func (s *Service) Promote(ctx context.Context, actor principal.Principal, srcID 
 		if name == "" {
 			name = src.Name
 		}
-		d := s.derive(src, name, src.Description, ScopeGlobal, 0, actor)
+		desc := in.Description
+		if desc == "" {
+			desc = src.Description
+		}
+		d := s.derive(src, name, desc, ScopeGlobal, 0, actor)
 		frozen := d.CreatedAt
 		d.FrozenAt = &frozen
 		return d, nil

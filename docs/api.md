@@ -66,13 +66,14 @@ clients report something useful.
 | `DELETE /api/v1/datasets/{id}` | owner or admin | | `204`; fixtures and unused contents go too |
 | `POST /api/v1/datasets/{id}/freeze` | owner or admin | | Dataset |
 | `POST /api/v1/datasets/{id}/fork` | write key that can read the source | `{"name", "description"}` (optional) | `201` CopyResult |
-| `POST /api/v1/datasets/{id}/promote` | admin | `{"name"}` (optional) | `201` CopyResult |
+| `POST /api/v1/datasets/{id}/promote` | admin | `{"name", "description"}` (optional) | `201` CopyResult |
 
 A **CopyResult** is `{"dataset": Dataset, "copied": n, "skipped": n}`. Fork
 creates a workspace you own; promote creates the next version of a global
 dataset, frozen. Both copy fixture metadata only (contents are shared) and skip
-real-derived fixtures that are not approved. Without a name, the source's name
-is used.
+real-derived fixtures that are not approved. Without a name or description,
+the source's is used; give a promotion from quarantine its own description,
+since the quarantine one is about review.
 
 ### Fixtures
 

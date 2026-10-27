@@ -223,11 +223,14 @@ shared, not duplicated.
 ### `promote`
 
 ```bash
-exemplar promote <dataset-id> [--name N]
+exemplar promote <dataset-id> [--name N] [--description D]
 ```
 
 Admin key. Copies a dataset into the global library as the next version of
-that name, frozen.
+that name, frozen. The name and description default to the source's; a
+promotion from quarantine usually wants its own description, since the
+quarantine one is about review and a frozen dataset cannot be described
+again.
 
 ### `purge`
 

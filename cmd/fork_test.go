@@ -54,6 +54,11 @@ func TestForkAndPromoteCommands(t *testing.T) {
 	if promoted.Dataset.Version != 2 || promoted.Dataset.Scope != dataset.ScopeGlobal || promoted.Dataset.FrozenAt == nil {
 		t.Errorf("promoted = %+v", promoted.Dataset)
 	}
+	var described dataset.CopyResult
+	s.runJSON(t, s.adminKey, &described, "promote", forked.Dataset.ID, "--name", "lib", "--description", "reviewed library")
+	if described.Dataset.Version != 3 || described.Dataset.Description != "reviewed library" {
+		t.Errorf("promote --description = %+v", described.Dataset)
+	}
 	if _, err := s.run(t, member, "fork", "missing"); err == nil {
 		t.Error("forking a missing dataset succeeded")
 	}
