@@ -1,0 +1,40 @@
+name = "opportunity"
+description = "A sales opportunity with a contact, stage, value and source"
+step = "person"
+title = "{name}"
+
+[[links]]
+role = "contact"
+value = "person.id"
+
+[[fields]]
+name = "name"
+text = "subject"
+
+[[fields]]
+name = "company"
+value = "company.name"
+
+[[fields]]
+name = "contact_person_id"
+value = "person.id"
+
+[[fields]]
+name = "stage"
+pick = ["lead", "qualified", "proposal", "negotiation", "won", "lost"]
+
+[[fields]]
+name = "value"
+money = [1000, 150000]
+
+[[fields]]
+name = "source"
+pick = ["referral", "website", "phone", "email", "event", "existing client"]
+
+[[fields]]
+name = "expected_close"
+date = { within_days = 90 }
+
+[[fields]]
+name = "notes"
+text = "sentence"

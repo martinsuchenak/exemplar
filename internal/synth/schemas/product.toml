@@ -1,0 +1,101 @@
+name = "product"
+description = "A product or service from the catalogue: SKU, name, category, unit and price"
+step = "catalogue"
+title = "{name}"
+
+# Catalogue entries depend only on this file, the business profile and the
+# entry number, never on a request's seed: product 7 is the same in every
+# dataset, and every quote's lines are products from here.
+[catalogue]
+size = 24
+
+[[catalogue.fields]]
+name = "sku"
+ref = "PRD"
+
+[[catalogue.fields]]
+name = "name"
+nth = "@product"
+
+# category and unit are lists in step with product: entry n takes item n of
+# each, so a product's category and unit always fit it.
+[[catalogue.fields]]
+name = "category"
+nth = "@category"
+
+[[catalogue.fields]]
+name = "unit"
+nth = "@unit"
+
+[[catalogue.fields]]
+name = "unit_price"
+money = [25, 4500]
+format = "number"
+
+[[catalogue.fields]]
+name = "description"
+text = "sentence"
+
+[lists.insurance]
+product = [
+  "Public liability cover", "Professional indemnity cover", "Management liability cover",
+  "Cyber liability cover", "Business interruption cover", "Commercial property cover",
+  "Contract works cover", "Marine transit cover", "Fleet motor cover",
+  "Workers compensation review", "Claims advisory session", "Risk assessment visit",
+  "Policy wording review", "Premium funding setup", "Annual insurance review",
+  "Loss adjusting service", "Building valuation", "Strata cover",
+  "Directors and officers cover", "Product liability cover", "Tool and equipment cover",
+  "Machinery breakdown cover", "Event liability cover", "Key person cover",
+]
+category = [
+  "Liability", "Liability", "Liability",
+  "Specialty", "Property", "Property",
+  "Property", "Specialty", "Motor",
+  "Advisory", "Claims", "Advisory",
+  "Advisory", "Advisory", "Advisory",
+  "Claims", "Property", "Property",
+  "Liability", "Liability", "Property",
+  "Property", "Liability", "Specialty",
+]
+unit = [
+  "year", "year", "year",
+  "year", "year", "year",
+  "policy", "policy", "year",
+  "hour", "hour", "visit",
+  "hour", "policy", "visit",
+  "hour", "visit", "year",
+  "year", "year", "year",
+  "year", "policy", "year",
+]
+
+[lists.manufacturing]
+product = [
+  "Laser-cut steel bracket", "MIG welding service", "TIG welding service",
+  "Powder-coated handrail", "Stainless balustrade panel", "Galvanised base plate",
+  "CNC machined bushing", "Folded aluminium cover", "Structural steel beam",
+  "Mild steel gate frame", "Custom stair stringer", "Sheet metal enclosure",
+  "Plasma-cut flange", "Machined shaft coupling", "Steel mesh panel",
+  "Fabricated trailer chassis", "Welded tank stand", "Aluminium ramp",
+  "Equipment guard", "Weld inspection", "On-site repair hour",
+  "Design drafting hour", "Sandblasting service", "Hot-dip galvanising",
+]
+category = [
+  "Fabrication", "Welding", "Welding",
+  "Finishing", "Fabrication", "Fabrication",
+  "Machining", "Fabrication", "Structural",
+  "Fabrication", "Structural", "Fabrication",
+  "Fabrication", "Machining", "Fabrication",
+  "Structural", "Welding", "Fabrication",
+  "Fabrication", "Services", "Services",
+  "Services", "Finishing", "Finishing",
+]
+unit = [
+  "each", "hour", "hour",
+  "metre", "each", "each",
+  "each", "each", "metre",
+  "each", "set", "each",
+  "each", "each", "each",
+  "each", "each", "each",
+  "each", "visit", "hour",
+  "hour", "kg", "kg",
+]

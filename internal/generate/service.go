@@ -41,8 +41,10 @@ const (
 	MaxPeople = 200
 	// MaxTemplates caps the template emails one request names.
 	MaxTemplates = 50
-	// GeneratorName identifies this generator in fixture provenance.
-	GeneratorName = "exemplar-synth/1"
+	// GeneratorName identifies this generator in fixture provenance. Version
+	// 2 spaces record schemas by the request's schemas (see synth.Record)
+	// and names each record's schema file.
+	GeneratorName = "exemplar-synth/2"
 	// contentStream separates the content generator's seed from the one
 	// used to pick people.
 	contentStream = 0x5eed5eed5eed5eed
@@ -87,12 +89,26 @@ type Service struct {
 	fixtures *fixture.Service
 	persons  *person.Service
 	audit    *audit.Service
+	schemas  *synth.SchemaSet
 	seed     func() uint64
 }
 
-// NewService returns a generation service built on the other services.
-func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service) *Service {
-	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, seed: randomSeed}
+// NewService returns a generation service built on the other services,
+// generating records from schemas (nil for the built-in ones).
+func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, schemas *synth.SchemaSet) *Service {
+	if schemas == nil {
+		schemas = synth.BuiltinSchemas()
+	}
+	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, schemas: schemas, seed: randomSeed}
+}
+
+// Schemas lists the record schemas this server generates, for any key that
+// can read.
+func (s *Service) Schemas(actor principal.Principal) ([]*synth.Schema, error) {
+	if !actor.CanRead() {
+		return nil, fmt.Errorf("%w: this key cannot read", apperr.ErrForbidden)
+	}
+	return s.schemas.List(), nil
 }
 
 // item is one generated piece of content before it is stored.
@@ -117,7 +133,7 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 	if !actor.CanWrite() {
 		return nil, fmt.Errorf("%w: generating needs a write key", apperr.ErrForbidden)
 	}
-	if err := normalise(&req); err != nil {
+	if err := s.normalise(&req); err != nil {
 		return nil, err
 	}
 	if _, err := s.datasets.Authorize(ctx, nil, actor, datasetID, dataset.AccessWrite); err != nil {
@@ -155,7 +171,7 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 	if templates != nil {
 		items, err = buildFromTemplates(g, req, templates, people)
 	} else {
-		items, err = build(g, req, people)
+		items, err = s.build(g, req, people)
 	}
 	if err != nil {
 		return nil, err
@@ -201,7 +217,7 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 }
 
 // normalise validates req and fills in defaults.
-func normalise(req *Request) error {
+func (s *Service) normalise(req *Request) error {
 	if req.Count < 1 || req.Count > MaxCount {
 		return fmt.Errorf("%w: count must be 1-%d", apperr.ErrInvalid, MaxCount)
 	}
@@ -244,11 +260,15 @@ func normalise(req *Request) error {
 		}
 	case KindRecords:
 		if len(req.Schemas) == 0 {
-			req.Schemas = synth.Schemas
+			req.Schemas = s.schemas.Names()
 		}
 		for _, sc := range req.Schemas {
-			if !sc.Valid() {
-				return fmt.Errorf("%w: unknown record schema %q", apperr.ErrInvalid, sc)
+			if _, ok := s.schemas.Get(sc); !ok {
+				names := make([]string, 0)
+				for _, n := range s.schemas.Names() {
+					names = append(names, string(n))
+				}
+				return fmt.Errorf("%w: unknown record schema %q (use %s)", apperr.ErrInvalid, sc, strings.Join(names, ", "))
 			}
 		}
 	default:
@@ -259,7 +279,7 @@ func normalise(req *Request) error {
 
 // build generates every item. Names start with a short form of the seed, so
 // runs with different seeds never clash in one dataset.
-func build(g *synth.Gen, req Request, people []synth.Person) ([]item, error) {
+func (s *Service) build(g *synth.Gen, req Request, people []synth.Person) ([]item, error) {
 	prefix := fmt.Sprintf("g%06x", req.Seed&0xffffff)
 	var items []item
 	for i := 0; i < req.Count; i++ {
@@ -301,9 +321,11 @@ func build(g *synth.Gen, req Request, people []synth.Person) ([]item, error) {
 				})
 			}
 		case KindRecords:
-			schema := req.Schemas[i%len(req.Schemas)]
-			// The i-th item is record i/len(Schemas) of its schema.
-			r, err := g.Record(schema, synth.RecordInput{Profile: req.Profile, People: people}, i/len(req.Schemas))
+			slot := i % len(req.Schemas)
+			schema, _ := s.schemas.Get(req.Schemas[slot])
+			// The i-th item is record i/len(Schemas) of its schema, which is
+			// spaced through the people by its slot in the request.
+			r, err := g.Record(schema, synth.RecordInput{Profile: req.Profile, People: people, Slot: slot, Slots: len(req.Schemas)}, i/len(req.Schemas))
 			if err != nil {
 				return nil, err
 			}
@@ -312,8 +334,9 @@ func build(g *synth.Gen, req Request, people []synth.Person) ([]item, error) {
 				links[k] = fixture.PersonLink{PersonID: pr.PersonID, Role: pr.Role}
 			}
 			items = append(items, item{
-				name: n + "-" + string(schema) + "-" + synth.Slug(r.Title) + ".json", format: "json",
-				scenario: req.Scenario, schema: string(schema), people: links, data: r.Data,
+				name: n + "-" + string(schema.Name) + "-" + synth.Slug(r.Title) + ".json", format: "json",
+				scenario: req.Scenario, schema: string(schema.Name), people: links, data: r.Data,
+				generator: fmt.Sprintf("%s schema=%s@%s seed=%d", GeneratorName, schema.Name, schema.Hash, req.Seed),
 			})
 		}
 	}

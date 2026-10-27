@@ -131,7 +131,7 @@ func TestToolsListed(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	if strings.Join(names, ",") != "get_fixture,get_person,list_datasets,search_fixtures" {
+	if strings.Join(names, ",") != "get_fixture,get_person,list_datasets,list_record_schemas,search_fixtures" {
 		t.Errorf("tools = %v", names)
 	}
 }
@@ -360,6 +360,17 @@ func TestGetFixtureLimitsAndRealData(t *testing.T) {
 	}
 	if events, _ := w.a.Audit.List(ctx, w.admin, audit.Filter{Action: audit.ActionFixtureDownload, TargetID: real.ID}); len(events) != 1 {
 		t.Errorf("metadata read was audited as a download")
+	}
+}
+
+func TestListRecordSchemas(t *testing.T) {
+	w := newWorld(t)
+	out, _, err := w.call(t, w.aliceReadOnly, "list_record_schemas", nil)
+	if err != nil || out["count"] != float64(7) {
+		t.Fatalf("list_record_schemas = %v, %v", out["count"], err)
+	}
+	if s := fmt.Sprint(out["schemas"]); !strings.Contains(s, "quote") || !strings.Contains(s, "subtotal") {
+		t.Errorf("schemas = %s", s)
 	}
 }
 

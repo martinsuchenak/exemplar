@@ -14,6 +14,8 @@ exemplar datasets create --name demo
 exemplar generate <dataset-id> --kind emails --count 24          # every shape, twice
 exemplar generate <dataset-id> --kind files --formats pdf,xlsx --count 6
 exemplar generate <dataset-id> --kind records --count 10 --people 4
+exemplar generate <dataset-id> --kind records --schemas product,quote --count 20
+exemplar schemas list                                              # the record schemas this server has
 exemplar fixtures list <dataset-id> --person <person-id>           # everything about one person
 ```
 
@@ -51,7 +53,7 @@ generated mail can never reach a real mailbox.
 | `formats` | all | Files: `csv`, `docx`, `gif`, `html`, `jpg`, `pdf`, `png`, `rtf`, `txt`, `xlsx` |
 | `shapes` | all | Emails: see below |
 | `from` | | Emails: template email fixture IDs (1–50) to render instead of shapes; see [templates](#emails-from-templates) |
-| `schemas` | all | Records: `contact`, `company`, `project`, `opportunity`, `address` |
+| `schemas` | all | Records: schema names; `exemplar schemas list` (or `GET /api/v1/record-schemas`) shows what the server has |
 | `profile` | `insurance` | Business vocabulary: `insurance` or `manufacturing` |
 | `people` | up to 10 | How many registry people the content is about (1–200; emails need 2; with `from`, at least the largest template's people, default twice that and at least 10) |
 | `seed` | random | Returned in the result; see reproducibility |
@@ -130,13 +132,16 @@ Rules:
 
 ## Records
 
-Records are JSON fixtures (kind `record`) with a `record_schema`. The
-request cycles through its schemas; each schema starts at a different person,
-spaced evenly through the request's people, and moves on one person per
-record. So `--count 30 --people 20` gives 6 of each schema, the contacts
-about 6 different people and the five schemas between them about all 20,
-with no two records alike. A schema repeats a person only once it has used
-every one. Company records go through the distinct companies instead.
+Records are JSON fixtures (kind `record`) with a `record_schema`. Every
+schema is a TOML file (see [record schema files](#record-schema-files)): seven
+are built in, and a server can load more. The request cycles through its
+schemas; each schema starts at a different person, spaced evenly through the
+request's people by its place among the *request's* schemas, and moves on one
+person per record. So `--count 30 --people 20` with five schemas gives 6 of
+each, the contacts about 6 different people and the five schemas between them
+about all 20, with no two records alike. A schema repeats a person only once
+it has used every one. Company records go through the distinct companies
+instead, and catalogue records through the catalogue.
 
 | Schema | Fields | Links |
 |--------|--------|-------|
@@ -145,9 +150,101 @@ every one. Company records go through the distinct companies instead.
 | `project` | name, code, company, manager_person_id, status, start/end dates, budget, description | `manager` |
 | `opportunity` | name, company, contact_person_id, stage, value, source, expected_close, notes | `contact` |
 | `address` | person_id, street, suburb, state, postcode, country | `resident` |
+| `product` | sku, name, category, unit, unit_price, description: one catalogue entry | none |
+| `quote` | quote_number, name, company, contact_person_id, status, issued, valid_until, items (catalogue lines with qty and amount), subtotal, gst, total, notes | `contact` |
+
+The product catalogue has 24 entries per business profile. Entry *n* depends
+only on the schema file, the profile and *n*, never on the request's seed, so
+product 7 is the same in every request, dataset and instance, and every line
+of every quote is a product record with the same SKU, name and price. A
+quote's amounts are exact: each line is `qty` × `unit_price`, GST is 10% of
+the subtotal rounded to the cent, and the total adds up.
 
 Uploaded JSON can be a record too: pass `record_schema` (any lower-case name)
 with the upload.
+
+## Record schema files
+
+A schema is one TOML file named after it (`quote.toml`). The built-in files
+are in `internal/synth/schemas/`; `serve --record-schemas-dir DIR` (env
+`RECORD_SCHEMAS_DIR`, config `generate.record_schemas_dir`) adds every
+`*.toml` file in `DIR`, and a file named like a built-in replaces it (the
+server logs that it did). The server reads them when it starts: a change needs
+a restart, and a file with a mistake stops the server with the file and field
+named, so a bad schema never fails halfway through a request. Clients (CLI,
+MCP) use whatever the server they talk to has loaded.
+
+| Key | Meaning |
+|-----|---------|
+| `name` | The schema name: lower-case letters, digits and `-`; the file is `<name>.toml` |
+| `description` | Shown by `exemplar schemas list` |
+| `step` | What successive records go through: `person` (default), `company` or `catalogue` |
+| `title` | A template naming the record, such as `"{name}"` or `"{person.name}"`; fixture names are built from it |
+| `[[links]]` | The people the record refers to: `role`, and `value` = `person.id` or `company.contacts` |
+| `[[fields]]` | The fields, **in order** (see below) |
+| `[catalogue]` | For `step = "catalogue"`: `size`, and `[[catalogue.fields]]` every entry has |
+| `[lists.<profile>]` | Word lists per business profile (`insurance`, `manufacturing`), or `[lists.all]` for every one |
+
+Each field has a `name` (lower-case, `_`, not `schema`, which every record
+gets) and exactly one type key. Fields are evaluated top to bottom, so a field
+can use any field above it, and the order is the order random values are
+drawn in: changing it changes what a seed gives. The JSON keys come out
+sorted.
+
+| Type | Example | Gives |
+|------|---------|-------|
+| `value` | `value = "company.abn"` | The record's person (`person.id`, `first_name`, `last_name`, `name`, `email`, `phone`, `job_title`, `company`, `address`, `address.street`, `.suburb`, `.state`, `.postcode`, `.country`), its company (`company.name`, `short` without Pty Ltd, `domain`, `abn`, `phone`, `website`, `industry`, `address`, `address.*`, `contacts`), or a field above |
+| `template` | `template = "{label} - {company.short}"` | Text with `{…}` filled from the same names, or from `{label}`, `{title}`, `{subject}`, `{sentence}` (text in the profile's words) |
+| `ref` | `ref = "QU"`, `ref = ""` | A reference such as `QU-482917`; `""` uses the mixed prefixes (`PL`, `CL`, `JOB`…) |
+| `pick` | `pick = ["draft", "sent"]`, `pick = "@product"` | One item of a list, or of a named list for the request's profile |
+| `int` | `int = [1, 20]` | A whole number in the range |
+| `money` | `money = [5000, 250000]` | Dollars, held in cents |
+| `date` | `date = { within_days = 60 }`, `date = { after = "issued", days = [14, 45] }` (or `months`) | A date near the generator's base date, or after a date field above |
+| `text` | `text = "sentence"`, `text = { paragraph = [1, 2] }` | Prose in the profile's words: `sentence`, `title`, `label`, `subject`, or a paragraph of min plus up to extra sentences |
+| `lines` | `lines = { catalogue = "product", count = [1, 6], qty = [1, 20] }` | Distinct catalogue entries, each with every entry field plus `qty` and `amount` |
+| `sum` | `sum = "items.amount"`, `sum = ["subtotal", "gst"]` | The total of money fields, or of a lines field's money column |
+| `percent` | `percent = { of = "subtotal", rate = 10 }` | A percentage of a money field, rounded to the cent |
+| `nth` | `nth = "@product"` | Catalogue entries only: the list's item for the entry's number, so entries take the list in order and never repeat one (the catalogue may not be longer than the list) |
+
+Money fields (`money`, `sum`, `percent`) take `format = "display"` (`"$1,234.56"`,
+the default) or `format = "number"` (`1234.56`); sums work on cents, whatever
+their inputs show. Date fields take a Go layout in `format` (default
+`2006-01-02`). A lines field's `amount` takes the catalogue's `unit_price`
+format.
+
+A catalogue schema's records are its entries, in order, and link no people;
+its entry fields cannot read a person or company. A catalogue that a `lines`
+field uses needs a money `unit_price`. A minimal schema of your own:
+
+```toml
+name = "ticket"
+description = "A support ticket raised by a client contact"
+title = "{reference} {subject}"
+
+[[links]]
+role = "reporter"
+value = "person.id"
+
+[[fields]]
+name = "reference"
+ref = "TK"
+
+[[fields]]
+name = "subject"
+text = "subject"
+
+[[fields]]
+name = "reporter"
+value = "person.email"
+
+[[fields]]
+name = "priority"
+pick = ["low", "normal", "high", "urgent"]
+
+[[fields]]
+name = "opened"
+date = { within_days = 30 }
+```
 
 ## Reproducibility
 
@@ -159,9 +256,16 @@ seeds never clash in one dataset, and rerunning a seed into the same dataset
 fails with a name conflict instead of duplicating it.
 
 Fixture provenance records `source: synthetic` and
-`generator: exemplar-synth/1 seed=<seed>` (`template:<fixture-id> seed=<seed>`
-for emails from templates). The same seed, people and templates give the same
-emails.
+`generator: exemplar-synth/2 seed=<seed>`; a record's also names its schema
+file, `exemplar-synth/2 schema=quote@3fa1c2d0 seed=<seed>`, where the hash is
+of the file's content, so you can tell which definition made it.
+Emails from templates record `template:<fixture-id> seed=<seed>`. The same
+seed, people, templates and schema files give the same content.
+
+Version 2 changed records once: each schema is spaced by its place among the
+request's schemas, not among every schema there is, so adding a schema file
+never changes what the others give. A seed from version 1 reproduces its
+records only on a build from before the change.
 
 ## Into a mailbox
 

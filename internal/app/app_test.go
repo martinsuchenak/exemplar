@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"github.com/martinsuchenak/exemplar/internal/principal"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -62,6 +64,27 @@ func TestAnonymiserConfig(t *testing.T) {
 	}
 	if _, err := Open(context.Background(), nil, Config{DBPath: filepath.Join(dir, "x.db"), BlobDir: filepath.Join(dir, "b"), AnonProfilesDir: dir}); err == nil {
 		t.Error("Open with a broken profile succeeded")
+	}
+	// A broken record schema stops the server too, naming the file.
+	if _, err := Open(context.Background(), nil, Config{DBPath: filepath.Join(dir, "y.db"), BlobDir: filepath.Join(dir, "c"), RecordSchemasDir: dir}); err == nil || !strings.Contains(err.Error(), "bad.toml") {
+		t.Errorf("Open with a broken record schema err = %v", err)
+	}
+}
+
+func TestOpenLoadsRecordSchemas(t *testing.T) {
+	dir := t.TempDir()
+	schema := "name = \"ticket\"\ntitle = \"{subject}\"\n\n[[fields]]\nname = \"subject\"\ntext = \"subject\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "ticket.toml"), []byte(schema), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(context.Background(), nil, Config{DBPath: filepath.Join(dir, "x.db"), BlobDir: filepath.Join(dir, "b"), RecordSchemasDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = a.Close() }()
+	schemas, err := a.Generate.Schemas(principal.Principal{Scopes: []principal.Scope{principal.ScopeRead}})
+	if err != nil || len(schemas) != 8 {
+		t.Errorf("schemas = %d, %v; want the 7 built-in and ticket", len(schemas), err)
 	}
 }
 

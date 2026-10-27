@@ -60,6 +60,12 @@ func serverFlags() []cli.Flag {
 			ConfigPath: []string{"anonymiser.profiles_dir"},
 			EnvVars:    []string{"ANON_PROFILES_DIR"},
 		},
+		&cli.StringFlag{
+			Name:       "record-schemas-dir",
+			Usage:      "Directory of extra record schemas (*.toml); one named like a built-in replaces it",
+			ConfigPath: []string{"generate.record_schemas_dir"},
+			EnvVars:    []string{"RECORD_SCHEMAS_DIR"},
+		},
 		&cli.IntFlag{
 			Name:         "max-ingest-mb",
 			DefaultValue: 200,
@@ -93,14 +99,15 @@ func openServerApp(ctx context.Context, cmd *cli.Command, log logger.Logger) (*a
 		return nil, err
 	}
 	return app.Open(ctx, log, app.Config{
-		DBPath:          cmd.GetString("db-path"),
-		BlobDir:         cmd.GetString("blob-dir"),
-		MaxFixtureBytes: int64(cmd.GetInt("max-fixture-mb")) << 20,
-		MaxIngestBytes:  int64(cmd.GetInt("max-ingest-mb")) << 20,
-		MaxImportBytes:  int64(cmd.GetInt("max-import-mb")) << 20,
-		AnonKey:         key,
-		PresidioURL:     cmd.GetString("presidio-url"),
-		AnonProfilesDir: cmd.GetString("anon-profiles-dir"),
+		DBPath:           cmd.GetString("db-path"),
+		BlobDir:          cmd.GetString("blob-dir"),
+		MaxFixtureBytes:  int64(cmd.GetInt("max-fixture-mb")) << 20,
+		MaxIngestBytes:   int64(cmd.GetInt("max-ingest-mb")) << 20,
+		MaxImportBytes:   int64(cmd.GetInt("max-import-mb")) << 20,
+		AnonKey:          key,
+		PresidioURL:      cmd.GetString("presidio-url"),
+		AnonProfilesDir:  cmd.GetString("anon-profiles-dir"),
+		RecordSchemasDir: cmd.GetString("record-schemas-dir"),
 	})
 }
 

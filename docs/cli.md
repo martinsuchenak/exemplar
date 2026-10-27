@@ -47,6 +47,7 @@ those in flight finish for up to 30 seconds, and closes the database.
 | `--anon-key-file` | `ANON_KEY_FILE` | `anonymiser.key_file` | none; or the key itself in `EXEMPLAR_ANON_KEY` |
 | `--presidio-url` | `PRESIDIO_URL` | `anonymiser.presidio_url` | none |
 | `--anon-profiles-dir` | `ANON_PROFILES_DIR` | `anonymiser.profiles_dir` | none: built-in profiles only |
+| `--record-schemas-dir` | `RECORD_SCHEMAS_DIR` | `generate.record_schemas_dir` | none: built-in record schemas only; a file named like a built-in replaces it ([generation.md](generation.md#record-schema-files)) |
 
 Ingest of real email is on only with both an anonymisation key and a Presidio
 URL. The key file must not be readable by group or others (`chmod 600`), or
@@ -151,10 +152,16 @@ export EXEMPLAR_API_KEY=exm_...
 | `persons list [--company C] [--limit] [--offset]` | People in the registry |
 | `persons generate [--count 10] [--seed N]` | Add people; prints the seed |
 
+### `schemas`
+
+| Command | Description |
+|---------|-------------|
+| `schemas list` | The record schemas the server generates: name, step, whether built in, the file's hash and the fields |
+
 ### `generate`
 
 ```bash
-exemplar generate <dataset-id> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--from <fixture-id>,...] [--schemas contact,company] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
+exemplar generate <dataset-id> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--from <fixture-id>,...] [--schemas contact,quote] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
 ```
 
 Fills a dataset with synthetic content about registry people and prints the

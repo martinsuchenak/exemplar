@@ -2,8 +2,10 @@ package generate_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/mail"
 	"strings"
 	"testing"
@@ -119,7 +121,11 @@ func TestGenerateEmailsAllShapes(t *testing.T) {
 
 func TestGenerateRecordsShareThePeople(t *testing.T) {
 	a, _, alice, d := setup(t)
-	res, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{Kind: generate.KindRecords, Count: 10, People: 2, Seed: 3})
+	all, err := a.Generate.Schemas(alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{Kind: generate.KindRecords, Count: 2 * len(all), People: 2, Seed: 3})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
@@ -139,9 +145,14 @@ func TestGenerateRecordsShareThePeople(t *testing.T) {
 			}
 		}
 	}
-	for _, s := range synth.Schemas {
-		if schemas[string(s)] != 2 {
-			t.Errorf("schema %s: %d records, want 2", s, schemas[string(s)])
+	for _, s := range all {
+		if schemas[string(s.Name)] != 2 {
+			t.Errorf("schema %s: %d records, want 2", s.Name, schemas[string(s.Name)])
+		}
+	}
+	for _, f := range res.Fixtures {
+		if !strings.HasPrefix(f.Generator, generate.GeneratorName+" schema="+f.RecordSchema+"@") || !strings.HasSuffix(f.Generator, " seed=3") {
+			t.Errorf("%s generator = %q", f.Name, f.Generator)
 		}
 	}
 	contacts, _ := a.Fixtures.List(ctx, alice, d.ID, fixture.ListFilter{RecordSchema: "contact"})
@@ -257,7 +268,8 @@ func TestSameSeedSamePeopleSameContent(t *testing.T) {
 
 func TestRecordsSpreadAcrossPeople(t *testing.T) {
 	a, _, alice, d := setup(t)
-	res, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{Kind: generate.KindRecords, Count: 30, People: 20, Seed: 2026})
+	people := []synth.RecordSchema{synth.SchemaContact, synth.SchemaCompany, synth.SchemaProject, synth.SchemaOpportunity, synth.SchemaAddress}
+	res, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{Kind: generate.KindRecords, Count: 30, People: 20, Seed: 2026, Schemas: people})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,6 +299,107 @@ func TestRecordsSpreadAcrossPeople(t *testing.T) {
 	for schema, people := range perSchema {
 		if len(people) != 6 {
 			t.Errorf("%s records are about %d different people or companies, want 6", schema, len(people))
+		}
+	}
+}
+
+// TestQuotesUseTheProductCatalogue checks records that refer to each other
+// agree: every quote line is a product record, with its SKU, name and price,
+// and every total adds up to the cent.
+func TestQuotesUseTheProductCatalogue(t *testing.T) {
+	a, _, alice, d := setup(t)
+	res, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{
+		Kind: generate.KindRecords, Count: 48, People: 4, Seed: 9, Profile: synth.ProfileManufacturing,
+		Schemas: []synth.RecordSchema{synth.SchemaProduct, synth.SchemaQuote},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type line struct {
+		SKU       string  `json:"sku"`
+		Name      string  `json:"name"`
+		Qty       int     `json:"qty"`
+		UnitPrice float64 `json:"unit_price"`
+		Amount    float64 `json:"amount"`
+	}
+	type doc struct {
+		line
+		Items    []line  `json:"items"`
+		Subtotal float64 `json:"subtotal"`
+		GST      float64 `json:"gst"`
+		Total    float64 `json:"total"`
+	}
+	read := func(id string) doc {
+		r, _, err := a.Fixtures.Open(ctx, alice, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = r.Close() }()
+		var v doc
+		if err := json.NewDecoder(r).Decode(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	cents := func(v float64) int64 { return int64(math.Round(v * 100)) }
+	products := map[string]line{}
+	var quotes []doc
+	for _, f := range res.Fixtures {
+		switch f.RecordSchema {
+		case "product":
+			p := read(f.ID)
+			if len(f.People) != 0 {
+				t.Errorf("product %s links people: %v", f.Name, f.People)
+			}
+			products[p.SKU] = p.line
+		case "quote":
+			quotes = append(quotes, read(f.ID))
+			if len(f.People) != 1 || f.People[0].Role != "contact" {
+				t.Errorf("quote %s links %v", f.Name, f.People)
+			}
+		}
+	}
+	if len(products) != 24 || len(quotes) != 24 {
+		t.Fatalf("%d products, %d quotes; want the whole catalogue of 24 and 24 quotes", len(products), len(quotes))
+	}
+	for i, q := range quotes {
+		if len(q.Items) < 1 || len(q.Items) > 6 {
+			t.Errorf("quote %d has %d lines", i, len(q.Items))
+		}
+		var sum int64
+		seen := map[string]bool{}
+		for _, l := range q.Items {
+			p, ok := products[l.SKU]
+			if !ok || p.Name != l.Name || cents(p.UnitPrice) != cents(l.UnitPrice) {
+				t.Errorf("quote %d line %+v is not the catalogue's product %+v", i, l, p)
+			}
+			if seen[l.SKU] {
+				t.Errorf("quote %d lists %s twice", i, l.SKU)
+			}
+			seen[l.SKU] = true
+			if cents(l.Amount) != cents(l.UnitPrice)*int64(l.Qty) {
+				t.Errorf("quote %d line %s: %v x %d != %v", i, l.SKU, l.UnitPrice, l.Qty, l.Amount)
+			}
+			sum += cents(l.Amount)
+		}
+		gst := int64(math.Round(float64(sum) / 10))
+		if cents(q.Subtotal) != sum || cents(q.GST) != gst || cents(q.Total) != sum+gst {
+			t.Errorf("quote %d: subtotal %v, gst %v, total %v; lines add to %d cents", i, q.Subtotal, q.GST, q.Total, sum)
+		}
+	}
+
+	// The catalogue is the same in another request with another seed.
+	again, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{
+		Kind: generate.KindRecords, Count: 3, People: 1, Seed: 10, Profile: synth.ProfileManufacturing,
+		Schemas: []synth.RecordSchema{synth.SchemaProduct},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range again.Fixtures {
+		p := read(f.ID)
+		if products[p.SKU] != p.line {
+			t.Errorf("product %s differs between requests: %+v vs %+v", p.SKU, p.line, products[p.SKU])
 		}
 	}
 }

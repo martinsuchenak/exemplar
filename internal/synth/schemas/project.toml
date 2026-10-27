@@ -1,0 +1,46 @@
+name = "project"
+description = "A client project with a manager, status, dates and budget"
+step = "person"
+title = "{name}"
+
+[[links]]
+role = "manager"
+value = "person.id"
+
+# Fields draw random values in this order; keep it when editing, or the same
+# seed no longer gives the same records.
+[[fields]]
+name = "start_date"
+date = { within_days = 200 }
+
+[[fields]]
+name = "name"
+template = "{label} - {company.short}"
+
+[[fields]]
+name = "code"
+ref = ""
+
+[[fields]]
+name = "company"
+value = "company.name"
+
+[[fields]]
+name = "manager_person_id"
+value = "person.id"
+
+[[fields]]
+name = "status"
+pick = ["planned", "active", "on-hold", "completed"]
+
+[[fields]]
+name = "end_date"
+date = { after = "start_date", months = [1, 9] }
+
+[[fields]]
+name = "budget"
+money = [5000, 250000]
+
+[[fields]]
+name = "description"
+text = { paragraph = [1, 2] }

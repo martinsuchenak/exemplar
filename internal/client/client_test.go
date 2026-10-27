@@ -361,6 +361,11 @@ func TestPersonsAndGenerate(t *testing.T) {
 		t.Errorf("missing person err = %v", err)
 	}
 
+	schemas, err := alice.RecordSchemas(ctx)
+	if err != nil || len(schemas) != 7 || schemas[0].Name != "address" || schemas[0].Hash == "" || len(schemas[0].Fields) == 0 {
+		t.Errorf("record schemas = %+v, %v", schemas, err)
+	}
+
 	ds, err := alice.CreateDataset(ctx, dataset.CreateInput{Name: "gen"})
 	if err != nil {
 		t.Fatal(err)

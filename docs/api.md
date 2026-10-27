@@ -146,6 +146,7 @@ uncompressed, or with a content entry over `storage.max_fixture_mb` gets
 | `GET /api/v1/persons` | any key | `?company= &limit= &offset=` | People by last name |
 | `POST /api/v1/persons` | write key | `{"count", "seed"}` | `201` `{"seed", "people": [Person]}` |
 | `GET /api/v1/persons/{id}` | any key | | Person |
+| `GET /api/v1/record-schemas` | any key | | `[{"name", "description", "step", "builtin", "hash", "fields"}]`, by name |
 | `POST /api/v1/datasets/{id}/generate` | can change the dataset | `{"kind", "count", "formats", "shapes", "from", "schemas", "profile", "people", "seed", "scenario", "tags"}` | `201` `{"seed", "fixtures": [Fixture], "person_ids"}` |
 
 See [generation.md](generation.md) for the request fields, email shapes and

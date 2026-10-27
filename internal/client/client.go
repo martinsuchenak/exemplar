@@ -26,6 +26,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
+	"github.com/martinsuchenak/exemplar/internal/synth"
 )
 
 // Client calls one exemplar server with one API key.
@@ -285,6 +286,12 @@ func (c *Client) GetPerson(ctx context.Context, id string) (*person.Person, erro
 func (c *Client) GeneratePersons(ctx context.Context, in person.GenerateInput) (*person.GenerateResult, error) {
 	var out person.GenerateResult
 	return &out, c.do(ctx, http.MethodPost, "/api/v1/persons", nil, in, &out)
+}
+
+// RecordSchemas lists the record schemas the server generates.
+func (c *Client) RecordSchemas(ctx context.Context) ([]synth.Schema, error) {
+	var out []synth.Schema
+	return out, c.do(ctx, http.MethodGet, "/api/v1/record-schemas", nil, nil, &out)
 }
 
 // Generate fills a dataset with synthetic fixtures.

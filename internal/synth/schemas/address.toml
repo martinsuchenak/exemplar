@@ -1,0 +1,32 @@
+name = "address"
+description = "A person's postal address"
+step = "person"
+title = "{person.address.street}"
+
+[[links]]
+role = "resident"
+value = "person.id"
+
+[[fields]]
+name = "person_id"
+value = "person.id"
+
+[[fields]]
+name = "street"
+value = "person.address.street"
+
+[[fields]]
+name = "suburb"
+value = "person.address.suburb"
+
+[[fields]]
+name = "state"
+value = "person.address.state"
+
+[[fields]]
+name = "postcode"
+value = "person.address.postcode"
+
+[[fields]]
+name = "country"
+value = "person.address.country"

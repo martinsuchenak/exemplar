@@ -1,0 +1,36 @@
+name = "company"
+description = "A company: name, ABN, phone, website, industry, address and its contacts"
+step = "company"
+title = "{company.name}"
+
+[[links]]
+role = "contact"
+value = "company.contacts"
+
+[[fields]]
+name = "name"
+value = "company.name"
+
+[[fields]]
+name = "abn"
+value = "company.abn"
+
+[[fields]]
+name = "phone"
+value = "company.phone"
+
+[[fields]]
+name = "website"
+value = "company.website"
+
+[[fields]]
+name = "industry"
+value = "company.industry"
+
+[[fields]]
+name = "address"
+value = "company.address"
+
+[[fields]]
+name = "contacts"
+value = "company.contacts"

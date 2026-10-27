@@ -113,6 +113,13 @@ about one person.
 |----------|-------------|
 | `id` | Required |
 
+### `list_record_schemas`
+
+The record schemas the server generates, with each one's fields, so an agent
+knows what a record holds and which `record_schema` to pass to
+`search_fixtures`. No arguments. Returns `{"schemas": [Schema], "count": n}`,
+where a Schema is `{"name", "description", "step", "builtin", "hash", "fields"}`.
+
 ## Errors
 
 Tool errors are JSON-RPC errors:

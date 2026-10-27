@@ -13,4 +13,5 @@ func init() {
 func registerGenerateRoutes(mux *http.ServeMux) {
 	h := generate.NewHandler(services.Generate)
 	mux.Handle("POST /api/v1/datasets/{id}/generate", authenticated(h.Generate))
+	mux.Handle("GET /api/v1/record-schemas", authenticated(h.Schemas))
 }

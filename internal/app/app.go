@@ -22,6 +22,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
+	"github.com/martinsuchenak/exemplar/internal/synth"
 )
 
 // Config locates an instance's data.
@@ -49,6 +50,9 @@ type Config struct {
 	NoMigrate bool
 	// AnonProfilesDir holds extra anonymisation profiles (*.toml).
 	AnonProfilesDir string
+	// RecordSchemasDir holds extra record schemas (*.toml); a file named
+	// like a built-in schema replaces it.
+	RecordSchemasDir string
 }
 
 // App holds the services every entry point uses.
@@ -90,6 +94,16 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 	fixtures := fixture.NewService(conn.DB, blobs, datasets, auditService, cfg.MaxFixtureBytes)
 	datasets.UseFixtures(fixtures)
 	persons := person.NewService(conn.DB, auditService)
+	schemas, replaced, err := synth.LoadSchemas(cfg.RecordSchemasDir)
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("loading record schemas: %w", err)
+	}
+	if log != nil {
+		for _, name := range replaced {
+			log.Info("record schema file replaces the built-in one", "schema", name, "dir", cfg.RecordSchemasDir)
+		}
+	}
 	ingestCfg, err := anonymiserConfig(cfg)
 	if err != nil {
 		_ = conn.Close()
@@ -102,7 +116,7 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 		Datasets: datasets,
 		Fixtures: fixtures,
 		Persons:  persons,
-		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService),
+		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService, schemas),
 		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes),
 		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version, cfg.MaxImportBytes),
 		Backup:   backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),

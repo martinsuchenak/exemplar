@@ -1,6 +1,6 @@
 #!/bin/zsh
-# Fills an exemplar server with a sample set: three workspaces about one
-# shared group of 20 registry people. One seed for all three, so the same
+# Fills an exemplar server with a sample set: four workspaces about one
+# shared group of 20 registry people. One seed for all of them, so the same
 # people are picked each time and a fresh instance gets identical content.
 # Safe to run again: workspaces that already hold fixtures are left alone.
 #
@@ -17,7 +17,7 @@ typeset -A REPLACE
 while (( $# )); do
   case $1 in
     --replace) REPLACE[$2]=1; shift 2 ;;
-    *) echo "usage: $0 [--replace sample-emails|sample-documents|sample-records]..." >&2; exit 2 ;;
+    *) echo "usage: $0 [--replace sample-emails|sample-documents|sample-records|sample-sales]..." >&2; exit 2 ;;
   esac
 done
 
@@ -68,10 +68,13 @@ $X accounts list >/dev/null
 
 fill sample-emails "Every synthetic email shape, 4 of each" --kind emails --count 48
 fill sample-documents "PDF, DOCX, XLSX, CSV and other files, 2 of each format" --kind files --count 20
-fill sample-records "Contacts, companies, projects, opportunities and addresses, 6 of each" --kind records --count 30
+fill sample-records "Contacts, companies, projects, opportunities and addresses, 6 of each" --kind records --count 30 \
+  --schemas contact,company,project,opportunity,address
+fill sample-sales "The product catalogue and 24 quotes priced from it" --kind records --count 48 --schemas product,quote
 
 echo
 echo "== Sample datasets"
 $X datasets list --name sample-emails
 $X datasets list --name sample-documents
 $X datasets list --name sample-records
+$X datasets list --name sample-sales

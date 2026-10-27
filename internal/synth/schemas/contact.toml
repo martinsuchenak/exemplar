@@ -1,0 +1,40 @@
+name = "contact"
+description = "A person: name, email, phone, job title, company and address"
+step = "person"
+title = "{person.name}"
+
+[[links]]
+role = "contact"
+value = "person.id"
+
+[[fields]]
+name = "person_id"
+value = "person.id"
+
+[[fields]]
+name = "first_name"
+value = "person.first_name"
+
+[[fields]]
+name = "last_name"
+value = "person.last_name"
+
+[[fields]]
+name = "email"
+value = "person.email"
+
+[[fields]]
+name = "phone"
+value = "person.phone"
+
+[[fields]]
+name = "job_title"
+value = "person.job_title"
+
+[[fields]]
+name = "company"
+value = "person.company"
+
+[[fields]]
+name = "address"
+value = "person.address"

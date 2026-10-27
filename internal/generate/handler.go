@@ -17,6 +17,20 @@ func NewHandler(s *Service) *Handler {
 	return &Handler{service: s}
 }
 
+// Schemas lists the record schemas the server generates.
+func (h *Handler) Schemas(w http.ResponseWriter, r *http.Request) {
+	p, ok := rest.Caller(w, r)
+	if !ok {
+		return
+	}
+	schemas, err := h.service.Schemas(p)
+	if err != nil {
+		rest.RespondServiceError(w, err)
+		return
+	}
+	rest.RespondJSON(w, http.StatusOK, schemas)
+}
+
 // Generate fills a dataset from a Request body and returns the Result.
 func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	p, ok := rest.Caller(w, r)

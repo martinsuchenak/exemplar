@@ -29,7 +29,7 @@ func generateCmd() *cli.Command {
 			&cli.StringFlag{Name: "formats", Usage: "Files: comma-separated, from " + strings.Join(synth.FileFormats(), ", ") + " (default all)"},
 			&cli.StringFlag{Name: "shapes", Usage: "Emails: comma-separated, from " + strings.Join(synth.ShapeNames(), ", ") + " (default all)"},
 			&cli.StringFlag{Name: "from", Usage: "Emails: comma-separated template email fixture IDs to render instead of shapes (real-derived ones must be approved)"},
-			&cli.StringFlag{Name: "schemas", Usage: "Records: comma-separated, from contact, company, project, opportunity, address (default all)"},
+			&cli.StringFlag{Name: "schemas", Usage: "Records: comma-separated schema names; exemplar schemas list shows them (default all)"},
 			&cli.StringFlag{Name: "profile", DefaultValue: string(synth.ProfileInsurance), Usage: "Business vocabulary: insurance or manufacturing"},
 			&cli.IntFlag{Name: "people", Usage: "How many registry people the content is about (default up to 10)"},
 			&cli.StringFlag{Name: "seed", Usage: "Seed to reproduce a run (default random; printed afterwards)"},

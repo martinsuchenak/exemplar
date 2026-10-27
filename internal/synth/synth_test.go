@@ -48,7 +48,8 @@ func TestSameSeedSameOutput(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := g.Record(SchemaCompany, RecordInput{People: ps}, 1)
+		company, _ := BuiltinSchemas().Get(SchemaCompany)
+		r, err := g.Record(company, RecordInput{People: ps}, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -546,38 +547,41 @@ func TestThreadsLinkUp(t *testing.T) {
 func TestRecords(t *testing.T) {
 	g := New(11)
 	ps := people(g, 4)
-	for i, schema := range Schemas {
-		r, err := g.Record(schema, RecordInput{Profile: ProfileManufacturing, People: ps}, i)
+	set := BuiltinSchemas()
+	for i, s := range set.List() {
+		r, err := g.Record(s, RecordInput{Profile: ProfileManufacturing, People: ps, Slot: i, Slots: len(set.List())}, i)
 		if err != nil {
-			t.Fatalf("%s: %v", schema, err)
+			t.Fatalf("%s: %v", s.Name, err)
 		}
 		var doc map[string]any
 		if err := json.Unmarshal(r.Data, &doc); err != nil {
-			t.Fatalf("%s: not JSON: %v", schema, err)
+			t.Fatalf("%s: not JSON: %v", s.Name, err)
 		}
-		if doc["schema"] != string(schema) || r.Schema != schema || r.Title == "" || len(r.People) == 0 {
-			t.Errorf("%s record = %+v", schema, r)
+		if doc["schema"] != string(s.Name) || r.Schema != s.Name || r.Title == "" || (s.Step != StepCatalogue) != (len(r.People) > 0) {
+			t.Errorf("%s record = %+v", s.Name, r)
 		}
 		for _, pr := range r.People {
 			if !strings.HasPrefix(pr.PersonID, "p") || pr.Role == "" {
-				t.Errorf("%s link = %+v", schema, pr)
+				t.Errorf("%s link = %+v", s.Name, pr)
 			}
 		}
 	}
-	company, _ := g.Record(SchemaCompany, RecordInput{People: ps}, 0)
+	companySchema, _ := set.Get(SchemaCompany)
+	company, _ := g.Record(companySchema, RecordInput{People: ps}, 0)
 	var doc map[string]any
 	_ = json.Unmarshal(company.Data, &doc)
 	if contacts := doc["contacts"].([]any); len(contacts) != len(company.People) || len(contacts) < 1 {
 		t.Errorf("company contacts = %v, links %v", contacts, company.People)
 	}
-	if _, err := g.Record("invoice", RecordInput{People: ps}, 0); err == nil {
-		t.Error("unknown schema accepted")
+	if _, ok := set.Get("invoice"); ok {
+		t.Error("unknown schema found")
 	}
-	if _, err := g.Record(SchemaContact, RecordInput{}, 0); err == nil {
+	if _, err := g.Record(nil, RecordInput{People: ps}, 0); err == nil {
+		t.Error("record without a schema generated")
+	}
+	contact, _ := set.Get(SchemaContact)
+	if _, err := g.Record(contact, RecordInput{}, 0); err == nil {
 		t.Error("record without people generated")
-	}
-	if RecordSchema("invoice").Valid() {
-		t.Error("unknown schema is valid")
 	}
 }
 
@@ -603,21 +607,23 @@ func TestSmallHelpers(t *testing.T) {
 }
 
 func TestRecordRotation(t *testing.T) {
-	// 20 people: the five schemas start 4 people apart.
-	for schema, want := range map[RecordSchema][]int{
-		SchemaContact: {0, 1, 2}, SchemaProject: {8, 9, 10}, SchemaAddress: {16, 17, 18},
-	} {
+	// 20 people, five schemas in a request: they start 4 people apart.
+	for slot, want := range map[int][]int{0: {0, 1, 2}, 2: {8, 9, 10}, 4: {16, 17, 18}} {
 		for k, w := range want {
-			if got := personIndex(schema, k, 20); got != w {
-				t.Errorf("%s record %d: person %d, want %d", schema, k, got, w)
+			if got := personIndex(slot, 5, k, 20); got != w {
+				t.Errorf("slot %d record %d: person %d, want %d", slot, k, got, w)
 			}
 		}
+	}
+	// Two schemas in a request start half the people apart.
+	if got := personIndex(1, 2, 0, 20); got != 10 {
+		t.Errorf("second of two schemas starts at person %d, want 10", got)
 	}
 	// Fewer people than schemas still stays in range, and a schema uses
 	// every person before repeating one.
 	seen := map[int]bool{}
 	for k := 0; k < 3; k++ {
-		i := personIndex(SchemaAddress, k, 3)
+		i := personIndex(4, 5, k, 3)
 		if i < 0 || i >= 3 || seen[i] {
 			t.Errorf("address record %d: person %d", k, i)
 		}

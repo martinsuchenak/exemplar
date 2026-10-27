@@ -39,7 +39,11 @@ generate.Service ─> dataset.Service.Authorize (write)
 ```
 
 `synth` never touches storage, so it is tested on its own, byte for byte. See
-[generation.md](generation.md).
+[generation.md](generation.md). Record schemas are TOML files that
+`app.Open` loads once (`synth.LoadSchemas`: the embedded built-ins plus
+`--record-schemas-dir`) and hands to `generate.Service`; a file only combines
+the field types in `internal/synth/schemaeval.go`, so a new schema needs no
+code, and a new field type is the one change that does.
 
 With template emails (`from`), generation reads each template through
 `fixture.Service.Get` and `Open` (read access, approval checked in
@@ -120,7 +124,7 @@ bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
 | `internal/storeutil` | IDs (UUIDv7), timestamp and JSON column helpers for storage code. |
 | `internal/person` | The person registry: list, get, generate, and `Pick` for generated content. |
 | `internal/generate` | Fills datasets with synthetic fixtures; stores each through the fixture service. |
-| `internal/synth` | Pure, seeded content generation: people, companies, text, files, emails, records. No database. |
+| `internal/synth` | Pure, seeded content generation: people, companies, text, files, emails, and records from schema files (`schemas/*.toml`). No database. |
 | `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
 | `internal/ingest` | Takes real emails into quarantine: access checks, the anonymiser, storing fixtures, the dry-run report. |
 | `internal/anonymise` | The anonymisation engine: detection (Presidio client and patterns), keyed pseudonyms, MIME rewriting, profiles. No database; `anonymisetest` has a fake detector. |

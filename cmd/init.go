@@ -52,6 +52,10 @@ max_import_mb = 2048
 # presidio_url = "http://localhost:3000"
 # profiles_dir = "profiles"
 
+[generate]
+# Extra record schemas (*.toml); one named like a built-in replaces it.
+# record_schemas_dir = "schemas"
+
 [mcp]
 # The read-only MCP endpoint at /mcp on the server port.
 enabled = true

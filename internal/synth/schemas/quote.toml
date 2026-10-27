@@ -1,0 +1,60 @@
+name = "quote"
+description = "A priced quote to a client contact, with line items from the product catalogue"
+step = "person"
+title = "{name}"
+
+[[links]]
+role = "contact"
+value = "person.id"
+
+[[fields]]
+name = "quote_number"
+ref = "QU"
+
+[[fields]]
+name = "name"
+template = "{quote_number} - {company.short}"
+
+[[fields]]
+name = "company"
+value = "company.name"
+
+[[fields]]
+name = "contact_person_id"
+value = "person.id"
+
+[[fields]]
+name = "status"
+pick = ["draft", "sent", "accepted", "declined", "expired"]
+
+[[fields]]
+name = "issued"
+date = { within_days = 60 }
+
+[[fields]]
+name = "valid_until"
+date = { after = "issued", days = [14, 45] }
+
+[[fields]]
+name = "items"
+lines = { catalogue = "product", count = [1, 6], qty = [1, 20] }
+
+[[fields]]
+name = "subtotal"
+sum = "items.amount"
+format = "number"
+
+# GST is 10% in Australia; change the rate here for another tax.
+[[fields]]
+name = "gst"
+percent = { of = "subtotal", rate = 10 }
+format = "number"
+
+[[fields]]
+name = "total"
+sum = ["subtotal", "gst"]
+format = "number"
+
+[[fields]]
+name = "notes"
+text = "sentence"
