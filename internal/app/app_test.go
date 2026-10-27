@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/synth"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,8 +84,8 @@ func TestOpenLoadsRecordSchemas(t *testing.T) {
 	}
 	defer func() { _ = a.Close() }()
 	schemas, err := a.Generate.Schemas(principal.Principal{Scopes: []principal.Scope{principal.ScopeRead}})
-	if err != nil || len(schemas) != 8 {
-		t.Errorf("schemas = %d, %v; want the 7 built-in and ticket", len(schemas), err)
+	if want := len(synth.BuiltinSchemas().Names()) + 1; err != nil || len(schemas) != want {
+		t.Errorf("schemas = %d, %v; want the built-in ones and ticket, %d", len(schemas), err, want)
 	}
 }
 

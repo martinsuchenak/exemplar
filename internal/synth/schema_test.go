@@ -34,7 +34,8 @@ func TestBuiltinSchemasLoad(t *testing.T) {
 	for _, n := range set.Names() {
 		names = append(names, string(n))
 	}
-	if strings.Join(names, ",") != "address,company,contact,opportunity,product,project,quote" {
+	// The one place the built-in set is pinned; other tests count it.
+	if strings.Join(names, ",") != "address,company,contact,opportunity,product,project,quote,task" {
 		t.Errorf("built-in schemas = %v", names)
 	}
 	for _, s := range set.List() {
@@ -76,7 +77,7 @@ func TestSchemaDirectoryAddsAndReplaces(t *testing.T) {
 
 	// No directory, a missing one or an empty one: the built-ins only.
 	for _, d := range []string{"", t.TempDir(), filepath.Join(dir, "missing")} {
-		if set, _, err := LoadSchemas(d); err != nil || len(set.Names()) != 7 {
+		if set, _, err := LoadSchemas(d); err != nil || len(set.Names()) != len(BuiltinSchemas().Names()) {
 			t.Errorf("dir %q: %v schemas, %v", d, len(set.Names()), err)
 		}
 	}
@@ -474,6 +475,48 @@ func TestTemplateFallbackValidation(t *testing.T) {
 		writeSchema(t, dir, "ticket", minimal+"\n[[fields]]\nname = \"x\"\n"+body+"\n")
 		if _, _, err := LoadSchemas(dir); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", body, err, want)
+		}
+	}
+}
+
+// TestTaskRecords checks a task is assigned to its person, with known values
+// and a due date after it was created, in both profiles.
+func TestTaskRecords(t *testing.T) {
+	task, _ := BuiltinSchemas().Get(SchemaTask)
+	g := New(21)
+	ps := people(g, 5)
+	statuses := set("todo", "in-progress", "blocked", "in-review", "done")
+	priorities := set("low", "normal", "high", "urgent")
+	for i := 0; i < 20; i++ {
+		profile := Profiles[i%len(Profiles)]
+		r, err := g.Record(task, RecordInput{Profile: profile, People: ps}, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			TaskNumber string  `json:"task_number"`
+			Name       string  `json:"name"`
+			Status     string  `json:"status"`
+			Priority   string  `json:"priority"`
+			AssigneeID string  `json:"assignee_person_id"`
+			Assignee   string  `json:"assignee"`
+			Company    string  `json:"company"`
+			Created    string  `json:"created"`
+			Due        string  `json:"due"`
+			Estimate   float64 `json:"estimate_hours"`
+		}
+		if err := json.Unmarshal(r.Data, &doc); err != nil {
+			t.Fatal(err)
+		}
+		p := ps[i%len(ps)]
+		if doc.AssigneeID != p.ID || doc.Assignee != p.Name() || doc.Company != p.Company || len(r.People) != 1 || r.People[0] != (PersonRole{p.ID, "assignee"}) {
+			t.Errorf("task %d is not %s's: %+v, links %v", i, p.ID, doc, r.People)
+		}
+		if !strings.HasPrefix(doc.TaskNumber, "TSK-") || doc.Name == "" || r.Title != doc.TaskNumber+" "+doc.Name {
+			t.Errorf("task %d: number %q, name %q, title %q", i, doc.TaskNumber, doc.Name, r.Title)
+		}
+		if !statuses[doc.Status] || !priorities[doc.Priority] || doc.Estimate < 1 || doc.Estimate > 40 || doc.Due <= doc.Created {
+			t.Errorf("task %d: %s, %s, %v hours, created %s, due %s", i, doc.Status, doc.Priority, doc.Estimate, doc.Created, doc.Due)
 		}
 	}
 }

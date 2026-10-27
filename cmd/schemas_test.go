@@ -31,7 +31,7 @@ func TestSchemasList(t *testing.T) {
 	}
 	var schemas []synth.Schema
 	s.runJSON(t, member, &schemas, "schemas", "list")
-	if len(schemas) != 7 || schemas[len(schemas)-1].Name != synth.SchemaQuote {
+	if len(schemas) != len(synth.BuiltinSchemas().Names()) || schemas[0].Name != synth.SchemaAddress {
 		t.Errorf("json = %+v", schemas)
 	}
 }

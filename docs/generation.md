@@ -133,7 +133,7 @@ Rules:
 ## Records
 
 Records are JSON fixtures (kind `record`) with a `record_schema`. Every
-schema is a TOML file (see [record schema files](#record-schema-files)): seven
+schema is a TOML file (see [record schema files](#record-schema-files)): eight
 are built in, and a server can load more. The request cycles through its
 schemas; each schema starts at a different person, spaced evenly through the
 request's people by its place among the *request's* schemas, and moves on one
@@ -152,6 +152,7 @@ instead, and catalogue records through the catalogue.
 | `address` | person_id, street, suburb, state, postcode, country | `resident` |
 | `product` | sku, name, category, unit, unit_price, description: one catalogue entry | none |
 | `quote` | quote_number, name, company, contact_person_id, status, issued, valid_until, items (catalogue lines with qty and amount), subtotal, gst, total, notes | `contact` |
+| `task` | task_number, name, description, status (todo, in-progress, blocked, in-review, done), priority, assignee_person_id, assignee, company, created, due, estimate_hours | `assignee` |
 
 The product catalogue has 24 entries per business profile. Entry *n* depends
 only on the schema file, the profile and *n*, never on the request's seed, so

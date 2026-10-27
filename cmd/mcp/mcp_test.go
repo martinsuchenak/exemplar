@@ -366,7 +366,7 @@ func TestGetFixtureLimitsAndRealData(t *testing.T) {
 func TestListRecordSchemas(t *testing.T) {
 	w := newWorld(t)
 	out, _, err := w.call(t, w.aliceReadOnly, "list_record_schemas", nil)
-	if err != nil || out["count"] != float64(7) {
+	if err != nil || out["count"] != float64(len(synth.BuiltinSchemas().Names())) {
 		t.Fatalf("list_record_schemas = %v, %v", out["count"], err)
 	}
 	if s := fmt.Sprint(out["schemas"]); !strings.Contains(s, "quote") || !strings.Contains(s, "subtotal") {

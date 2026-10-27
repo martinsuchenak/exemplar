@@ -1,0 +1,53 @@
+name = "task"
+description = "A piece of work assigned to a person, with status, priority, dates and an estimate"
+step = "person"
+title = "{task_number} {name}"
+
+[[links]]
+role = "assignee"
+value = "person.id"
+
+[[fields]]
+name = "task_number"
+ref = "TSK"
+
+[[fields]]
+name = "name"
+text = "title"
+
+[[fields]]
+name = "description"
+text = { paragraph = [1, 3] }
+
+[[fields]]
+name = "status"
+pick = ["todo", "in-progress", "blocked", "in-review", "done"]
+
+[[fields]]
+name = "priority"
+pick = ["low", "normal", "high", "urgent"]
+
+[[fields]]
+name = "assignee_person_id"
+value = "person.id"
+
+[[fields]]
+name = "assignee"
+value = "person.name"
+
+# Empty for an assignee without a company.
+[[fields]]
+name = "company"
+value = "company.name"
+
+[[fields]]
+name = "created"
+date = { within_days = 90 }
+
+[[fields]]
+name = "due"
+date = { after = "created", days = [3, 30] }
+
+[[fields]]
+name = "estimate_hours"
+int = [1, 40]

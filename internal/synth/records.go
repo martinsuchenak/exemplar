@@ -18,6 +18,7 @@ const (
 	SchemaAddress     RecordSchema = "address"
 	SchemaProduct     RecordSchema = "product"
 	SchemaQuote       RecordSchema = "quote"
+	SchemaTask        RecordSchema = "task"
 )
 
 // PersonRole links a record or email to a person in it.
