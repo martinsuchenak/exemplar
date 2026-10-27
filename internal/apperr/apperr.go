@@ -11,4 +11,7 @@ var (
 	ErrConflict        = errors.New("conflict")
 	ErrInvalid         = errors.New("invalid input")
 	ErrTooLarge        = errors.New("too large")
+	// ErrBusy means the caller already has a run of this kind in progress
+	// and must wait for it.
+	ErrBusy = errors.New("busy")
 )

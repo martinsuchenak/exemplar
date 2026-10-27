@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/martinsuchenak/exemplar/internal/account"
+	"github.com/martinsuchenak/exemplar/internal/anonymise"
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/audit"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
@@ -26,6 +28,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
+	"github.com/martinsuchenak/exemplar/internal/scrub"
 	"github.com/martinsuchenak/exemplar/internal/synth"
 )
 
@@ -78,6 +81,8 @@ func (e *Error) Unwrap() error {
 		return apperr.ErrConflict
 	case http.StatusRequestEntityTooLarge:
 		return apperr.ErrTooLarge
+	case http.StatusTooManyRequests:
+		return apperr.ErrBusy
 	}
 	return nil
 }
@@ -321,7 +326,67 @@ func (c *Client) Ingest(ctx context.Context, datasetID string, req ingest.Reques
 }
 
 func writeIngestForm(mw *multipart.Writer, req ingest.Request, files []IngestFile) error {
-	fields := [][2]string{{"profile", req.Profile}, {"batch", req.Batch}, {"dry_run", strconv.FormatBool(req.DryRun)}}
+	return writeForm(mw, [][2]string{{"profile", req.Profile}, {"batch", req.Batch}, {"dry_run", strconv.FormatBool(req.DryRun)}}, files)
+}
+
+// AnonymiseFile sends one file to the anonymise tool and writes the
+// anonymised file, in the same format, to w. Nothing is stored on the
+// server. The result has the file's fake name, format and counts.
+func (c *Client) AnonymiseFile(ctx context.Context, req scrub.Request, name string, body io.Reader, w io.Writer) (*scrub.FileResult, error) {
+	q := url.Values{"name": {name}}
+	if req.Profile != "" {
+		q.Set("profile", req.Profile)
+	}
+	if req.LinkRegistry {
+		q.Set("link_registry", "true")
+	}
+	resp, err := c.requestOn(ctx, c.stream, http.MethodPost, "/api/v1/anonymise", q, body, "application/octet-stream")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	h := resp.Header
+	out := &scrub.FileResult{Format: anonymise.Format(h.Get("X-Exemplar-Format"))}
+	if _, params, err := mime.ParseMediaType(h.Get("Content-Disposition")); err == nil {
+		out.Name = params["filename"]
+	}
+	out.Replacements, _ = strconv.Atoi(h.Get("X-Exemplar-Replacements"))
+	out.Attachments, _ = strconv.Atoi(h.Get("X-Exemplar-Attachments"))
+	out.DroppedHeaders, _ = strconv.Atoi(h.Get("X-Exemplar-Dropped-Headers"))
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		return nil, fmt.Errorf("receiving the anonymised file: %w", err)
+	}
+	return out, nil
+}
+
+// AnonymiseFiles sends files to the anonymise tool as one batch, so they
+// share fakes, and returns them with their fake names. The server answers
+// with a zip, which this unpacks.
+func (c *Client) AnonymiseFiles(ctx context.Context, req scrub.Request, files []IngestFile) (*scrub.Result, error) {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		pw.CloseWithError(writeForm(mw, [][2]string{{"profile", req.Profile}, {"link_registry", strconv.FormatBool(req.LinkRegistry)}}, files))
+	}()
+	resp, err := c.requestOn(ctx, c.stream, http.MethodPost, "/api/v1/anonymise", nil, pr, mw.FormDataContentType())
+	_ = pr.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("receiving the anonymised files: %w", err)
+	}
+	res, err := scrub.ReadZip(data)
+	if err != nil {
+		return nil, fmt.Errorf("reading the anonymised files: %w", err)
+	}
+	return res, nil
+}
+
+// writeForm writes the non-empty fields, then each file as a "file" part.
+func writeForm(mw *multipart.Writer, fields [][2]string, files []IngestFile) error {
 	for _, f := range fields {
 		if f[1] == "" {
 			continue

@@ -77,6 +77,22 @@ what structure must survive.
 no key or no Presidio URL, ingest reports that it is not configured. See
 [anonymisation.md](anonymisation.md).
 
+The anonymise tool runs the same engine and stores nothing:
+
+```
+scrub.Service ─> read-scope check; link_registry: admin check
+              ─> one run per key at a time
+              ─> anonymise.RandomKey + anonymise.MemoryRegistry (unlinked, the default)
+                 or the server key + person.Service.Identities (linked)
+              ─> anonymise.Engine.Prepare, then Anonymise each file
+              ─> audit (file.anonymise), counts only
+```
+
+It needs only Presidio: unlinked fakes use a key made per request, so a
+server without an anonymisation key still offers it. `app.LocalAnonymiser`
+builds the same service with no database for `anonymise --local`, which then
+skips the key check, the per-key limit and the audit log.
+
 ## Export, import and backup
 
 ```
@@ -136,6 +152,7 @@ bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
 | `internal/generate` | Fills datasets with synthetic fixtures; stores each through the fixture service. |
 | `internal/synth` | Pure, seeded content generation: people, companies, text, files, emails, and records from schema files (`schemas/*.toml`). No database. |
 | `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
+| `internal/scrub` | The anonymise tool: files in, anonymised files out, nothing stored. Runs in the server (any key, unlinked fakes unless an admin links) and in the CLI's `--local` mode (`app.LocalAnonymiser`, no database). |
 | `internal/ingest` | Takes real emails and documents into quarantine: access checks, the anonymiser, storing fixtures, the dry-run report. |
 | `internal/anonymise` | The anonymisation engine: one handler per file format (email, and the document formats), detection (Presidio client and patterns), keyed pseudonyms, MIME rewriting, profiles. No database; `anonymisetest` has a fake detector. |
 | `internal/archive` | The archive format shared by export/import and backup/restore; rejects unexpected entries and blobs that do not match their hash. |

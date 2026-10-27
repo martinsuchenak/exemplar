@@ -88,6 +88,34 @@ type Output struct {
 	People         []PersonRole
 }
 
+// ReportLine is one replacement. It holds original data: show it to the
+// person who sent the file, never store or log it.
+type ReportLine struct {
+	Entity   string `json:"entity"`
+	Original string `json:"original"`
+	Fake     string `json:"fake"`
+}
+
+// Report lists the replacements, sorted by entity then original. A value
+// with no entity came from an email header (a display name or its tokens).
+func (o *Output) Report() []ReportLine {
+	lines := make([]ReportLine, 0, len(o.Replacements))
+	for orig, fake := range o.Replacements {
+		entity := o.Entities[orig]
+		if entity == "" {
+			entity = "HEADER_NAME"
+		}
+		lines = append(lines, ReportLine{Entity: entity, Original: orig, Fake: fake})
+	}
+	sort.Slice(lines, func(i, j int) bool {
+		if lines[i].Entity != lines[j].Entity {
+			return lines[i].Entity < lines[j].Entity
+		}
+		return lines[i].Original < lines[j].Original
+	})
+	return lines
+}
+
 // emailHandler reads and rewrites RFC 5322 messages.
 type emailHandler struct{}
 

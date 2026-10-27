@@ -31,7 +31,8 @@ clients report something useful.
 | 403 | `ErrForbidden` | The key may see the resource but not do this (scope or role) |
 | 404 | `ErrNotFound` | Missing, or not visible to this key |
 | 409 | `ErrConflict` | Name taken, dataset frozen, already reviewed, last admin |
-| 413 | `ErrTooLarge` | Fixture content over the server's limit (`storage.max_fixture_mb`), a JSON body over 1 MiB, or an ingest or import over its limit |
+| 413 | `ErrTooLarge` | Fixture content over the server's limit (`storage.max_fixture_mb`), a JSON body over 1 MiB, or an ingest, anonymise run or import over its limit |
+| 429 | `ErrBusy` | The key already has an anonymise run in progress |
 | 500 | anything else | Internal error; details are logged, not returned |
 
 ## Endpoints
@@ -123,6 +124,20 @@ Parts are read into memory, never into temporary files. A request over
 `storage.max_ingest_mb` gets `413`; more than 1000 files, an unknown profile, a
 bad batch name or a dataset that is not quarantine get `400`, and so does a
 server with no anonymiser configured. See [anonymisation.md](anonymisation.md).
+
+### Anonymise
+
+| Method and path | Who | Body / query | Response |
+|-----------------|-----|--------------|----------|
+| `POST /api/v1/anonymise` | any key with `read`; `link_registry`: admin | One file as the raw body, with `?name=` or `?format=`; or `multipart/form-data` with `file` parts. Optional `profile` and `link_registry` (query, or form fields) | `200` the anonymised file, in its own format; or a zip of the files plus `manifest.json` for a multipart request |
+
+The anonymise tool stores nothing and never returns original data.
+
+- **One file:** the response body is the file. `Content-Type` is the format's (`text/markdown`, `application/json`, …), and `Content-Disposition` carries the fake file name. `X-Exemplar-Format`, `X-Exemplar-Replacements`, `X-Exemplar-Attachments` and `X-Exemplar-Dropped-Headers` describe it. A file that cannot be read gets `400` with the usual JSON error.
+- **Several files** (multipart) are one batch sharing fakes. The zip holds each file under its fake name and `manifest.json`: `{"profile", "linked", "files": [{"name", "format", "replacements", "attachments", "dropped_headers", "error"}]}`, in the order sent. A failed file has an `error` and no entry in the zip.
+- **Every response** carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox` and `X-Exemplar-Unreviewed: true`.
+- **Fakes** come from a key made for the request alone, unless an admin sets `link_registry`. See [anonymisation.md](anonymisation.md#anonymise-without-ingesting).
+- **Limits:** a request over `storage.max_ingest_mb` gets `413`; more than 1000 files, an unknown format or profile, or a server without Presidio get `400`; a second run for the same key while one is going gets `429`.
 
 ### Export and import
 

@@ -181,6 +181,70 @@ Huang), and the same files with the same key always give the same output.
 Reading a document's names first means each document goes to Presidio twice. Its texts are sent in chunks of about 32 KiB, so a
 CSV of thousands of rows takes a few calls, not one per row.
 
+## Anonymise without ingesting
+
+`exemplar anonymise` anonymises files and gives them back, storing nothing:
+no dataset, fixture, person or blob. It reads every format ingest reads,
+with the same detection, and is meant for quick use and workflows.
+
+```bash
+# One file in, the same format out, on stdout (any API key)
+exemplar anonymise notes.md > anon.md
+cat export.json | exemplar anonymise - --format json > anon.json
+
+# Several files, as one batch sharing fakes, into a directory
+exemplar anonymise ./mail ./notes --out-dir ./anonymised
+
+# On your own machine: no server, no API key
+exemplar anonymise notes.md --local --presidio-url http://localhost:3000
+exemplar anonymise notes.md --local --patterns-only
+```
+
+It runs either way:
+
+| | Server | `--local` |
+|-|--------|-----------|
+| Who | Any key with `read` | Anyone who can run the binary; no API key |
+| Detector | The server's Presidio | `--presidio-url`, or `--patterns-only` |
+| Key | A random key per request, never stored | `--anon-key-file` (or `EXEMPLAR_ANON_KEY`) if given, otherwise a random key per run |
+| Registry | In memory for the request, unless an admin links (below) | In memory |
+| Profiles | The server's | Built-in, plus `--anon-profiles-dir` |
+| Limits | `storage.max_ingest_mb` and 1000 files per run; one run at a time per key (`429` otherwise) | 1000 files |
+| Audit | One `file.anonymise` event, counts only | None |
+
+**Unlinked fakes.** If the tool used the server's key and registry, anyone
+could send "Jane Doe" and check whether the fake matches a person in the
+library, which would re-identify anonymised fixtures. So each request gets a
+key that is thrown away afterwards: fakes are consistent within one run (the
+same person keeps one fake across its files) and match nothing else, not the
+library and not another run. An admin can ask for **linked** fakes,
+`--link-registry`: the server's key and registry, with new people saved, as
+ingest makes them. Locally, a key file gives the same fakes across runs; only
+someone holding it gets fakes tied to it.
+
+**Output.** With one file, the anonymised file goes to stdout, or to
+`--output` (never overwritten). Several files need `--out-dir`, which must be
+empty or new; each file is written under its fake name
+(`document-3f9a1c.md`), readable by its owner only. Stdout carries only the
+file. A summary goes to stderr, one line per file with its original name
+(taken from the command line, never from the server), its fake name and the
+replacement count; `--quiet` drops it. Every run ends with a warning on
+stderr: the output is anonymised but not reviewed. Check it before sharing:
+unlike ingest, nothing here goes through review.
+
+**Report.** `--report` prints every replacement, original next to fake, to
+stderr. It works with `--local` only: the server never sends original data
+back. For a report from the server, use `ingest --dry-run`.
+
+**Without Presidio.** `--patterns-only` still finds addresses, URLs, phone
+numbers, ABNs, money and street addresses, names from email headers, and
+values under name-like CSV columns or JSON keys. It misses names in prose,
+and says so in its help.
+
+Over HTTP the tool is `POST /api/v1/anonymise` (see [api.md](api.md)); it is
+not an MCP tool, since real data would pass through an agent before it is
+anonymised.
+
 ## Consistency and the key
 
 Fakes are derived from an HMAC of the real value under the anonymisation key.

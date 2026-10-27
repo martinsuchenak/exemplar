@@ -10,10 +10,11 @@ import (
 )
 
 // stdout receives command output meant for the user and stderr per-item
-// problems; tests replace both.
+// problems; stdin is read by commands that take "-". Tests replace all three.
 var (
 	stdout io.Writer = os.Stdout
 	stderr io.Writer = os.Stderr
+	stdin  io.Reader = os.Stdin
 )
 
 var registry []*cli.Command

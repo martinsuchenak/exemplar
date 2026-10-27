@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -52,11 +51,7 @@ type Request struct {
 }
 
 // ReportLine is one replacement. It holds original data.
-type ReportLine struct {
-	Entity   string `json:"entity"`
-	Original string `json:"original"`
-	Fake     string `json:"fake"`
-}
+type ReportLine = anonymise.ReportLine
 
 // FileResult is the outcome for one input file.
 type FileResult struct {
@@ -202,7 +197,7 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 		}
 		fr.Replacements, fr.Attachments, fr.DroppedHeaders = len(out.Replacements), out.Attachments, len(out.DroppedHeaders)
 		if req.DryRun {
-			fr.Report = report(out)
+			fr.Report = out.Report()
 			res.Files = append(res.Files, fr)
 			continue
 		}
@@ -263,25 +258,6 @@ func failed(r *Result) int {
 		}
 	}
 	return n
-}
-
-// report lists the replacements, sorted by entity then original.
-func report(out *anonymise.Output) []ReportLine {
-	lines := make([]ReportLine, 0, len(out.Replacements))
-	for orig, fake := range out.Replacements {
-		entity := out.Entities[orig]
-		if entity == "" {
-			entity = "HEADER_NAME"
-		}
-		lines = append(lines, ReportLine{Entity: entity, Original: orig, Fake: fake})
-	}
-	sort.Slice(lines, func(i, j int) bool {
-		if lines[i].Entity != lines[j].Entity {
-			return lines[i].Entity < lines[j].Entity
-		}
-		return lines[i].Original < lines[j].Original
-	})
-	return lines
 }
 
 func newBatchID(now time.Time) string {

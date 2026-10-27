@@ -14,6 +14,7 @@ import (
 
 	"github.com/martinsuchenak/exemplar/cmd/routes"
 	"github.com/martinsuchenak/exemplar/internal/account"
+	"github.com/martinsuchenak/exemplar/internal/anonymise"
 	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/apperr"
@@ -25,6 +26,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/scrub"
 	"github.com/martinsuchenak/exemplar/internal/synth"
 	"github.com/martinsuchenak/exemplar/internal/testutil"
 )
@@ -472,4 +474,58 @@ func TestExportFailingMidStreamIsAnError(t *testing.T) {
 	if _, err := member.Export(ctx, []string{d.ID}, io.Discard); err == nil {
 		t.Error("an export that failed while streaming reported success")
 	}
+}
+
+func TestAnonymise(t *testing.T) {
+	_, member, _, url := server(t, func(c *app.Config) {
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+	})
+	file := func(name, data string) client.IngestFile {
+		return client.IngestFile{Name: name, Open: func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(data)), nil }}
+	}
+
+	var out strings.Builder
+	f, err := member.AnonymiseFile(ctx, scrub.Request{Profile: "default"}, "notes.md", strings.NewReader("Priya on 0412 345 678\n"), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Format != anonymise.FormatMarkdown || !strings.HasPrefix(f.Name, "document-") || !strings.HasSuffix(f.Name, ".md") ||
+		f.Replacements != 2 || strings.Contains(out.String(), "Priya") || strings.Contains(out.String(), "345 678") {
+		t.Errorf("file = %+v, %q", f, out.String())
+	}
+	// An error is the server's message, as its kind.
+	if _, err := member.AnonymiseFile(ctx, scrub.Request{}, "a.pdf", strings.NewReader("%PDF"), io.Discard); !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "cannot anonymise .pdf") {
+		t.Errorf("pdf err = %v", err)
+	}
+	if _, err := member.AnonymiseFile(ctx, scrub.Request{LinkRegistry: true}, "a.md", strings.NewReader("x"), io.Discard); !errors.Is(err, apperr.ErrForbidden) {
+		t.Errorf("link err = %v", err)
+	}
+
+	res, err := member.AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{file("a.md", "Priya\n"), file("b.json", `{"name": "Wendy Moss"}`), file("c.pdf", "%PDF")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 3 || res.Files[2].Error == "" || strings.Contains(string(res.Files[0].Data), "Priya") || strings.Contains(string(res.Files[1].Data), "Wendy") {
+		t.Errorf("files = %+v", res)
+	}
+	if _, err := member.AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{{Name: "x.md", Open: func() (io.ReadCloser, error) { return nil, errors.New("gone") }}}); err == nil {
+		t.Error("an unreadable file was sent")
+	}
+
+	// 429 comes back as ErrBusy.
+	busy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error": "busy: this key already has an anonymise run in progress"}`))
+	}))
+	defer busy.Close()
+	if _, err := newClient(t, busy.URL, "exm_x").AnonymiseFile(ctx, scrub.Request{}, "a.md", strings.NewReader("x"), io.Discard); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("429 err = %v", err)
+	}
+	// A server sending a zip that is not one fails clearly.
+	junk := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("not a zip")) }))
+	defer junk.Close()
+	if _, err := newClient(t, junk.URL, "exm_x").AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{file("a.md", "x")}); err == nil || !strings.Contains(err.Error(), "reading the anonymised files") {
+		t.Errorf("junk err = %v", err)
+	}
+	_ = url
 }

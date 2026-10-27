@@ -12,7 +12,8 @@ Two kinds of command:
 - **Host commands** (`serve`, `bootstrap`, `init`, `backup`, `restore`) open the database directly.
 - **Remote commands** (everything else) call a server's REST API with an API
   key. They work the same against a local instance and a shared server, and
-  the server's services enforce every permission.
+  the server's services enforce every permission. `anonymise --local` is the
+  one exception: it runs the anonymiser in the CLI, with no server or key.
 
 A command that fails prints one line on stderr, `exemplar: <message>`, and
 exits 1. When the command line was wrong (a missing argument, an unknown
@@ -267,6 +268,31 @@ fake. That output is original personal data: read it, don't save or share it.
 A file that fails (a `.msg`, an unsupported charset) is reported and the rest
 go ahead; the command then exits non-zero. See
 [anonymisation.md](anonymisation.md).
+
+### `anonymise`
+
+```bash
+exemplar anonymise <file-or-directory>... [--output FILE | --out-dir DIR] [--profile P] [--quiet]
+exemplar anonymise - --format F | --name N ...
+exemplar anonymise ... --local [--presidio-url URL | --patterns-only] [--anon-key-file F] [--report]
+exemplar anonymise ... --link-registry   # admin key
+```
+
+Any key, or none with `--local`. Anonymises the files and gives them back in
+their own format, storing nothing. One file goes to stdout, or to `--output`
+(never overwritten); several need `--out-dir` (empty or new) and are written
+there under their fake names, as one batch sharing fakes. `-` reads stdin,
+with `--format` (`md`, `csv`, `json`, …) or `--name` to say what it is.
+
+Stdout carries only the file; a per-file summary (`--quiet` drops it) and a
+warning that the output is not reviewed go to stderr. `--report`, with
+`--local` only, prints every replacement with its original on stderr.
+`--local` takes the anonymiser flags `serve` takes (`--presidio-url`,
+`--anon-key-file`, `--anon-profiles-dir`), plus `--patterns-only` to run
+without Presidio. `--link-registry` makes linked fakes from the server's key
+and registry (admin key). A file that fails is reported and the rest go
+ahead; the command then exits non-zero. See
+[anonymisation.md](anonymisation.md#anonymise-without-ingesting).
 
 ### `approve`, `reject`
 

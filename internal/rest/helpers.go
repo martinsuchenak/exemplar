@@ -48,6 +48,8 @@ func RespondServiceError(w http.ResponseWriter, err error) {
 		RespondError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, apperr.ErrTooLarge):
 		RespondError(w, http.StatusRequestEntityTooLarge, err.Error())
+	case errors.Is(err, apperr.ErrBusy):
+		RespondError(w, http.StatusTooManyRequests, err.Error())
 	default:
 		RespondError(w, http.StatusInternalServerError, "internal error")
 	}

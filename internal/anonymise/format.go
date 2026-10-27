@@ -54,21 +54,24 @@ type formatDef struct {
 	// exts are the lower-case extensions that select the format.
 	exts []string
 	// prefix starts the file's fake name.
-	prefix  string
-	handler handler
+	prefix string
+	// mediaType is what the file is served as. Text keeps the encoding
+	// it came in, so no charset is claimed.
+	mediaType string
+	handler   handler
 }
 
 var formats = []formatDef{
-	{format: FormatEmail, exts: []string{".eml"}, prefix: "email", handler: emailHandler{}},
-	{format: FormatText, exts: []string{".txt", ".text", ".log"}, prefix: "document", handler: docHandler{parse: parsePlain}},
-	{format: FormatMarkdown, exts: []string{".md", ".markdown"}, prefix: "document", handler: docHandler{parse: parsePlain}},
-	{format: FormatCSV, exts: []string{".csv"}, prefix: "document", handler: docHandler{parse: parseCSV(',')}},
-	{format: FormatTSV, exts: []string{".tsv"}, prefix: "document", handler: docHandler{parse: parseCSV('\t')}},
-	{format: FormatJSON, exts: []string{".json"}, prefix: "document", handler: docHandler{parse: parseJSON(false)}},
-	{format: FormatJSONL, exts: []string{".jsonl", ".ndjson"}, prefix: "document", handler: docHandler{parse: parseJSON(true)}},
-	{format: FormatHTML, exts: []string{".html", ".htm"}, prefix: "document", handler: docHandler{parse: parseHTML}},
-	{format: FormatTwig, exts: []string{".twig"}, prefix: "document", handler: docHandler{parse: parseTemplate}},
-	{format: FormatJinja, exts: []string{".j2", ".jinja", ".jinja2"}, prefix: "document", handler: docHandler{parse: parseTemplate}},
+	{FormatEmail, []string{".eml"}, "email", "message/rfc822", emailHandler{}},
+	{FormatText, []string{".txt", ".text", ".log"}, "document", "text/plain", docHandler{parse: parsePlain}},
+	{FormatMarkdown, []string{".md", ".markdown"}, "document", "text/markdown", docHandler{parse: parsePlain}},
+	{FormatCSV, []string{".csv"}, "document", "text/csv", docHandler{parse: parseCSV(',')}},
+	{FormatTSV, []string{".tsv"}, "document", "text/tab-separated-values", docHandler{parse: parseCSV('\t')}},
+	{FormatJSON, []string{".json"}, "document", "application/json", docHandler{parse: parseJSON(false)}},
+	{FormatJSONL, []string{".jsonl", ".ndjson"}, "document", "application/x-ndjson", docHandler{parse: parseJSON(true)}},
+	{FormatHTML, []string{".html", ".htm"}, "document", "text/html", docHandler{parse: parseHTML}},
+	{FormatTwig, []string{".twig"}, "document", "text/plain", docHandler{parse: parseTemplate}},
+	{FormatJinja, []string{".j2", ".jinja", ".jinja2"}, "document", "text/plain", docHandler{parse: parseTemplate}},
 }
 
 // notYet explains the extensions people try that cannot be read yet.
@@ -83,6 +86,17 @@ func Formats() []Format {
 		out[i] = f.format
 	}
 	return out
+}
+
+// NameFor returns a file name that selects format f ("input.md"), for
+// content that arrives without one.
+func NameFor(f Format) string {
+	for _, def := range formats {
+		if def.format == f {
+			return "input" + def.exts[0]
+		}
+	}
+	return ""
 }
 
 // FormatOf returns the format a file name's extension selects, or an error

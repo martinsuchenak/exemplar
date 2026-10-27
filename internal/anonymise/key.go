@@ -2,6 +2,7 @@ package anonymise
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -28,6 +29,17 @@ func NewKey(secret []byte) (Key, error) {
 	}
 	id := sha256.Sum256(append([]byte("exemplar-anon-key-id\x00"), s...))
 	return Key{secret: s, ID: "k-" + hex.EncodeToString(id[:6])}, nil
+}
+
+// RandomKey returns a new key that exists only in memory: its fakes match
+// nothing made with any other key, so they cannot be used to test whether a
+// real name is in a library anonymised under the server's key.
+func RandomKey() (Key, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return Key{}, err
+	}
+	return NewKey([]byte(hex.EncodeToString(b[:])))
 }
 
 // Valid reports whether the key was made by NewKey.

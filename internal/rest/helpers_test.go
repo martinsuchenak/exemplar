@@ -45,6 +45,8 @@ func TestRespondServiceError(t *testing.T) {
 		{fmt.Errorf("%w: needs admin", apperr.ErrForbidden), http.StatusForbidden, true},
 		{fmt.Errorf("%w: frozen", apperr.ErrConflict), http.StatusConflict, true},
 		{fmt.Errorf("%w: bad name", apperr.ErrInvalid), http.StatusBadRequest, true},
+		{fmt.Errorf("%w: too big", apperr.ErrTooLarge), http.StatusRequestEntityTooLarge, true},
+		{fmt.Errorf("%w: a run is in progress", apperr.ErrBusy), http.StatusTooManyRequests, true},
 		{errors.New("disk full at /secret/path"), http.StatusInternalServerError, false},
 	}
 	for _, tt := range tests {

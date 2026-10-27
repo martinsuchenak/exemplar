@@ -22,6 +22,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
+	"github.com/martinsuchenak/exemplar/internal/scrub"
 	"github.com/martinsuchenak/exemplar/internal/synth"
 )
 
@@ -38,9 +39,11 @@ type Config struct {
 	// MaxImportBytes caps one import archive; 0 means no limit.
 	MaxImportBytes int64
 	// AnonKey is the anonymisation secret; with PresidioURL (or
-	// AnonDetector) it enables ingest of real emails.
+	// AnonDetector) it enables ingest of real data, and linked fakes in the
+	// anonymise tool.
 	AnonKey []byte
-	// PresidioURL is the Presidio Analyzer service, e.g. http://localhost:3000.
+	// PresidioURL is the Presidio Analyzer service, e.g.
+	// http://localhost:3000. On its own it enables the anonymise tool.
 	PresidioURL string
 	// AnonDetector replaces Presidio; tests use it.
 	AnonDetector anonymise.Detector
@@ -65,6 +68,9 @@ type App struct {
 	Persons  *person.Service
 	Generate *generate.Service
 	Ingest   *ingest.Service
+	// Scrub is the anonymise tool: files in, anonymised files out, nothing
+	// stored.
+	Scrub    *scrub.Service
 	Exchange *exchange.Service
 	// Backup is for host commands only; no API reaches it.
 	Backup *backup.Service
@@ -104,7 +110,7 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 			log.Info("record schema file replaces the built-in one", "schema", name, "dir", cfg.RecordSchemasDir)
 		}
 	}
-	ingestCfg, err := anonymiserConfig(cfg)
+	ingestCfg, scrubCfg, err := anonymiserConfig(cfg)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -118,33 +124,66 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 		Persons:  persons,
 		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService, schemas),
 		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes),
+		Scrub:    scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes),
 		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version, cfg.MaxImportBytes),
 		Backup:   backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),
 	}, nil
 }
 
-// anonymiserConfig builds the ingest setup, or nil when no key or detector is
-// configured (ingest then reports that it is not configured).
-func anonymiserConfig(cfg Config) (*ingest.Config, error) {
+// anonymiserConfig builds the ingest setup, nil unless both a key and a
+// detector are configured (ingest then reports that it is not configured),
+// and the anonymise tool's, which needs only a detector: its fakes come from
+// a key made for each run, and the server's key only for linked fakes.
+func anonymiserConfig(cfg Config) (*ingest.Config, *scrub.Config, error) {
 	profiles, err := anonymise.LoadProfiles(cfg.AnonProfilesDir)
 	if err != nil {
-		return nil, fmt.Errorf("loading anonymisation profiles: %w", err)
+		return nil, nil, fmt.Errorf("loading anonymisation profiles: %w", err)
 	}
-	if len(cfg.AnonKey) == 0 {
-		return nil, nil
-	}
-	key, err := anonymise.NewKey(cfg.AnonKey)
-	if err != nil {
-		return nil, err
+	var key anonymise.Key
+	if len(cfg.AnonKey) > 0 {
+		if key, err = anonymise.NewKey(cfg.AnonKey); err != nil {
+			return nil, nil, err
+		}
 	}
 	detector := cfg.AnonDetector
 	if detector == nil && cfg.PresidioURL != "" {
 		detector = anonymise.NewPresidio(cfg.PresidioURL)
 	}
-	if detector == nil {
-		return nil, nil
+	scrubCfg := &scrub.Config{Detector: detector, Profiles: profiles, Key: key}
+	if !key.Valid() || detector == nil {
+		return nil, scrubCfg, nil
 	}
-	return &ingest.Config{Key: key, Detector: detector, Profiles: profiles}, nil
+	return &ingest.Config{Key: key, Detector: detector, Profiles: profiles}, scrubCfg, nil
+}
+
+// LocalConfig sets up the anonymise tool on its own, for the CLI's local
+// mode.
+type LocalConfig struct {
+	// Key keeps fakes the same across runs; empty makes one per run.
+	Key []byte
+	// PresidioURL is the Presidio Analyzer service.
+	PresidioURL string
+	// PatternsOnly runs without Presidio: the patterns and known names only.
+	PatternsOnly bool
+	// Detector replaces Presidio; tests use it.
+	Detector anonymise.Detector
+	// ProfilesDir holds extra anonymisation profiles (*.toml).
+	ProfilesDir string
+}
+
+// LocalAnonymiser returns the anonymise tool without a database or server.
+func LocalAnonymiser(cfg LocalConfig) (*scrub.Service, error) {
+	if cfg.PatternsOnly && cfg.PresidioURL != "" {
+		return nil, fmt.Errorf("give either a Presidio URL or patterns only, not both")
+	}
+	_, scrubCfg, err := anonymiserConfig(Config{AnonKey: cfg.Key, PresidioURL: cfg.PresidioURL, AnonDetector: cfg.Detector, AnonProfilesDir: cfg.ProfilesDir})
+	if err != nil {
+		return nil, err
+	}
+	if cfg.PatternsOnly && scrubCfg.Detector == nil {
+		scrubCfg.Detector = anonymise.PatternsOnly{}
+	}
+	return scrub.NewLocal(scrubCfg), nil
 }
 
 // Close closes the database.

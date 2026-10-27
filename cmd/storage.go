@@ -38,9 +38,9 @@ func storageFlags() []cli.Flag {
 	}
 }
 
-// serverFlags are the settings only serve takes: ingest of real emails
-// (which runs on the server, holding the key) and request size limits.
-func serverFlags() []cli.Flag {
+// anonymiserFlags set up the anonymiser: serve takes them, and so does
+// anonymise --local, which runs it without a server.
+func anonymiserFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:       "anon-key-file",
@@ -60,6 +60,13 @@ func serverFlags() []cli.Flag {
 			ConfigPath: []string{"anonymiser.profiles_dir"},
 			EnvVars:    []string{"ANON_PROFILES_DIR"},
 		},
+	}
+}
+
+// serverFlags are the settings only serve takes: the anonymiser (ingest of
+// real data runs on the server, holding the key) and request size limits.
+func serverFlags() []cli.Flag {
+	return append(anonymiserFlags(), []cli.Flag{
 		&cli.StringFlag{
 			Name:       "record-schemas-dir",
 			Usage:      "Directory of extra record schemas (*.toml); one named like a built-in replaces it",
@@ -69,7 +76,7 @@ func serverFlags() []cli.Flag {
 		&cli.IntFlag{
 			Name:         "max-ingest-mb",
 			DefaultValue: 200,
-			Usage:        "Largest total upload one ingest accepts, in MiB (0 for no limit)",
+			Usage:        "Largest total upload one ingest or anonymise run accepts, in MiB (0 for no limit)",
 			ConfigPath:   []string{"storage.max_ingest_mb"},
 			EnvVars:      []string{"MAX_INGEST_MB"},
 		},
@@ -80,7 +87,7 @@ func serverFlags() []cli.Flag {
 			ConfigPath:   []string{"storage.max_import_mb"},
 			EnvVars:      []string{"MAX_IMPORT_MB"},
 		},
-	}
+	}...)
 }
 
 // openApp opens the database and blob store named by storageFlags.

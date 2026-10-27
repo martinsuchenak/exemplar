@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/paularlott/cli"
@@ -13,11 +14,18 @@ import (
 // and returns what they wrote to stdout.
 func runCLI(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	oldArgs, oldOut, oldErr := os.Args, stdout, stderr
+	out, _, err := runCLIWith(t, "", args...)
+	return out, err
+}
+
+// runCLIWith is runCLI with input on stdin, returning stderr too.
+func runCLIWith(t *testing.T, input string, args ...string) (string, string, error) {
+	t.Helper()
+	oldArgs, oldOut, oldErr, oldIn := os.Args, stdout, stderr, stdin
 	var out, errOut bytes.Buffer
 	os.Args = append([]string{"exemplar"}, args...)
-	stdout, stderr = &out, &errOut
-	t.Cleanup(func() { os.Args, stdout, stderr = oldArgs, oldOut, oldErr })
+	stdout, stderr, stdin = &out, &errOut, strings.NewReader(input)
+	t.Cleanup(func() { os.Args, stdout, stderr, stdin = oldArgs, oldOut, oldErr, oldIn })
 
 	// Fresh command values each run: cli keeps parsed flag state on them.
 	root := &cli.Command{Name: "exemplar", Commands: []*cli.Command{
@@ -26,8 +34,8 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 		uploadCmd(), forkCmd(), promoteCmd(), purgeCmd(),
 		generateCmd(), personsCmd(), pushMailpitCmd(),
 		ingestCmd(), approveCmd(), rejectCmd(), schemasCmd(),
-		exportCmd(), importCmd(), backupCmd(), restoreCmd(),
+		exportCmd(), importCmd(), backupCmd(), restoreCmd(), anonymiseCmd(),
 	}}
 	err := root.Execute(context.Background())
-	return out.String(), err
+	return out.String(), errOut.String(), err
 }

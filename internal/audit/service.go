@@ -36,6 +36,7 @@ const (
 	ActionFixturePurge    = "fixture.purge"
 	ActionFixtureGenerate = "fixture.generate"
 	ActionFixtureIngest   = "fixture.ingest"
+	ActionFileAnonymise   = "file.anonymise"
 	ActionPersonGenerate  = "person.generate"
 	ActionDatasetExport   = "dataset.export"
 	ActionDatasetImport   = "dataset.import"

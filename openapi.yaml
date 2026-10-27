@@ -464,6 +464,59 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
+  /api/v1/anonymise:
+    post:
+      summary: Anonymise files and return them, storing nothing (any key that can read)
+      description: >
+        The anonymise tool. Send one file as the raw body, named by ?name=
+        (or typed by ?format=), and get the anonymised file back in the same
+        format, with its fake name in Content-Disposition. Or send
+        multipart/form-data with several file parts, anonymised as one batch
+        sharing fakes, and get a zip of the files under their fake names plus
+        manifest.json. Fakes come from a key made for the request alone, so
+        they match nothing in the library; link_registry (admin key) uses the
+        server's key and registry instead, as ingest does. The response never
+        holds original data. One run at a time per key (429 otherwise).
+        Answers 400 when the server has no Presidio configured.
+      operationId: anonymiseFiles
+      parameters:
+        - { name: name, in: query, schema: { type: string }, description: "The file's name, whose extension picks the format (raw body only)" }
+        - { name: format, in: query, schema: { type: string, enum: [eml, txt, md, csv, tsv, json, jsonl, html, twig, jinja] }, description: Format, when there is no name (raw body only) }
+        - { name: profile, in: query, schema: { type: string, default: default } }
+        - { name: link_registry, in: query, schema: { type: boolean, default: false }, description: "Linked fakes, as ingest makes (admin key)" }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: array, maxItems: 1000, items: { type: string, format: binary }, description: One part per file }
+                profile: { type: string, default: default }
+                link_registry: { type: boolean, default: false }
+      responses:
+        "200":
+          description: >
+            The anonymised file (raw request), or a zip of the files plus
+            manifest.json, an AnonymiseResult (multipart request).
+          headers:
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+            X-Exemplar-Unreviewed: { schema: { type: string, enum: ["true"] } }
+            X-Exemplar-Format: { schema: { type: string }, description: Raw request only }
+            X-Exemplar-Replacements: { schema: { type: integer }, description: Raw request only }
+            X-Exemplar-Attachments: { schema: { type: integer }, description: Raw request only }
+            X-Exemplar-Dropped-Headers: { schema: { type: integer }, description: Raw request only }
+          content:
+            "*/*": { schema: { type: string, format: binary } }
+            application/zip: { schema: { type: string, format: binary } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /api/v1/export:
     post:
       summary: Export datasets to an archive another instance can import
@@ -767,6 +820,23 @@ components:
                     entity: { type: string }
                     original: { type: string }
                     fake: { type: string }
+    AnonymiseResult:
+      type: object
+      description: manifest.json in a multi-file anonymise zip. It holds no original names or values.
+      properties:
+        profile: { type: string }
+        linked: { type: boolean }
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string, description: "Fake name, as in the zip; absent for a failed file" }
+              format: { type: string }
+              replacements: { type: integer }
+              attachments: { type: integer }
+              dropped_headers: { type: integer }
+              error: { type: string }
     AuditEvent:
       type: object
       properties:
