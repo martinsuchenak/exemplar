@@ -353,6 +353,9 @@ func (c *Client) AnonymiseFile(ctx context.Context, req scrub.Request, name stri
 	out.Replacements, _ = strconv.Atoi(h.Get("X-Exemplar-Replacements"))
 	out.Attachments, _ = strconv.Atoi(h.Get("X-Exemplar-Attachments"))
 	out.DroppedHeaders, _ = strconv.Atoi(h.Get("X-Exemplar-Dropped-Headers"))
+	if v := h.Get("X-Exemplar-Dropped-Parts"); v != "" {
+		out.DroppedParts = strings.Split(v, ",")
+	}
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		return nil, fmt.Errorf("receiving the anonymised file: %w", err)
 	}

@@ -161,6 +161,7 @@ back broken.
 | CSV, TSV | `.csv`, `.tsv` | Each row, header row included | Every cell that does not change, with its quoting, and the line endings. A changed cell keeps its quotes, or gains them if the fake needs them |
 | JSON, JSON Lines | `.json`, `.jsonl`, `.ndjson` | Every string value | Keys, key order, spacing, numbers, booleans and the escaping of unchanged values |
 | HTML | `.html`, `.htm` | Visible text, `<title>`, `<meta>` content, comments, and the `alt`, `title`, `href`, `src`, `placeholder`, `aria-label` and `value` attributes | Markup, scripts and styles (a value found elsewhere is still replaced in them) |
+| DOCX | `.docx` | See [DOCX](#docx) | See [DOCX](#docx) |
 | Twig, Jinja | `.twig`, `.j2`, `.jinja`, `.jinja2` | Literal text (as HTML for `page.html.twig`), comments, and quoted strings inside tags | Every tag as written outside its strings: variables, filters and keywords are code, so `{{ customer.name }}` is untouched while `{% set signer = "Jane Doe" %}` is not. `{% verbatim %}` and `{% raw %}` bodies are literal text |
 
 A CSV column or JSON key named for an entity marks its values as that entity,
@@ -180,6 +181,45 @@ file is rewritten, as an email's headers are. So "Sarah Lane" in one file and
 Huang), and the same files with the same key always give the same output.
 Reading a document's names first means each document goes to Presidio twice. Its texts are sent in chunks of about 32 KiB, so a
 CSV of thousands of rows takes a few calls, not one per row.
+
+### DOCX
+
+A `.docx` is a zip of XML parts. Each part is read by a rule that knows what
+it can hold, and only its text and the attributes the rule names are
+rewritten, in place in the bytes: styles, numbering, layout and every part
+without personal data stay exactly as they were.
+
+| Part | What is personal there | Treatment |
+|------|------------------------|-----------|
+| `word/document.xml`, `header*.xml`, `footer*.xml`, `footnotes.xml`, `endnotes.xml`, `comments.xml`, `glossary/document.xml` | Text (`w:t`), deleted text (`w:delText`), text in shapes and text boxes (`a:t`), field instructions (`HYPERLINK "mailto:…"`), alt text (`descr`, `title`, `alt`), link tooltips, and the `w:author` of tracked changes and comments | Rewritten; `w:initials` become the fake author's |
+| `word/people.xml` | Reviewers and their account ids (`S::jane.doe@…::<guid>`) | Names rewritten; addresses and hex ids in account ids faked |
+| `word/settings.xml` | Document variables; the mail-merge connection string and query | Variables rewritten; mail-merge sources replaced whole |
+| `docProps/core.xml`, `app.xml`, `custom.xml` | Author, last modified by, title, subject, keywords, description; company, manager, template, hyperlink base, part titles; custom property values | Rewritten; dates and counts kept |
+| `word/charts/chart*.xml`, `word/diagrams/data*.xml`, `drawing*.xml` | Chart titles, series and category names; SmartArt text | Rewritten; numbers kept |
+| `customXml/item*.xml` | Anything (SharePoint metadata names people) | Every text value rewritten |
+| Relationships (`*.rels`) | External links, `mailto:` addresses, the attached template's path (`C:\Users\jdoe\…`) | URLs and addresses faked; file paths become `file:///anonymised/<hex>` with their extension |
+| `word/media/*`, `docProps/thumbnail.*` | Photos, signatures, scans, a picture of the first page | Replaced with generated images of the same format; EMF, WMF, BMP and TIFF with a PNG, the relationship and content type following |
+| `word/embeddings/*` | Embedded workbooks, documents, OLE objects | Replaced like email attachments, under a keyed name (`embedding-<hex>.xlsx`); one exemplar cannot generate becomes a placeholder, so the document opens but the object does not |
+| Styles, numbering, fonts, theme, web settings, custom XML properties, chart styles and colours, diagram layouts | Nothing personal | Kept byte for byte |
+| Anything else (macros, add-ins, ink, ActiveX, Apple's `docProps/meta.xml`…) | Unknown | Dropped and listed (`dropped_parts`), with its relationships and content type |
+
+**Text split across runs.** Word splits text wherever formatting, a
+spell-check mark or a revision changes, so "Sarah Lane" can be `Sa` + `rah La`
++ `ne`. Each run of text is joined for detection, and a fake goes into the
+piece where its match starts; the matched text is taken out of the pieces
+after it, which keep their formatting and the rest of their text. A tab,
+break, symbol or field ends a run of text, so nothing is matched across one,
+and deleted text is never joined to the text around it.
+
+**Checks.** The output must open: every XML part well-formed, every
+relationship a part uses still there and pointing at a part that is, every
+part with a content type. A dropped part that the document refers to fails
+this check, and the file fails rather than coming back broken. A DOCX may
+hold at most 2,000 parts and expand to at most 100 times its size (at least
+16 MiB), so a zip bomb fails. Password-protected documents and old `.doc`
+files are not zip archives and are refused with a hint. The output's entries
+keep their order, with `[Content_Types].xml` first and fixed timestamps, so
+the same file and key give the same bytes.
 
 ## Anonymise without ingesting
 
@@ -335,7 +375,7 @@ ingest with the same key will produce.
 
 ## Limits
 
-- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, DOCX, RTF, XLSX, images) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
+- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, RTF, XLSX, images, `.doc`, `.dotx`, `.docm`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
 - In JSON, keys and numbers are never changed: a phone number stored as a number, or a name used as a key, survives. In templates, nothing is matched across a tag.
 - Charsets other than UTF-8, US-ASCII, ISO-8859-1 and Windows-1252 are rejected per file.
 - Attachment contents are replaced, not anonymised: a PDF's text does not survive.

@@ -128,11 +128,36 @@ func NewSets(sets Sets) (*Replacer, error) {
 // Apply returns s with every replacement made. An all-capitals original gets
 // an all-capitals replacement.
 func (r *Replacer) Apply(s string) string {
-	if r == nil || r.re == nil {
+	matches := r.Matches(s)
+	if len(matches) == 0 {
 		return s
 	}
 	var b strings.Builder
-	last, i := 0, 0
+	last := 0
+	for _, m := range matches {
+		b.WriteString(s[last:m.Start])
+		b.WriteString(m.To)
+		last = m.End
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// Match is one replacement Apply would make: s[Start:End] becomes To.
+type Match struct {
+	Start, End int
+	To         string
+}
+
+// Matches returns the replacements Apply would make in s, in order and not
+// overlapping, for callers that write them back into text held in pieces
+// (a word-processor paragraph split across runs).
+func (r *Replacer) Matches(s string) []Match {
+	if r == nil || r.re == nil {
+		return nil
+	}
+	var out []Match
+	i := 0
 	for i < len(s) {
 		loc := r.re.FindStringIndex(s[i:])
 		if loc == nil {
@@ -146,12 +171,10 @@ func (r *Replacer) Apply(s string) string {
 			i = start + n
 			continue
 		}
-		b.WriteString(s[last:start])
-		b.WriteString(to)
-		last, i = end, end
+		out = append(out, Match{Start: start, End: end, To: to})
+		i = end
 	}
-	b.WriteString(s[last:])
-	return b.String()
+	return out
 }
 
 // accept returns the replacement for the match s[start:end], or for the

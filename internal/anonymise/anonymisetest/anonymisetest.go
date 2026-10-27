@@ -3,6 +3,8 @@
 package anonymisetest
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -47,4 +49,27 @@ func Email(from, to, domain, subject, body string) []byte {
 	return []byte("From: " + addr(from) + "\r\nTo: " + addr(to) + "\r\nSubject: " + subject +
 		"\r\nDate: Mon, 6 Jan 2025 09:30:00 +1100\r\nMessage-ID: <" + strings.ToLower(strings.ReplaceAll(subject, " ", "-")) + "@" + domain +
 		">\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
+}
+
+// DOCX builds a minimal Word document whose body is one paragraph of text,
+// plus a part no anonymiser rule knows (word/vbaProject.bin), which is
+// dropped.
+func DOCX(text string) []byte {
+	var b bytes.Buffer
+	zw := zip.NewWriter(&b)
+	for _, p := range [][2]string{
+		{"[Content_Types].xml", `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+			`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+			`<Default Extension="xml" ContentType="application/xml"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`},
+		{"_rels/.rels", `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+			`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`},
+		{"word/document.xml", `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>` +
+			strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text) + `</w:t></w:r></w:p></w:body></w:document>`},
+		{"word/vbaProject.bin", "macros"},
+	} {
+		w, _ := zw.Create(p[0])
+		_, _ = w.Write([]byte(p[1]))
+	}
+	_ = zw.Close()
+	return b.Bytes()
 }

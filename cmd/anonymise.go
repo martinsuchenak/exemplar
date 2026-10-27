@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/paularlott/cli"
 
@@ -265,7 +266,11 @@ func summarise(cmd *cli.Command, inputs []anonymiseInput, res *scrub.Result) err
 				_, _ = fmt.Fprintf(stderr, "%d %s failed: %s\n", i+1, inputs[i].name, f.Error)
 			}
 		case !cmd.GetBool("quiet"):
-			_, _ = fmt.Fprintf(stderr, "%d %s -> %s, %d replacements\n", i+1, inputs[i].name, f.Name, f.Replacements)
+			line := fmt.Sprintf("%d %s -> %s, %d replacements", i+1, inputs[i].name, f.Name, f.Replacements)
+			if len(f.DroppedParts) > 0 {
+				line += fmt.Sprintf(", %d parts dropped (%s)", len(f.DroppedParts), strings.Join(f.DroppedParts, ", "))
+			}
+			_, _ = fmt.Fprintln(stderr, line)
 		}
 	}
 	if cmd.GetBool("report") {

@@ -168,19 +168,24 @@ func TestIngestStoresDocuments(t *testing.T) {
 		{Name: "Site notes.MD", Data: []byte("# Leak\n\nTom Reid met Priya Shah. Call 0412 345 678.\n")},
 		{Name: "contacts.csv", Data: []byte("Name,Phone\nTom Reid,0412 345 678\n")},
 		{Name: "letter.html.twig", Data: []byte("<p>Dear {{ name }}, from Priya Shah</p>")},
+		{Name: "Quote.DOCX", Data: anonymisetest.DOCX("Quote for Tom Reid, 0412 345 678")},
 	}
 	res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{Batch: "docs"}, files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig"}
+	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig", "docs-005.docx"}
 	for i, f := range res.Files {
-		if f.Error != "" || f.FixtureName != want[i] || f.Replacements == 0 {
+		dropped := 0
+		if strings.HasSuffix(want[i], ".docx") {
+			dropped = 1 // its macros
+		}
+		if f.Error != "" || f.FixtureName != want[i] || f.Replacements == 0 || f.DroppedParts != dropped {
 			t.Errorf("file %d = %+v, want %s", i, f, want[i])
 		}
 	}
 	fixtures, err := a.Fixtures.List(ctx, admin, dsID, fixture.ListFilter{})
-	if err != nil || len(fixtures) != 4 {
+	if err != nil || len(fixtures) != 5 {
 		t.Fatalf("fixtures = %d, %v", len(fixtures), err)
 	}
 	for _, f := range fixtures {

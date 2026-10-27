@@ -100,6 +100,9 @@ skip it.
   commit says why. Each document format has a sample in `document_test.go`
   holding the same secrets in every place that format can hide them; a new
   format adds one, plus the structure it must keep and its parse errors.
+  DOCX has a Word-shaped fixture in `docx_test.go` (split runs, tracked
+  changes, comments, reviewers, properties, images, an embedded workbook,
+  macros); a new part rule adds its secrets there.
 
 - **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
   that records envelopes and data, can require AUTH PLAIN and can reject a

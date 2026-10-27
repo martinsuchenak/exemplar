@@ -79,3 +79,22 @@ func TestCaseVariantsKeepTheirOwnReplacement(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchesAreWhatApplyReplaces(t *testing.T) {
+	r, err := New(map[string]string{"Sarah Lane": "Ann Lee", "acme": "zeta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := "SARAH LANE of acme met Sarah Laneway"
+	got := r.Matches(s)
+	want := []Match{{Start: 0, End: 10, To: "ANN LEE"}, {Start: 14, End: 18, To: "zeta"}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("matches = %+v", got)
+	}
+	if r.Apply(s) != "ANN LEE of zeta met Sarah Laneway" {
+		t.Errorf("apply = %q", r.Apply(s))
+	}
+	if (&Replacer{}).Matches(s) != nil || (*Replacer)(nil).Matches(s) != nil {
+		t.Error("an empty replacer matched")
+	}
+}

@@ -59,8 +59,14 @@ func (h docHandler) prepare(ctx context.Context, e *Engine, file File) error {
 	if err != nil {
 		return err
 	}
+	return e.learnNames(ctx, d.texts())
+}
+
+// learnNames detects the names in a document's texts and maps them before
+// any file of the batch is rewritten (see docHandler.prepare).
+func (e *Engine) learnNames(ctx context.Context, texts []docText) error {
 	f := newFound(e.profile)
-	if err := e.detectTexts(ctx, d.texts(), f); err != nil {
+	if err := e.detectTexts(ctx, texts, f); err != nil {
 		return err
 	}
 	for _, v := range fakeOrder(f.entities) {
@@ -75,6 +81,25 @@ func (h docHandler) prepare(ctx context.Context, e *Engine, file File) error {
 	return nil
 }
 
+// docReplacements detects what is personal in a document's texts and
+// returns the replacements and the replacer that applies them.
+func (e *Engine) docReplacements(ctx context.Context, texts []docText) (map[string]string, *found, *replacer, error) {
+	f := newFound(e.profile)
+	if err := e.detectTexts(ctx, texts, f); err != nil {
+		return nil, nil, nil, err
+	}
+	f.dropFragments()
+	pairs, err := e.replacements(ctx, f)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	rep, err := textswap.NewSets(e.sets(pairs, f))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return pairs, f, rep, nil
+}
+
 // anonymise rewrites one document.
 func (h docHandler) anonymise(ctx context.Context, e *Engine, file File) (*Output, error) {
 	text, encode, err := decodeText(file.Data)
@@ -85,16 +110,7 @@ func (h docHandler) anonymise(ctx context.Context, e *Engine, file File) (*Outpu
 	if err != nil {
 		return nil, err
 	}
-	f := newFound(e.profile)
-	if err := e.detectTexts(ctx, d.texts(), f); err != nil {
-		return nil, err
-	}
-	f.dropFragments()
-	pairs, err := e.replacements(ctx, f)
-	if err != nil {
-		return nil, err
-	}
-	rep, err := textswap.NewSets(e.sets(pairs, f))
+	pairs, f, rep, err := e.docReplacements(ctx, d.texts())
 	if err != nil {
 		return nil, err
 	}

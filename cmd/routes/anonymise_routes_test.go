@@ -66,6 +66,13 @@ func TestAnonymiseRoute(t *testing.T) {
 		t.Errorf("body = %q", out)
 	}
 
+	// A DOCX comes back as one, listing the parts it dropped.
+	w = post("/api/v1/anonymise?name=quote.docx", reader.Secret, "", bytes.NewReader(anonymisetest.DOCX("Quote for Priya")))
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+		w.Header().Get("X-Exemplar-Dropped-Parts") != "word/vbaProject.bin" || !bytes.HasPrefix(w.Body.Bytes(), []byte("PK")) {
+		t.Errorf("docx = %d %v", w.Code, w.Header())
+	}
+
 	// A format instead of a name.
 	w = post("/api/v1/anonymise?format=json", reader.Secret, "", strings.NewReader(`{"name": "Priya"}`))
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || strings.Contains(w.Body.String(), "Priya") {
@@ -74,7 +81,7 @@ func TestAnonymiseRoute(t *testing.T) {
 
 	for target, want := range map[string]int{
 		"/api/v1/anonymise":                              http.StatusBadRequest, // neither name nor format
-		"/api/v1/anonymise?format=docx":                  http.StatusBadRequest, // not a format yet
+		"/api/v1/anonymise?format=rtf":                   http.StatusBadRequest, // not a format yet
 		"/api/v1/anonymise?name=a.md&format=json":        http.StatusBadRequest,
 		"/api/v1/anonymise?name=a.pdf":                   http.StatusBadRequest, // unsupported file
 		"/api/v1/anonymise?name=a.json":                  http.StatusBadRequest, // not JSON

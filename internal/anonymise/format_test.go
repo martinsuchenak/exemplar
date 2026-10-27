@@ -10,7 +10,7 @@ import (
 )
 
 // supported is the error's list of extensions, in format order.
-const supported = "the supported files are .eml, .txt, .text, .log, .md, .markdown, .csv, .tsv, .json, .jsonl, .ndjson, .html, .htm, .twig, .j2, .jinja, .jinja2"
+const supported = "the supported files are .eml, .txt, .text, .log, .md, .markdown, .csv, .tsv, .json, .jsonl, .ndjson, .html, .htm, .twig, .j2, .jinja, .jinja2, .docx"
 
 func TestFormatOf(t *testing.T) {
 	for name, want := range map[string]string{
@@ -30,6 +30,7 @@ func TestFormatOf(t *testing.T) {
 		"mail.html.twig":        "twig",
 		"letter.j2":             "jinja",
 		"letter.jinja2":         "jinja",
+		"Jane Doe CV.DOCX":      "docx",
 		"outlook.msg":           "MSG files are not supported yet; convert to .eml first",
 		"report.pdf":            "cannot anonymise .pdf: " + supported,
 		"README":                "cannot anonymise a file without an extension: " + supported,
@@ -47,7 +48,7 @@ func TestFormatOf(t *testing.T) {
 			t.Errorf("FormatOf(%q) = %q, want %q", name, got, want)
 		}
 	}
-	want := []Format{FormatEmail, FormatText, FormatMarkdown, FormatCSV, FormatTSV, FormatJSON, FormatJSONL, FormatHTML, FormatTwig, FormatJinja}
+	want := []Format{FormatEmail, FormatText, FormatMarkdown, FormatCSV, FormatTSV, FormatJSON, FormatJSONL, FormatHTML, FormatTwig, FormatJinja, FormatDOCX}
 	if got := Formats(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Formats() = %v", got)
 	}

@@ -69,10 +69,13 @@ only through its `Detector` interface, so it is tested with in-memory fakes.
 Each file format has a handler in `internal/anonymise/format.go`, which
 finds the people in a file and writes it back with the fakes in it. Every
 handler shares the engine's detection, fakes and registry, so a person gets
-the same fake in every format. Email has its own handler; every document
-format (text, Markdown, CSV, JSON, HTML, Twig and Jinja) shares `docHandler`
-in `document.go`, and only says where its text is, how to write it back and
-what structure must survive.
+the same fake in every format. Email has its own handler; every text
+document format (text, Markdown, CSV, JSON, HTML, Twig and Jinja) shares
+`docHandler` in `document.go`, and only says where its text is, how to write
+it back and what structure must survive. DOCX has its own handler
+(`docx.go`): a rule per part, and text rewritten by splicing bytes at the
+offsets `xmlscan.go` finds, since re-encoding XML would rename namespace
+prefixes Word depends on.
 `app.Open` builds the anonymiser from the key, Presidio URL and profiles; with
 no key or no Presidio URL, ingest reports that it is not configured. See
 [anonymisation.md](anonymisation.md).

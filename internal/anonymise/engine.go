@@ -84,8 +84,12 @@ type Output struct {
 	// Entities maps original text to its entity type (also original data).
 	Entities       map[string]string
 	DroppedHeaders []string
-	Attachments    int
-	People         []PersonRole
+	// DroppedParts are the parts of a document removed rather than
+	// rewritten, because no rule knows what they hold (a DOCX's macros or
+	// add-ins). Part names are not original data.
+	DroppedParts []string
+	Attachments  int
+	People       []PersonRole
 }
 
 // ReportLine is one replacement. It holds original data: show it to the

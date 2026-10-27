@@ -37,7 +37,7 @@ func (e *Engine) rewriteAt(ctx context.Context, msg *mimetree.Part, rep *replace
 		return err
 	}
 	if len(people) == 0 {
-		people = []synth.Person{synth.New(e.key.Seed("filler", "people")).Person(synth.New(1).CompanyName())}
+		people = e.fillerPeople()
 	}
 
 	msg.Walk(func(p *mimetree.Part) {
@@ -240,6 +240,11 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		out.Attachments++
 	}
 	return nil
+}
+
+// fillerPeople are who a replaced file is about when nothing names anyone.
+func (e *Engine) fillerPeople() []synth.Person {
+	return []synth.Person{synth.New(e.key.Seed("filler", "people")).Person(synth.New(1).CompanyName())}
 }
 
 // fakeLocation rewrites a Content-Location. A relative reference is a file

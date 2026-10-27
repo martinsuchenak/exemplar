@@ -99,7 +99,7 @@ func TestAnonymiseArguments(t *testing.T) {
 	}
 	for want, args := range map[string][]string{
 		"needs --format or --name":       {"anonymise", "-", "--local", "--patterns-only"},
-		`unknown format "docx"`:          {"anonymise", "-", "--format", "docx", "--local", "--patterns-only"},
+		`unknown format "rtf"`:           {"anonymise", "-", "--format", "rtf", "--local", "--patterns-only"},
 		"are for stdin":                  {"anonymise", md, "--format", "md", "--local"},
 		"not both":                       {"anonymise", md, "--output", "x", "--out-dir", "y", "--local"},
 		"--patterns-only to run without": {"anonymise", md, "--local"},
@@ -120,6 +120,12 @@ func TestAnonymiseOnTheServer(t *testing.T) {
 		c.AnonDetector = anonymisetest.Detector{Names: []string{"Wendy"}}
 	})
 	member := s.member(t, "alice")
+
+	// A DOCX's dropped parts are in the summary.
+	_, errOut, err := runCLIWith(t, string(anonymisetest.DOCX("Wendy")), "anonymise", "-", "--format", "docx", "--output", filepath.Join(t.TempDir(), "a.docx"), "--server", s.url, "--api-key", member)
+	if err != nil || !strings.Contains(errOut, "1 parts dropped (word/vbaProject.bin)") {
+		t.Errorf("docx: %v\n%s", err, errOut)
+	}
 
 	// One file goes up raw and comes back as it went.
 	out, errOut, err := runCLIWith(t, anonMD, "anonymise", "-", "--name", "notes.md", "--server", s.url, "--api-key", member)

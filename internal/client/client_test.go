@@ -493,6 +493,11 @@ func TestAnonymise(t *testing.T) {
 		f.Replacements != 2 || strings.Contains(out.String(), "Priya") || strings.Contains(out.String(), "345 678") {
 		t.Errorf("file = %+v, %q", f, out.String())
 	}
+	var doc bytes.Buffer
+	d, err := member.AnonymiseFile(ctx, scrub.Request{}, "q.docx", bytes.NewReader(anonymisetest.DOCX("Priya")), &doc)
+	if err != nil || d.Format != anonymise.FormatDOCX || strings.Join(d.DroppedParts, ",") != "word/vbaProject.bin" || !bytes.HasPrefix(doc.Bytes(), []byte("PK")) {
+		t.Errorf("docx = %+v, %v", d, err)
+	}
 	// An error is the server's message, as its kind.
 	if _, err := member.AnonymiseFile(ctx, scrub.Request{}, "a.pdf", strings.NewReader("%PDF"), io.Discard); !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "cannot anonymise .pdf") {
 		t.Errorf("pdf err = %v", err)

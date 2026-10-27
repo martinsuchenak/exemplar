@@ -115,7 +115,9 @@ frozen ones included, and is audit-logged.
 
 An **IngestResult** is `{"batch", "profile", "key_id", "dry_run", "files":
 […]}`. Each file is `{"name", "fixture_id", "fixture_name", "replacements",
-"attachments", "dropped_headers", "error", "report"}`; `error` is set for a
+"attachments", "dropped_headers", "dropped_parts", "error", "report"}`
+(`dropped_parts` counts a document's parts removed rather than rewritten, such
+as a DOCX's macros); `error` is set for a
 file that failed while the others went ahead, and `report` (dry run only)
 lists `{"entity", "original", "fake"}`. The report is original personal data;
 responses carry `Cache-Control: no-store`.
@@ -133,8 +135,8 @@ server with no anonymiser configured. See [anonymisation.md](anonymisation.md).
 
 The anonymise tool stores nothing and never returns original data.
 
-- **One file:** the response body is the file. `Content-Type` is the format's (`text/markdown`, `application/json`, …), and `Content-Disposition` carries the fake file name. `X-Exemplar-Format`, `X-Exemplar-Replacements`, `X-Exemplar-Attachments` and `X-Exemplar-Dropped-Headers` describe it. A file that cannot be read gets `400` with the usual JSON error.
-- **Several files** (multipart) are one batch sharing fakes. The zip holds each file under its fake name and `manifest.json`: `{"profile", "linked", "files": [{"name", "format", "replacements", "attachments", "dropped_headers", "error"}]}`, in the order sent. A failed file has an `error` and no entry in the zip.
+- **One file:** the response body is the file. `Content-Type` is the format's (`text/markdown`, `application/json`, …), and `Content-Disposition` carries the fake file name. `X-Exemplar-Format`, `X-Exemplar-Replacements`, `X-Exemplar-Attachments` and `X-Exemplar-Dropped-Headers` describe it, and `X-Exemplar-Dropped-Parts` lists a document's dropped parts, comma-separated, when there are any. A file that cannot be read gets `400` with the usual JSON error.
+- **Several files** (multipart) are one batch sharing fakes. The zip holds each file under its fake name and `manifest.json`: `{"profile", "linked", "files": [{"name", "format", "replacements", "attachments", "dropped_headers", "dropped_parts", "error"}]}`, in the order sent (`dropped_parts` is a list of part names, left out when empty). A failed file has an `error` and no entry in the zip.
 - **Every response** carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox` and `X-Exemplar-Unreviewed: true`.
 - **Fakes** come from a key made for the request alone, unless an admin sets `link_registry`. See [anonymisation.md](anonymisation.md#anonymise-without-ingesting).
 - **Limits:** a request over `storage.max_ingest_mb` gets `413`; more than 1000 files, an unknown format or profile, or a server without Presidio get `400`; a second run for the same key while one is going gets `429`.

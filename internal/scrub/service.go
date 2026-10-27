@@ -57,6 +57,8 @@ type FileResult struct {
 	Replacements   int              `json:"replacements"`
 	Attachments    int              `json:"attachments"`
 	DroppedHeaders int              `json:"dropped_headers"`
+	// DroppedParts are a document's parts removed rather than rewritten.
+	DroppedParts []string `json:"dropped_parts,omitempty"`
 	// Error is set for a file that failed while the others went ahead.
 	Error string `json:"error,omitempty"`
 	// Report is original data (local only).
@@ -178,7 +180,7 @@ func (s *Service) Anonymise(ctx context.Context, actor principal.Principal, req 
 			continue
 		}
 		fr.Name, fr.Format, fr.Data = unique(names, out.Name), out.Format, out.Data
-		fr.Replacements, fr.Attachments, fr.DroppedHeaders = len(out.Replacements), out.Attachments, len(out.DroppedHeaders)
+		fr.Replacements, fr.Attachments, fr.DroppedHeaders, fr.DroppedParts = len(out.Replacements), out.Attachments, len(out.DroppedHeaders), out.DroppedParts
 		if req.Report {
 			fr.Report = out.Report()
 		}

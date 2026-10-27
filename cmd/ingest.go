@@ -76,9 +76,9 @@ func reportIngest(cmd *cli.Command, res *ingest.Result) error {
 		if f.Error != "" {
 			status, failed = "failed: "+f.Error, failed+1
 		}
-		rows[i] = []string{f.Name, orDash(f.FixtureName), strconv.Itoa(f.Replacements), strconv.Itoa(f.Attachments), strconv.Itoa(f.DroppedHeaders), status}
+		rows[i] = []string{f.Name, orDash(f.FixtureName), strconv.Itoa(f.Replacements), strconv.Itoa(f.Attachments), strconv.Itoa(f.DroppedHeaders), strconv.Itoa(f.DroppedParts), status}
 	}
-	if err := render(cmd, res, []string{"FILE", "FIXTURE", "REPLACED", "ATTACHMENTS", "HEADERS DROPPED", "STATUS"}, rows); err != nil {
+	if err := render(cmd, res, []string{"FILE", "FIXTURE", "REPLACED", "ATTACHMENTS", "HEADERS DROPPED", "PARTS DROPPED", "STATUS"}, rows); err != nil {
 		return err
 	}
 	if res.DryRun {

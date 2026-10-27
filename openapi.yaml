@@ -431,7 +431,7 @@ paths:
       summary: Anonymise real emails and documents into a quarantine dataset (admin key)
       description: >
         Each part's file name picks its format: .eml, .txt, .log, .md, .csv,
-        .tsv, .json, .jsonl, .html, .twig or .j2 (see docs/anonymisation.md).
+        .tsv, .json, .jsonl, .html, .twig, .j2 or .docx (see docs/anonymisation.md).
         Parts are read into memory, never written to disk; only anonymised
         output is stored, as unreviewed fixtures named <batch>-NNN plus the
         file's extension (<batch>-001.eml, <batch>-002.csv). A dry
@@ -481,7 +481,7 @@ paths:
       operationId: anonymiseFiles
       parameters:
         - { name: name, in: query, schema: { type: string }, description: "The file's name, whose extension picks the format (raw body only)" }
-        - { name: format, in: query, schema: { type: string, enum: [eml, txt, md, csv, tsv, json, jsonl, html, twig, jinja] }, description: Format, when there is no name (raw body only) }
+        - { name: format, in: query, schema: { type: string, enum: [eml, txt, md, csv, tsv, json, jsonl, html, twig, jinja, docx] }, description: Format, when there is no name (raw body only) }
         - { name: profile, in: query, schema: { type: string, default: default } }
         - { name: link_registry, in: query, schema: { type: boolean, default: false }, description: "Linked fakes, as ingest makes (admin key)" }
       requestBody:
@@ -509,6 +509,7 @@ paths:
             X-Exemplar-Replacements: { schema: { type: integer }, description: Raw request only }
             X-Exemplar-Attachments: { schema: { type: integer }, description: Raw request only }
             X-Exemplar-Dropped-Headers: { schema: { type: integer }, description: Raw request only }
+            X-Exemplar-Dropped-Parts: { schema: { type: string }, description: "Raw request only: a document's dropped parts, comma-separated; absent when none" }
           content:
             "*/*": { schema: { type: string, format: binary } }
             application/zip: { schema: { type: string, format: binary } }
@@ -810,6 +811,7 @@ components:
               replacements: { type: integer }
               attachments: { type: integer }
               dropped_headers: { type: integer }
+              dropped_parts: { type: integer, description: "A document's parts removed rather than rewritten (a DOCX's macros, add-ins)" }
               error: { type: string, description: Set when this file failed; the others went ahead }
               report:
                 type: array
@@ -836,6 +838,7 @@ components:
               replacements: { type: integer }
               attachments: { type: integer }
               dropped_headers: { type: integer }
+              dropped_parts: { type: array, items: { type: string }, description: "A document's parts removed rather than rewritten" }
               error: { type: string }
     AuditEvent:
       type: object
