@@ -23,9 +23,11 @@ The same request over the API is `POST /api/v1/datasets/{id}/generate` with a
 JSON body (see [api.md](api.md)).
 
 `task sample-data` fills a server with a ready-made set: workspaces
-`sample-emails` (every shape), `sample-documents` (every format) and
-`sample-records` (every schema), all about the same 20 people, from one
-seed. It uses `EXEMPLAR_SERVER` (default `http://localhost:8080`) and
+`sample-emails` (every shape), `sample-documents` (every format),
+`sample-records` (contacts, companies, projects, opportunities and
+addresses), `sample-sales` (the product catalogue and quotes priced from it)
+and `sample-tasks` (one task per person), all about the same 20 people, from
+one seed. It uses `EXEMPLAR_SERVER` (default `http://localhost:8080`) and
 `EXEMPLAR_API_KEY`, asking for the key when it is not set, and leaves
 workspaces that already hold fixtures alone; `scripts/sample-data.zsh
 --replace sample-records` deletes one and generates it again.
