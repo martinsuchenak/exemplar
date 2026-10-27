@@ -67,6 +67,7 @@ func wordDocx(t *testing.T) []byte {
 			`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
 			`<Default Extension="xml" ContentType="application/xml"/>` +
 			`<Default Extension="jpeg" ContentType="image/jpeg"/>` +
+			`<Default Extension="gif" ContentType="image/gif"/>` +
 			`<Default Extension="emf" ContentType="image/x-emf"/>` +
 			`<Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>` +
 			`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
@@ -84,7 +85,8 @@ func wordDocx(t *testing.T) []byte {
 			`</Relationships>`},
 		{"word/document.xml", xmlH + `<w:document ` + wNS + ` ` + rNS +
 			` xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"` +
-			` xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"><w:body>` +
+			` xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"` +
+			` xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body>` +
 			// A name split across runs, with formatting and a spell-check mark between.
 			`<w:p><w:r><w:t xml:space="preserve">Dear Sa</w:t></w:r><w:proofErr w:type="spellStart"/><w:r><w:rPr><w:b/></w:rPr><w:t>rah La</w:t></w:r><w:r><w:t>ne,</w:t></w:r></w:p>` +
 			// Tracked changes, with their author.
@@ -104,6 +106,15 @@ func wordDocx(t *testing.T) []byte {
 			`<w:r><w:object><o:OLEObject ProgID="Excel.Sheet.12" r:id="rId15"/></w:object></w:r></w:p>` +
 			// A tab ends a run of text: no name is matched across it.
 			`<w:p><w:r><w:t>Call</w:t><w:tab/><w:t>Sarah Lane</w:t></w:r></w:p>` +
+			// A deleted link, a picture under its file's name, a legacy form
+			// field, a content control's list and an equation.
+			`<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:del w:id="3" w:author="Priya Shah"><w:r><w:delInstrText xml:space="preserve"> HYPERLINK "mailto:sarah.lane@acme-plumbing.com.au" </w:delInstrText></w:r></w:del><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>` +
+			`<w:p><w:r><w:drawing><wp:inline><wp:docPr id="2" name="Sarah Lane passport.gif"/><a:graphic><a:graphicData><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="Sarah Lane passport.gif"/></pic:nvPicPr>` +
+			`<pic:blipFill><a:blip r:embed="rId13"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>` +
+			`<w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Text1"/><w:helpText w:type="text" w:val="Ask Priya Shah"/><w:statusText w:type="text" w:val="For Sarah Lane"/>` +
+			`<w:textInput><w:default w:val="Sarah Lane"/></w:textInput><w:ddList><w:listEntry w:val="Priya Shah"/></w:ddList></w:ffData></w:fldChar></w:r></w:p>` +
+			`<w:p><w:sdt><w:sdtPr><w:dropDownList><w:listItem w:displayText="Sarah Lane" w:value="Priya Shah"/></w:dropDownList></w:sdtPr><w:sdtContent><w:r><w:t>pick one</w:t></w:r></w:sdtContent></w:sdt></w:p>` +
+			`<w:p><m:oMath><m:r><m:t>Priya</m:t></m:r></m:oMath></w:p>` +
 			`</w:body></w:document>`},
 		{"word/_rels/document.xml.rels", xmlH + `<Relationships ` + relNS + `>` +
 			`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
@@ -118,6 +129,7 @@ func wordDocx(t *testing.T) []byte {
 			`<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.jpeg"/>` +
 			`<Relationship Id="rId11" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.emf"/>` +
 			`<Relationship Id="rId12" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:sarah.lane@acme-plumbing.com.au" TargetMode="External"/>` +
+			`<Relationship Id="rId13" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/SarahLane.gif"/>` +
 			`<Relationship Id="rId15" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="embeddings/Jane_Doe_salary.xlsx"/>` +
 			`</Relationships>`},
 		{"word/styles.xml", styles},
@@ -137,6 +149,8 @@ func wordDocx(t *testing.T) []byte {
 		{"word/footnotes.xml", xmlH + `<w:footnotes ` + wNS + `><w:footnote w:id="1"><w:p><w:r><w:t>Priya, 0412 345 678</w:t></w:r></w:p></w:footnote></w:footnotes>`},
 		{"word/media/image1.jpeg", "\xff\xd8\xff\xe0 real photo of Sarah"},
 		{"word/media/image2.emf", "\x01\x00\x00\x00 EMF real signature"},
+		// Not every program names images image1.png.
+		{"word/media/SarahLane.gif", "GIF89a real passport"},
 		{"word/embeddings/Jane_Doe_salary.xlsx", "PK real salary of Sarah Lane"},
 		{"word/vbaProject.bin", "real macros by jdoe"},
 		{"word/webextensions/taskpanes.xml", xmlH + `<wetp:taskpanes xmlns:wetp="http://schemas.microsoft.com/office/webextensions/taskpanes/2010/11">jdoe add-in</wetp:taskpanes>`},
@@ -153,12 +167,14 @@ func wordDocx(t *testing.T) []byte {
 		{"docProps/custom.xml", xmlH + `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">` +
 			`<property fmtid="{D5CDD505}" pid="2" name="Client"><vt:lpwstr>Sarah Lane</vt:lpwstr></property></Properties>`},
 		{"docProps/thumbnail.jpeg", "\xff\xd8\xff\xe0 real thumbnail of the first page"},
+		// A part no rule knows, named by whatever made it.
+		{"word/SarahLane-notes.bin", "real notes"},
 	})
 }
 
 var docxSecrets = []string{
 	"Sarah", "Lane", "Priya", "Shah", "acme-plumbing", "Acme Plumbing", "0412 345 678", "jdoe", "invoices?id=991",
-	"real photo", "real signature", "real salary", "real thumbnail", "real macros", "4a5d6e7f", "Jane_Doe",
+	"real photo", "real signature", "real salary", "real thumbnail", "real macros", "real passport", "real notes", "4a5d6e7f", "Jane_Doe",
 	`w:initials="PS"`, `w:initials="SL"`,
 }
 
@@ -186,9 +202,11 @@ func TestDOCXLosesEverySecret(t *testing.T) {
 	if out.Format != FormatDOCX || !strings.HasPrefix(out.Name, "document-") || !strings.HasSuffix(out.Name, ".docx") {
 		t.Errorf("format %s, name %s", out.Format, out.Name)
 	}
-	// Two images, the thumbnail and the workbook were replaced; the macros
-	// and the add-in, which no rule knows, were dropped.
-	if out.Attachments != 4 || strings.Join(out.DroppedParts, ",") != "word/vbaProject.bin,word/webextensions/taskpanes.xml" {
+	// Three images, the thumbnail and the workbook were replaced; the
+	// macros, the add-in and the unknown part were dropped, the last listed
+	// under a keyed name since its own could say anything.
+	if out.Attachments != 5 || len(out.DroppedParts) != 3 || strings.Join(out.DroppedParts[:2], ",") != "word/vbaProject.bin,word/webextensions/taskpanes.xml" ||
+		!regexp.MustCompile(`^part-[0-9a-f]{6}\.bin$`).MatchString(out.DroppedParts[2]) {
 		t.Errorf("attachments %d, dropped %v", out.Attachments, out.DroppedParts)
 	}
 	if names[0] != "[Content_Types].xml" {
@@ -229,6 +247,18 @@ func TestDOCXLosesEverySecret(t *testing.T) {
 	}
 	if !bytes.HasPrefix([]byte(parts["word/media/image2.png"]), []byte("\x89PNG")) || !bytes.HasPrefix([]byte(parts["word/media/image1.jpeg"]), []byte("\xff\xd8")) {
 		t.Error("replaced images are not images")
+	}
+	// An image not named as Word names them was renamed, keeping its
+	// format; the picture's own name was replaced too.
+	if !regexp.MustCompile(`Target="media/image-[0-9a-f]{6}\.gif"`).MatchString(rels) ||
+		!regexp.MustCompile(`<pic:cNvPr id="0" name="picture-[0-9a-f]{6}\.gif"/>`).MatchString(doc) {
+		t.Errorf("image names:\n%s\n%s", rels, doc)
+	}
+	// Form fields, content-control lists and equations were read.
+	for _, keep := range []string{`<w:name w:val="Text1"/>`, `<w:sdtContent><w:r><w:t>pick one</w:t>`} {
+		if !strings.Contains(doc, keep) {
+			t.Errorf("document.xml lost %q", keep)
+		}
 	}
 	// The workbook was renamed, with its relationship and override.
 	var emb string
@@ -458,6 +488,28 @@ func TestDirectFakes(t *testing.T) {
 	}
 	if initials("Kenneth  huang") != "KH" || initials("") != "" {
 		t.Error("initials")
+	}
+	// A picture's file name keeps only its extension.
+	if got, _ := fakePictureName(ctx, e, "Sarah Lane passport.JPG"); !regexp.MustCompile(`^picture-[0-9a-f]{6}\.jpg$`).MatchString(got) {
+		t.Errorf("fakePictureName = %q", got)
+	}
+	for in, want := range map[string]string{"a.PNG": ".png", "Picture 1": "", "x.a,b": "", "x.toolongext": "", "dir.d/file": "", "x.": ""} {
+		if got := fileExt(in); got != want {
+			t.Errorf("fileExt(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// Office's own dropped parts keep their names; any other is keyed.
+	for in, want := range map[string]*regexp.Regexp{
+		"word/vbaProject.bin":            regexp.MustCompile(`^word/vbaProject\.bin$`),
+		"word/activeX/activeX12.xml":     regexp.MustCompile(`^word/activeX/activeX12\.xml$`),
+		"word/_rels/vbaProject.bin.rels": regexp.MustCompile(`^word/_rels/vbaProject\.bin\.rels$`),
+		"word/_rels/Sarah.xml.rels":      regexp.MustCompile(`^part-[0-9a-f]{6}\.rels$`),
+		"Sarah Lane/notes, 2025.bin":     regexp.MustCompile(`^part-[0-9a-f]{6}\.bin$`),
+		"word/vbaProject.bin.old":        regexp.MustCompile(`^part-[0-9a-f]{6}\.old$`),
+	} {
+		if got := e.droppedPartName(in); !want.MatchString(got) {
+			t.Errorf("droppedPartName(%q) = %q", in, got)
+		}
 	}
 }
 

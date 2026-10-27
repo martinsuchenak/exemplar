@@ -476,7 +476,8 @@ paths:
         manifest.json. Fakes come from a key made for the request alone, so
         they match nothing in the library; link_registry (admin key) uses the
         server's key and registry instead, as ingest does. The response never
-        holds original data. One run at a time per key (429 otherwise).
+        holds original data. One run at a time per key (429 otherwise,
+        before the body is read).
         Answers 400 when the server has no Presidio configured.
       operationId: anonymiseFiles
       parameters:

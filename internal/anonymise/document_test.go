@@ -3,6 +3,7 @@ package anonymise
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"strings"
 	"testing"
 )
@@ -335,5 +336,47 @@ func TestNamesAndAddressesMatchAcrossFiles(t *testing.T) {
 	}
 	if local := strings.ToLower(fake[0] + "." + fake[1] + "@"); !strings.Contains(string(a.Data), local) {
 		t.Errorf("address became %q, not %s… after the name %v", a.Data, local, fake)
+	}
+}
+
+// A name written with character references is replaced like any other, in
+// a page, an HTML template and an email's HTML body; other references stay
+// as written.
+func TestHTMLCharacterReferences(t *testing.T) {
+	newE := func() *Engine {
+		e, err := New(testKey(t), defaultProfile(t), wordDetector{names: []string{"José García", "Sarah Lane"}}, newMemRegistry())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	page := `<p>Jos&eacute; Garc&iacute;a and Sarah&#32;Lane, <a href="mailto:sarah.lane&#64;acme-plumbing.com.au">mail</a> &amp; more</p>` +
+		`<img alt="Jos&#233; Garc&#xED;a">`
+	for name, data := range map[string]string{"page.html": page, "page.html.twig": "{{ x }}" + page} {
+		out := string(anonymiseDoc(t, newE(), name, data).Data)
+		decoded := html.UnescapeString(out)
+		for _, s := range []string{"José", "García", "Sarah", "Lane", "acme-plumbing"} {
+			if strings.Contains(decoded, s) {
+				t.Errorf("%s still holds %q:\n%s", name, s, out)
+			}
+		}
+		if !strings.Contains(out, "</a> &amp; more</p><img alt=\"") {
+			t.Errorf("%s lost what was around the names:\n%s", name, out)
+		}
+	}
+
+	mail := "From: Tom Baker <tom@harbour-freight.com.au>\r\nTo: Ann Lee <ann@harbour-freight.com.au>\r\nSubject: Hi\r\n" +
+		"Message-ID: <refs-1@harbour-freight.com.au>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" +
+		"<p>Jos&eacute; Garc&iacute;a called &mdash; ring back</p>\r\n"
+	out := run(t, newE(), mail)[0]
+	body := decodedText(t, out.Data)
+	if strings.Contains(html.UnescapeString(body), "José") || !strings.Contains(body, "called &mdash; ring back") {
+		t.Errorf("html body = %s", body)
+	}
+
+	// Positions in the decoded text map back to whole references.
+	dec, starts, ends := decodeRefs("a&eacute;b&bogus;c")
+	if dec != "aéb&bogus;c" || starts[1] != 1 || starts[2] != 1 || ends[3] != 9 || starts[3] != 9 || starts[len(dec)] != 18 {
+		t.Errorf("decodeRefs = %q %v %v", dec, starts, ends)
 	}
 }

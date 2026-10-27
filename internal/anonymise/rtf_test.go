@@ -30,11 +30,13 @@ var wordRTF = `{\rtf1\ansi\ansicpg1252\deff0\uc1` + "\r\n" +
 	`{\*\shppict{\pict\pngblip\picw10\pich10 ` + hexOf("\x89PNG real photo") + `}}{\nonshppict{\pict\wmetafile8\picw10 ` + hexOf("real wmf") + `}}` + "\r\n" +
 	`{\object\objemb{\*\objclass Excel.Sheet.12}{\*\objdata ` + hexOf("real salary") + `}{\result{\pict\jpegblip ` + hexOf("\xff\xd8 real scan") + `}}}` + "\r\n" +
 	`{\*\datastore ` + hexOf("jdoe metadata") + `}{\*\userprops {\propname Client}\proptype30{\staticval Sarah Lane}}` + "\r\n" +
+	`{\field{\*\fldinst {FORMTEXT }{\*\datafield ` + hexOf("Lane default") + `}{\*\formfield{\fftype0\ffownhelp\ffownstat{\*\ffname Text1}` +
+	`{\*\ffdeftext Sarah Lane}{\*\ffstattext Ask Priya Shah}{\*\ffhelptext call 0412 345 678}{\*\ffl Priya Shah}}}}{\fldrslt Sarah Lane}}\par` + "\r\n" +
 	"}\r\n\x00"
 
 var rtfSecrets = []string{
 	"Sarah", "Lane", "Priya", "Shah", "acme-plumbing", "Acme Plumbing", "0412 345 678", "jdoe",
-	hexOf("real photo"), hexOf("real wmf"), hexOf("real salary"), hexOf("real scan"), hexOf("jdoe"), `\*\atnid PS}`,
+	hexOf("real photo"), hexOf("real wmf"), hexOf("real salary"), hexOf("real scan"), hexOf("jdoe"), hexOf("Lane default"), `\*\atnid PS}`,
 }
 
 func TestRTFLosesEverySecret(t *testing.T) {
@@ -54,7 +56,7 @@ func TestRTFLosesEverySecret(t *testing.T) {
 		}
 	}
 	if out.Format != FormatRTF || !strings.HasSuffix(out.Name, ".rtf") || out.Attachments != 2 ||
-		strings.Join(out.DroppedParts, ",") != "picture 2 (wmetafile),embedded object data,data store" {
+		strings.Join(out.DroppedParts, ",") != "picture 2 (wmetafile),embedded object data,data store,form field data" {
 		t.Errorf("format %s, name %s, attachments %d, dropped %q", out.Format, out.Name, out.Attachments, out.DroppedParts)
 	}
 	for _, keep := range []string{

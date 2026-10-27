@@ -180,7 +180,13 @@ func (d *tplDoc) rewrite(rep *replacer) (string, error) {
 	}
 	for _, s := range d.segs {
 		switch s.kind {
-		case tplLiteral, tplComment:
+		case tplLiteral:
+			if d.html {
+				put(s.start, s.end, applyHTML(d.text[s.start:s.end], rep))
+			} else {
+				put(s.start, s.end, rep.Apply(d.text[s.start:s.end]))
+			}
+		case tplComment:
 			put(s.start, s.end, rep.Apply(d.text[s.start:s.end]))
 		case tplTag:
 			for _, str := range s.strs {

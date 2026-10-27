@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/martinsuchenak/exemplar/internal/anonymise"
-	"github.com/martinsuchenak/exemplar/internal/principal"
 	"github.com/martinsuchenak/exemplar/internal/rest"
 )
 
@@ -46,6 +45,14 @@ func (h *Handler) Anonymise(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The key's one run is claimed before the body is read, so a second
+	// upload is refused before it takes any memory.
+	run, err := h.service.Reserve(p)
+	if err != nil {
+		rest.RespondServiceError(w, err)
+		return
+	}
+	defer run.Close()
 	rest.AllowLongUpload(w)
 	if limit := h.service.MaxBytes(); limit > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20)
@@ -53,14 +60,13 @@ func (h *Handler) Anonymise(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	req := Request{Profile: q.Get("profile")}
 	if v := q.Get("link_registry"); v != "" {
-		var err error
 		if req.LinkRegistry, err = strconv.ParseBool(v); err != nil {
 			rest.RespondError(w, http.StatusBadRequest, "link_registry must be true or false")
 			return
 		}
 	}
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt == "multipart/form-data" {
-		h.many(w, r, p, req)
+		h.many(w, r, run, req)
 		return
 	}
 
@@ -89,7 +95,7 @@ func (h *Handler) Anonymise(w http.ResponseWriter, r *http.Request) {
 		respondReadError(w, err)
 		return
 	}
-	res, err := h.service.Anonymise(r.Context(), p, req, []anonymise.File{{Name: name, Data: data}})
+	res, err := run.Anonymise(r.Context(), req, []anonymise.File{{Name: name, Data: data}})
 	if err != nil {
 		rest.RespondServiceError(w, err)
 		return
@@ -118,7 +124,7 @@ func (h *Handler) Anonymise(w http.ResponseWriter, r *http.Request) {
 
 // many handles a multipart upload: "file" parts plus optional "profile" and
 // "link_registry" fields, which override the query.
-func (h *Handler) many(w http.ResponseWriter, r *http.Request, p principal.Principal, req Request) {
+func (h *Handler) many(w http.ResponseWriter, r *http.Request, run *Run, req Request) {
 	mr, err := r.MultipartReader()
 	if err != nil {
 		rest.RespondError(w, http.StatusBadRequest, "body must be multipart/form-data with file parts")
@@ -156,7 +162,7 @@ func (h *Handler) many(w http.ResponseWriter, r *http.Request, p principal.Princ
 			}
 		}
 	}
-	res, err := h.service.Anonymise(r.Context(), p, req, files)
+	res, err := run.Anonymise(r.Context(), req, files)
 	if err != nil {
 		rest.RespondServiceError(w, err)
 		return

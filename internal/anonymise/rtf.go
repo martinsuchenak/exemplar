@@ -179,6 +179,11 @@ var rtfTextDests = words(
 	"fldrslt", "annotation", "shptxt", "shprslt", "docvar", "nonesttables", "xe", "tc", "txe",
 )
 
+// rtfFormText are the parts of a legacy form field (\*\formfield) that
+// hold text: its default text, status bar and help text, and the entries
+// of a drop-down list.
+var rtfFormText = words("ffdeftext", "ffstattext", "ffhelptext", "ffl")
+
 // rtfInfo are the fields of \info that hold text, with what they are.
 var rtfInfo = map[string]string{
 	"title": "", "subject": "", "keywords": "", "doccomm": "", "category": "",
@@ -506,6 +511,10 @@ func (d *rtfDoc) enter(g *rtfGroup, stack []*rtfGroup, t *rtfTok, i int) error {
 	case w == "datastore":
 		g.mode, g.sink = rtfModeDrop, nil
 		d.drops[g.open] = "data store"
+	case w == "datafield":
+		// A form field's binary data, its default text among it.
+		g.mode, g.sink = rtfModeDrop, nil
+		d.drops[g.open] = "form field data"
 	case parent == rtfModeInfo:
 		if entity, ok := rtfInfo[w]; ok {
 			field(entity, nil)
@@ -535,11 +544,11 @@ func (d *rtfDoc) enter(g *rtfGroup, stack []*rtfGroup, t *rtfTok, i int) error {
 		g.sink.initials = true
 	case w == "template":
 		field("", fakeTarget)
-	case w == "staticval":
+	case w == "staticval" || rtfFormText[w]:
 		field("", nil)
 	case w == "sp":
 		g.mode, g.sink = rtfModeSP, nil
-	case w == "shp" || w == "shpgrp" || w == "shpinst" || w == "object" || w == "result" || w == "userprops" || w == "shppict" || w == "nonshppict":
+	case w == "shp" || w == "shpgrp" || w == "shpinst" || w == "object" || w == "result" || w == "userprops" || w == "shppict" || w == "nonshppict" || w == "formfield":
 		g.mode, g.sink = rtfModeContainer, nil
 	case rtfTextDests[w]:
 		g.mode, g.sink = rtfModeText, &rtfSink{}
@@ -656,22 +665,35 @@ func (d *rtfDoc) rewrite(ctx context.Context, e *Engine, rep *replacer, out *Out
 
 	// Pictures: a PNG or JPEG is replaced by a generated one; any other
 	// picture, and embedded object data and the data store, are dropped.
-	people := e.fillerPeople()
-	inDrop := func(tok int) bool {
-		for open := range d.drops {
-			if tok > open && tok < closeIndex(d.toks, open) {
-				return true
-			}
-		}
-		return false
+	// A picture inside a dropped group goes with it. Pictures do not nest
+	// in pictures, so the groups dropped so far are all the ones it can
+	// sit in.
+	closeOf := rtfClosers(d.toks)
+	inDrop := make([]bool, len(d.toks))
+	opens := make([]int, 0, len(d.drops))
+	for open := range d.drops {
+		opens = append(opens, open)
 	}
+	sort.Ints(opens)
+	var dropped []int // outermost dropped groups, in order
+	for _, open := range opens {
+		if inDrop[open] {
+			continue
+		}
+		dropped = append(dropped, open)
+		for t := open + 1; t < closeOf[open]; t++ {
+			inDrop[t] = true
+		}
+	}
+	people := e.fillerPeople()
 	for n, p := range d.picts {
-		if inDrop(p.open) {
+		if inDrop[p.open] {
 			continue
 		}
 		mediaType := map[string]string{"pngblip": "image/png", "jpegblip": "image/jpeg"}[p.blip]
 		if mediaType == "" || p.bin || len(p.data) == 0 {
 			d.drops[p.open] = fmt.Sprintf("picture %d (%s)", n+1, strings.TrimSuffix(orDefault(p.blip, "unknown"), "blip"))
+			dropped = append(dropped, p.open)
 			continue
 		}
 		size := 0
@@ -688,26 +710,25 @@ func (d *rtfDoc) rewrite(ctx context.Context, e *Engine, rep *replacer, out *Out
 		}
 		out.Attachments++
 	}
-	var dropped []int
-	for open := range d.drops {
-		if !inDrop(open) {
-			dropped = append(dropped, open)
-		}
-	}
 	sort.Ints(dropped)
-	for _, open := range dropped {
-		// Edits inside a dropped group give way to it.
-		start, end := d.toks[open].start, d.toks[closeIndex(d.toks, open)].end
-		kept := edits[:0]
-		for _, ed := range edits {
-			if ed.start >= end || ed.end <= start {
-				kept = append(kept, ed)
-			}
-		}
-		edits = append(kept, xmlEdit{start: start, end: end})
+	// Edits inside a dropped group give way to it.
+	removed := make([]xmlEdit, len(dropped))
+	for k, open := range dropped {
+		removed[k] = xmlEdit{start: d.toks[open].start, end: d.toks[closeOf[open]].end}
 		out.DroppedParts = append(out.DroppedParts, d.drops[open])
 	}
-	return splice(d.data, edits)
+	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+	kept, k := edits[:0], 0
+	for _, ed := range edits {
+		for k < len(removed) && removed[k].end <= ed.start {
+			k++
+		}
+		if k < len(removed) && ed.end > removed[k].start {
+			continue
+		}
+		kept = append(kept, ed)
+	}
+	return splice(d.data, append(kept, removed...))
 }
 
 // rtfEncode writes text as RTF: printable ASCII as it is, with \, { and }
@@ -810,6 +831,24 @@ func isPict(toks []rtfTok, open int) bool {
 		i++
 	}
 	return i < len(toks) && toks[i].kind == rtfWord && toks[i].word == "pict"
+}
+
+// rtfClosers returns, for each { token, the index of the } that closes it.
+func rtfClosers(toks []rtfTok) []int {
+	out := make([]int, len(toks))
+	var open []int
+	for i, t := range toks {
+		switch t.kind {
+		case rtfOpen:
+			open = append(open, i)
+		case rtfClose:
+			if len(open) > 0 {
+				out[open[len(open)-1]] = i
+				open = open[:len(open)-1]
+			}
+		}
+	}
+	return out
 }
 
 // closeIndex returns the index of the } that closes the { at open.

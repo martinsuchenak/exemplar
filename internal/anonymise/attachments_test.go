@@ -14,7 +14,8 @@ import (
 // attachmentMail carries every kind of attachment: ones the anonymiser reads
 // (a CSV in Windows-1252, a DOCX with macros, an RTF, unnamed JSON) and
 // ones it does not (a PNG, a PDF, an .eml sent as a file), plus a broken
-// DOCX. Wendy Moss is named only in the CSV's Name column and the body.
+// DOCX, and the DOCX again without a name. Wendy Moss is named only in the
+// CSV's Name column and the body.
 func attachmentMail(t *testing.T) string {
 	docx := buildDOCX(t, [][2]string{
 		{"[Content_Types].xml", xmlH + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`},
@@ -37,6 +38,8 @@ func attachmentMail(t *testing.T) string {
 			b64(`{\rtf1\ansi\pard Dear Tom Baker, from Sarah Lane, 0412 345 678.\par}`)) +
 		part("Content-Type: application/json\r\nContent-Disposition: attachment\r\nContent-Transfer-Encoding: base64",
 			b64(`{"name": "Wendy Moss", "phone": "0412 345 678"}`)) +
+		part("Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\nContent-Disposition: attachment\r\nContent-Transfer-Encoding: base64",
+			base64.StdEncoding.EncodeToString(docx)) +
 		part("Content-Type: image/png; name=\"Sarah.png\"\r\nContent-Disposition: attachment; filename=\"Sarah.png\"\r\nContent-Transfer-Encoding: base64",
 			b64("\x89PNG real photo")) +
 		part("Content-Type: application/pdf; name=\"Sarah.pdf\"\r\nContent-Disposition: attachment; filename=\"Sarah.pdf\"\r\nContent-Transfer-Encoding: base64",
@@ -82,7 +85,7 @@ func anonymiseWithAttachments(t *testing.T, mode string) (*Output, map[string][]
 
 func TestAttachmentsAreReplacedByDefault(t *testing.T) {
 	out, parts := anonymiseWithAttachments(t, AttachmentsReplace)
-	if out.AttachmentsRewritten != 0 || out.Attachments != 8 || len(out.DroppedParts) != 0 {
+	if out.AttachmentsRewritten != 0 || out.Attachments != 9 || len(out.DroppedParts) != 0 {
 		t.Errorf("rewritten %d, replaced %d, dropped %v", out.AttachmentsRewritten, out.Attachments, out.DroppedParts)
 	}
 	for name, data := range parts {
@@ -94,9 +97,9 @@ func TestAttachmentsAreReplacedByDefault(t *testing.T) {
 
 func TestAttachmentsAreRewrittenInPlace(t *testing.T) {
 	out, parts := anonymiseWithAttachments(t, AttachmentsAnonymise)
-	// The CSV, DOCX, RTF and JSON are rewritten; the PNG, PDF, the .eml
-	// sent as a file and the broken DOCX are replaced.
-	if out.AttachmentsRewritten != 4 || out.Attachments != 4 {
+	// The CSV, both DOCX, RTF and JSON are rewritten; the PNG, PDF, the
+	// .eml sent as a file and the broken DOCX are replaced.
+	if out.AttachmentsRewritten != 5 || out.Attachments != 4 {
 		t.Errorf("rewritten %d, replaced %d", out.AttachmentsRewritten, out.Attachments)
 	}
 	all := ""
@@ -141,8 +144,10 @@ func TestAttachmentsAreRewrittenInPlace(t *testing.T) {
 	if !strings.Contains(string(parts["application/json"]), `"phone": "0`) {
 		t.Errorf("unnamed JSON = %q", parts["application/json"])
 	}
-	// What the DOCX dropped is listed under the attachment's fake name.
-	if len(out.DroppedParts) != 1 || !strings.HasPrefix(out.DroppedParts[0], "attachment-") || !strings.HasSuffix(out.DroppedParts[0], ".docx: word/vbaProject.bin") {
+	// What a DOCX dropped is listed under the attachment's fake name, or
+	// its format when it has none.
+	if len(out.DroppedParts) != 2 || !strings.HasPrefix(out.DroppedParts[0], "attachment-") || !strings.HasSuffix(out.DroppedParts[0], ".docx: word/vbaProject.bin") ||
+		out.DroppedParts[1] != "attachment (docx): word/vbaProject.bin" {
 		t.Errorf("dropped = %v", out.DroppedParts)
 	}
 	// The same email gives the same bytes again.

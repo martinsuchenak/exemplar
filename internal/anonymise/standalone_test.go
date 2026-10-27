@@ -1,7 +1,9 @@
 package anonymise
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/martinsuchenak/exemplar/internal/synth"
@@ -30,21 +32,49 @@ func TestMemoryRegistry(t *testing.T) {
 }
 
 func TestPatternsOnlyFindsKnownNames(t *testing.T) {
-	spans, err := PatternsOnly{}.Detect(ctx, "Ann Lee met ann lee; Annabel did not. Lee.", []string{"Ann Lee", "Lee", ""}, 0)
-	if err != nil {
-		t.Fatal(err)
+	find := func(text string, names ...string) []string {
+		t.Helper()
+		spans, err := PatternsOnly{}.Detect(ctx, text, names, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range spans {
+			got = append(got, text[s.Start:s.End])
+			if s.Entity != EntityPerson {
+				t.Errorf("entity = %s", s.Entity)
+			}
+		}
+		return got
 	}
-	var got []string
-	text := "Ann Lee met ann lee; Annabel did not. Lee."
-	for _, s := range spans {
-		got = append(got, text[s.Start:s.End])
-		if s.Entity != EntityPerson {
-			t.Errorf("entity = %s", s.Entity)
+	for _, c := range []struct {
+		text  string
+		names []string
+		want  []string
+	}{
+		// Whole words in any case: "Annabel" is not Ann; the longer name wins.
+		{"Ann Lee met ann lee; Annabel did not. Lee.", []string{"Lee", "Ann Lee", ""}, []string{"Ann Lee", "ann lee", "Lee"}},
+		// Words end at letters of any script, not only ASCII ones.
+		{"José, Zoë and Ólafur; Josée and xZoë are others.", []string{"José", "Zoë", "Ólafur"}, []string{"José", "Zoë", "Ólafur"}},
+		// A longer name that runs into a word gives way to a shorter one.
+		{"Jo Annex", []string{"Jo", "Jo Ann"}, []string{"Jo"}},
+		{"ann_lee 2Ann Ann2 (Ann)", []string{"Ann"}, []string{"Ann"}},
+	} {
+		if got := find(c.text, c.names...); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%q: spans = %q, want %q", c.text, got, c.want)
 		}
 	}
-	// Whole words in any case: "Annabel" is not Ann.
-	if want := []string{"Ann Lee", "ann lee", "Lee", "lee", "Lee"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("spans = %q, want %q", got, want)
+
+	// More names than fit one pattern are all found.
+	var names []string
+	var text strings.Builder
+	for i := range 3*patternsBatch + 7 {
+		n := fmt.Sprintf("Name%c%c Person", 'A'+rune(i/26%26), 'a'+rune(i%26)) + strings.Repeat("x", i/676)
+		names = append(names, n)
+		text.WriteString(n + ". ")
+	}
+	if got := find(text.String(), names...); len(got) != len(names) {
+		t.Errorf("found %d of %d names", len(got), len(names))
 	}
 }
 

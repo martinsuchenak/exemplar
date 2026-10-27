@@ -279,6 +279,47 @@ func TestOneRunAtATimePerKey(t *testing.T) {
 	}
 }
 
+// A run can be claimed before its files are read (the handler does, before
+// reading the upload), and only one at a time per key.
+func TestReserveClaimsTheRun(t *testing.T) {
+	a := newApp(t, false, 0)
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	run, err := a.Scrub.Reserve(alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Scrub.Reserve(alice); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("second reserve err = %v", err)
+	}
+	if _, err := a.Scrub.Anonymise(ctx, alice, scrub.Request{}, files()[1:2]); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("anonymise while reserved err = %v", err)
+	}
+	res, err := run.Anonymise(ctx, scrub.Request{}, files()[1:2])
+	if err != nil || len(res.Files) != 1 || res.Files[0].Error != "" {
+		t.Fatalf("reserved run = %+v, %v", res, err)
+	}
+	run.Close()
+	run.Close() // closing twice is harmless
+	if _, err := run.Anonymise(ctx, scrub.Request{}, files()[1:2]); err == nil {
+		t.Error("a closed run ran")
+	}
+	next, err := a.Scrub.Reserve(alice)
+	if err != nil {
+		t.Fatalf("after close: %v", err)
+	}
+	next.Close()
+
+	// What needs no files is checked when reserving.
+	if _, err := newApp(t, false, 0).Scrub.Reserve(principal.Principal{}); !errors.Is(err, apperr.ErrForbidden) {
+		t.Errorf("no read scope err = %v", err)
+	}
+	unconfigured := testutil.NewAppWith(t, func(*app.Config) {})
+	if _, err := unconfigured.Scrub.Reserve(testutil.Admin(t, unconfigured)); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("unconfigured err = %v", err)
+	}
+}
+
 func TestLocalMode(t *testing.T) {
 	local, err := app.LocalAnonymiser(app.LocalConfig{Detector: anonymisetest.Detector{Names: []string{"Priya", "Tom"}}})
 	if err != nil {

@@ -228,7 +228,11 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		if err != nil {
 			return err
 		}
-		p.SetText(rep.Apply(text))
+		if mt == "text/html" {
+			p.SetText(applyHTML(text, rep))
+		} else {
+			p.SetText(rep.Apply(text))
+		}
 	default:
 		if e.rewriteAttachment(ctx, p, mt, name, out) {
 			return nil
@@ -333,8 +337,14 @@ func (e *Engine) rewriteAttachment(ctx context.Context, p *mimetree.Part, mt, na
 			out.Entities[orig] = entity
 		}
 	}
+	// Listed under the attachment's fake name, or its format when it has
+	// no name (or one with a comma, which separates the list in a header).
+	label := filename(p)
+	if label == "" || strings.Contains(label, ",") {
+		label = "attachment (" + string(def.format) + ")"
+	}
 	for _, part := range att.DroppedParts {
-		out.DroppedParts = append(out.DroppedParts, filename(p)+": "+part)
+		out.DroppedParts = append(out.DroppedParts, label+": "+part)
 	}
 	out.AttachmentsRewritten++
 	return true

@@ -77,7 +77,7 @@ JPEG files are padded with a metadata chunk, so they still decode.
 ## What is kept
 
 - MIME structure, transfer encodings and charsets (non-UTF-8 text is converted to UTF-8 and re-encoded as quoted-printable). Multipart boundaries are the sender's text, so each is replaced with a keyed one (`=_<hex>`).
-- HTML markup; only text and attribute values are replaced.
+- HTML markup; only text and attribute values are replaced. Text is matched as it reads, so a name written with character references (`Jos&eacute;`, `jane&#64;…`) is found and replaced; other references stay as written.
 - Dates, subjects' structure (`Re:`, `Fwd:`), greetings and sign-offs (the profile's stop words).
 - Public mail providers' domains and system senders such as `noreply@` (the profile's keep lists).
 - Attached emails (`message/rfc822`) are anonymised recursively; delivery reports keep their fields with addresses replaced.
@@ -160,7 +160,7 @@ back broken.
 | Markdown | `.md`, `.markdown` | The whole file: text, code, front matter, link and image targets (URLs and `mailto:` addresses) | The markup |
 | CSV, TSV | `.csv`, `.tsv` | Each row, header row included | Every cell that does not change, with its quoting, and the line endings. A changed cell keeps its quotes, or gains them if the fake needs them |
 | JSON, JSON Lines | `.json`, `.jsonl`, `.ndjson` | Every string value | Keys, key order, spacing, numbers, booleans and the escaping of unchanged values |
-| HTML | `.html`, `.htm` | Visible text, `<title>`, `<meta>` content, comments, and the `alt`, `title`, `href`, `src`, `placeholder`, `aria-label` and `value` attributes | Markup, scripts and styles (a value found elsewhere is still replaced in them) |
+| HTML | `.html`, `.htm` | Visible text, `<title>`, `<meta>` content, comments, and the `alt`, `title`, `href`, `src`, `placeholder`, `aria-label` and `value` attributes, character references decoded | Markup, scripts and styles (a value found elsewhere is still replaced in them), and references outside replaced text |
 | DOCX | `.docx` | See [DOCX](#docx) | See [DOCX](#docx) |
 | RTF | `.rtf` | See [RTF](#rtf) | See [RTF](#rtf) |
 | Twig, Jinja | `.twig`, `.j2`, `.jinja`, `.jinja2` | Literal text (as HTML for `page.html.twig`), comments, and quoted strings inside tags | Every tag as written outside its strings: variables, filters and keywords are code, so `{{ customer.name }}` is untouched while `{% set signer = "Jane Doe" %}` is not. `{% verbatim %}` and `{% raw %}` bodies are literal text |
@@ -192,17 +192,17 @@ without personal data stay exactly as they were.
 
 | Part | What is personal there | Treatment |
 |------|------------------------|-----------|
-| `word/document.xml`, `header*.xml`, `footer*.xml`, `footnotes.xml`, `endnotes.xml`, `comments.xml`, `glossary/document.xml` | Text (`w:t`), deleted text (`w:delText`), text in shapes and text boxes (`a:t`), field instructions (`HYPERLINK "mailto:…"`), alt text (`descr`, `title`, `alt`), link tooltips, and the `w:author` of tracked changes and comments | Rewritten; `w:initials` become the fake author's |
+| `word/document.xml`, `header*.xml`, `footer*.xml`, `footnotes.xml`, `endnotes.xml`, `comments.xml`, `glossary/document.xml` | Text (`w:t`), deleted text (`w:delText`), text in shapes and text boxes (`a:t`), equations (`m:t`), field instructions kept or deleted (`HYPERLINK "mailto:…"`), alt text (`descr`, `title`, `alt`), a picture's name (Word keeps the inserted file's name there), link tooltips, legacy form fields' default, help and status text and list entries, content controls' list items, and the `w:author` of tracked changes and comments | Rewritten; a picture name that is a file name becomes `picture-<hex>` with its extension; `w:initials` become the fake author's |
 | `word/people.xml` | Reviewers and their account ids (`S::jane.doe@…::<guid>`) | Names rewritten; addresses and hex ids in account ids faked |
 | `word/settings.xml` | Document variables; the mail-merge connection string and query | Variables rewritten; mail-merge sources replaced whole |
 | `docProps/core.xml`, `app.xml`, `custom.xml` | Author, last modified by, title, subject, keywords, description; company, manager, template, hyperlink base, part titles; custom property values | Rewritten; dates and counts kept |
 | `word/charts/chart*.xml`, `word/diagrams/data*.xml`, `drawing*.xml` | Chart titles, series and category names; SmartArt text | Rewritten; numbers kept |
 | `customXml/item*.xml` | Anything (SharePoint metadata names people) | Every text value rewritten |
 | Relationships (`*.rels`) | External links, `mailto:` addresses, the attached template's path (`C:\Users\jdoe\…`) | URLs and addresses faked; file paths become `file:///anonymised/<hex>` with their extension |
-| `word/media/*`, `docProps/thumbnail.*` | Photos, signatures, scans, a picture of the first page | Replaced with generated images of the same format; EMF, WMF, BMP and TIFF with a PNG, the relationship and content type following |
+| `word/media/*`, `docProps/thumbnail.*` | Photos, signatures, scans, a picture of the first page | Replaced with generated images of the same format; EMF, WMF, BMP and TIFF with a PNG, the relationship and content type following. An image not named as Word names them (`image1.png`) is renamed `image-<hex>` |
 | `word/embeddings/*` | Embedded workbooks, documents, OLE objects | Replaced like email attachments, under a keyed name (`embedding-<hex>.xlsx`); one exemplar cannot generate becomes a placeholder, so the document opens but the object does not |
 | Styles, numbering, fonts, theme, web settings, custom XML properties, chart styles and colours, diagram layouts | Nothing personal | Kept byte for byte |
-| Anything else (macros, add-ins, ink, ActiveX, Apple's `docProps/meta.xml`…) | Unknown | Dropped and listed (`dropped_parts`), with its relationships and content type |
+| Anything else (macros, add-ins, ink, ActiveX, Apple's `docProps/meta.xml`…) | Unknown | Dropped and listed (`dropped_parts`), with its relationships and content type. The parts Office writes are listed by name (`word/vbaProject.bin`); any other by a keyed name (`part-<hex>.bin`), since the sender chose its name |
 
 **Text split across runs.** Word splits text wherever formatting, a
 spell-check mark or a revision changes, so "Sarah Lane" can be `Sa` + `rah La`
@@ -232,8 +232,9 @@ included, stays as it was.
 - **Read as text:** the body, footnotes, headers and footers, field results
   and instructions (`HYPERLINK "mailto:…"`), comments (`\annotation`), shape
   text and the shape properties that are text (`wzDescription`,
-  `gtextUNICODE`…), index entries, document variables and user property
-  values.
+  `gtextUNICODE`…), index entries, document variables, user property
+  values, and legacy form fields' default, status and help text and list
+  entries (`\*\ffdeftext`, `\*\ffstattext`, `\*\ffhelptext`, `\*\ffl`).
 - **Read as people:** the `\info` group's `\author`, `\operator` and
   `\manager`, comment authors (`\atnauthor`) and the revision table's authors;
   `\company` is a company, and a comment's `\atnid` initials follow its fake
@@ -243,9 +244,10 @@ included, stays as it was.
 - **Not read:** the font, colour, style and list tables, the generator, and
   any other `\*` destination exemplar does not know.
 - **Pictures:** a PNG or JPEG is replaced by a generated one; any other
-  picture (EMF, WMF, a bitmap), embedded object data (`\*\objdata`) and the
-  data store (`\*\datastore`, which can hold SharePoint metadata) are dropped
-  and listed in `dropped_parts`. An embedded object keeps its result picture,
+  picture (EMF, WMF, a bitmap), embedded object data (`\*\objdata`), the
+  data store (`\*\datastore`, which can hold SharePoint metadata) and form
+  field data (`\*\datafield`, which holds a field's default text again) are
+  dropped and listed in `dropped_parts`. An embedded object keeps its result picture,
   so the document shows it; the object itself no longer opens.
 - **Escapes:** `\'xx` is decoded as Windows-1252 and `\uN` as Unicode, its
   fallback characters skipped (`\ucN`), surrogate pairs joined. A fake is
@@ -290,7 +292,7 @@ It runs either way:
 | Key | A random key per request, never stored | `--anon-key-file` (or `EXEMPLAR_ANON_KEY`) if given, otherwise a random key per run |
 | Registry | In memory for the request, unless an admin links (below) | In memory |
 | Profiles | The server's | Built-in, plus `--anon-profiles-dir` |
-| Limits | `storage.max_ingest_mb` and 1000 files per run; one run at a time per key (`429` otherwise) | 1000 files |
+| Limits | `storage.max_ingest_mb` and 1000 files per run; one run at a time per key (`429` otherwise, before the upload is read) | 1000 files |
 | Audit | One `file.anonymise` event, counts only | None |
 
 **Unlinked fakes.** If the tool used the server's key and registry, anyone
@@ -319,8 +321,10 @@ back. For a report from the server, use `ingest --dry-run`.
 
 **Without Presidio.** `--patterns-only` still finds addresses, URLs, phone
 numbers, ABNs, money and street addresses, names from email headers, and
-values under name-like CSV columns or JSON keys. It misses names in prose,
-and says so in its help.
+values under name-like CSV columns or JSON keys; those names are then found
+anywhere as whole words, in any case and any script (`José`, `Zoë`), the
+longest first. It misses names in prose that nothing else names, and says
+so in its help.
 
 Over HTTP the tool is `POST /api/v1/anonymise` (see [api.md](api.md)); it is
 not an MCP tool, since real data would pass through an agent before it is
@@ -421,7 +425,8 @@ A rewritten attachment is read with the email's people already known, and
 its own names are learned while the batch is read, so a person named only
 in an attachment is replaced in the email's body too. Its replacements
 appear in the email's dry-run report, and what its handler dropped (a DOCX's
-macros) is listed in `dropped_parts` as `<attachment>: <part>`. Results
+macros) is listed in `dropped_parts` as `<attachment>: <part>`, with
+`attachment (<format>)` for one without a name. Results
 count replaced attachments in `attachments` and rewritten ones in
 `attachments_rewritten`. A rewritten attachment keeps its content, so review
 it as you review the email.

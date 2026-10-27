@@ -144,6 +144,33 @@ func TestAnonymiseRoute(t *testing.T) {
 	if w := post("/api/v1/anonymise", reader.Secret, "multipart/form-data", strings.NewReader("x")); w.Code != http.StatusBadRequest {
 		t.Errorf("multipart without a boundary = %d", w.Code)
 	}
+
+	// While the key has a run in progress, another upload is refused
+	// before any of it is read.
+	run, err := a.Scrub.Reserve(testutil.Authenticate(t, a, reader.Secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	counted := &countingReader{r: strings.NewReader(md)}
+	if w := post("/api/v1/anonymise?name=a.md", reader.Secret, "text/markdown", counted); w.Code != http.StatusTooManyRequests || counted.n != 0 {
+		t.Errorf("busy = %d, %d bytes read", w.Code, counted.n)
+	}
+	run.Close()
+	if w := post("/api/v1/anonymise?name=a.md", reader.Secret, "text/markdown", strings.NewReader(md)); w.Code != http.StatusOK {
+		t.Errorf("after the run = %d", w.Code)
+	}
+}
+
+// countingReader counts the bytes read from it.
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
 }
 
 func TestReadZipRefusesUnsafeNames(t *testing.T) {

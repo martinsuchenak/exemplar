@@ -6,6 +6,7 @@ package scrub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -113,6 +114,26 @@ func (s *Service) MaxBytes() int64 {
 // unless an admin asks for linked fakes. One file failing does not stop the
 // others; its result carries the error. Nothing is stored or logged.
 func (s *Service) Anonymise(ctx context.Context, actor principal.Principal, req Request, files []anonymise.File) (*Result, error) {
+	run, err := s.Reserve(actor)
+	if err != nil {
+		return nil, err
+	}
+	defer run.Close()
+	return run.Anonymise(ctx, req, files)
+}
+
+// Run is a key's one anonymise run, claimed before its files are read.
+type Run struct {
+	s      *Service
+	actor  principal.Principal
+	closed bool
+}
+
+// Reserve claims the caller's run before its upload is read, so that one
+// key cannot hold several uploads in memory at once: a key with a run in
+// progress gets apperr.ErrBusy. It checks what can be checked without the
+// files. Close the run when done.
+func (s *Service) Reserve(actor principal.Principal) (*Run, error) {
 	if !s.local && !actor.CanRead() {
 		return nil, fmt.Errorf("%w: anonymising needs a key that can read", apperr.ErrForbidden)
 	}
@@ -121,6 +142,30 @@ func (s *Service) Anonymise(ctx context.Context, actor principal.Principal, req 
 			return nil, fmt.Errorf("%w: no detector: give --presidio-url, or --patterns-only to run without Presidio", apperr.ErrInvalid)
 		}
 		return nil, fmt.Errorf("%w: the anonymiser is not configured on this server (anonymiser.presidio_url)", apperr.ErrInvalid)
+	}
+	if !s.local && !s.start(actor.KeyID) {
+		return nil, fmt.Errorf("%w: this key already has an anonymise run in progress", apperr.ErrBusy)
+	}
+	return &Run{s: s, actor: actor}, nil
+}
+
+// Close ends the run, letting the key start another. It may be called more
+// than once.
+func (r *Run) Close() {
+	if r.closed {
+		return
+	}
+	r.closed = true
+	if !r.s.local {
+		r.s.done(r.actor.KeyID)
+	}
+}
+
+// Anonymise runs the reserved run; see Service.Anonymise.
+func (r *Run) Anonymise(ctx context.Context, req Request, files []anonymise.File) (*Result, error) {
+	s, actor := r.s, r.actor
+	if r.closed {
+		return nil, errors.New("the anonymise run is closed")
 	}
 	if req.Profile == "" {
 		req.Profile = DefaultProfile
@@ -153,12 +198,6 @@ func (s *Service) Anonymise(ctx context.Context, actor principal.Principal, req 
 		case !s.cfg.Key.Valid():
 			return nil, fmt.Errorf("%w: linked fakes need the server's anonymisation key, and none is configured", apperr.ErrInvalid)
 		}
-	}
-	if !s.local {
-		if !s.start(actor.KeyID) {
-			return nil, fmt.Errorf("%w: this key already has an anonymise run in progress", apperr.ErrBusy)
-		}
-		defer s.done(actor.KeyID)
 	}
 
 	engine, err := s.engine(actor, req, profile)

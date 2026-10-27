@@ -86,7 +86,8 @@ type Output struct {
 	DroppedHeaders []string
 	// DroppedParts are the parts of a document removed rather than
 	// rewritten, because no rule knows what they hold (a DOCX's macros or
-	// add-ins). Part names are not original data.
+	// add-ins). They are listed by the names Office gives them, or by keyed
+	// names, never by a name the sender chose.
 	DroppedParts []string
 	// Attachments counts attachments replaced by generated files, and
 	// AttachmentsRewritten those rewritten in place (Profile.Attachments).

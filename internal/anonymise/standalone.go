@@ -3,7 +3,11 @@ package anonymise
 import (
 	"context"
 	"regexp"
+	"sort"
+	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/martinsuchenak/exemplar/internal/synth"
 )
@@ -62,26 +66,67 @@ func (m *MemoryRegistry) Person(_ context.Context, hashes []string, p synth.Pers
 
 // PatternsOnly is a Detector for running without Presidio. It finds the
 // names the engine already knows (from email headers, and column or key
-// hints), as whole words; the Go patterns still find addresses, URLs,
-// phone numbers and the rest. Names that appear only in prose are missed.
+// hints), as whole words, in any case; the Go patterns still find
+// addresses, URLs, phone numbers and the rest. Names that appear only in
+// prose are missed.
 type PatternsOnly struct{}
 
-// Detect implements Detector.
+// patternsBatch is how many names go into one pattern.
+const patternsBatch = 500
+
+// Detect implements Detector. The names are matched a batch at a time,
+// longest first, so "Jo Ann" wins over "Jo" where both fit. A whole word
+// is one with no letter, digit or underscore next to it, in any script:
+// "José" ends at the é.
 func (PatternsOnly) Detect(_ context.Context, text string, names []string, _ float64) ([]Span, error) {
-	var spans []Span
+	seen := map[string]bool{}
+	var known []string
 	for _, n := range names {
-		if n == "" {
-			continue
+		if n != "" && !seen[strings.ToLower(n)] {
+			seen[strings.ToLower(n)] = true
+			known = append(known, n)
 		}
-		re, err := regexp.Compile(`(?i)\b` + regexp.QuoteMeta(n) + `\b`)
+	}
+	sort.Slice(known, func(i, j int) bool {
+		if len(known[i]) != len(known[j]) {
+			return len(known[i]) > len(known[j])
+		}
+		return known[i] < known[j]
+	})
+	var spans []Span
+	for len(known) > 0 {
+		batch := known[:min(patternsBatch, len(known))]
+		known = known[len(batch):]
+		quoted := make([]string, len(batch))
+		for i, n := range batch {
+			quoted[i] = regexp.QuoteMeta(n)
+		}
+		// The name, then a character that ends a word, or the end. What
+		// comes before is checked by hand: Go's \b only knows ASCII.
+		re, err := regexp.Compile(`(?i)(` + strings.Join(quoted, "|") + `)(?:[^\p{L}\p{M}\p{N}_]|$)`)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		for _, m := range re.FindAllStringIndex(text, -1) {
-			spans = append(spans, Span{Start: m[0], End: m[1], Entity: EntityPerson})
+		for i := 0; i < len(text); {
+			m := re.FindStringSubmatchIndex(text[i:])
+			if m == nil {
+				break
+			}
+			start, end := i+m[2], i+m[3]
+			if r, _ := utf8.DecodeLastRuneInString(text[:start]); start > 0 && isWordRune(r) {
+				_, size := utf8.DecodeRuneInString(text[start:])
+				i = start + size
+				continue
+			}
+			spans = append(spans, Span{Start: start, End: end, Entity: EntityPerson})
+			i = end
 		}
 	}
 	return spans, nil
+}
+
+func isWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsMark(r) || unicode.IsDigit(r)
 }
 
 // MediaType returns the Content-Type a format is served with.

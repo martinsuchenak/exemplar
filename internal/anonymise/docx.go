@@ -39,6 +39,7 @@ var (
 	nsO   = namespaces("urn:schemas-microsoft-com:office:office")
 	nsPR  = namespaces("http://schemas.openxmlformats.org/package/2006/relationships")
 	nsCT  = namespaces("http://schemas.openxmlformats.org/package/2006/content-types")
+	nsM   = namespaces("http://schemas.openxmlformats.org/officeDocument/2006/math", "http://purl.oclc.org/ooxml/officeDocument/math")
 )
 
 // namespaces returns a set of namespace URIs. Unlike set, it keeps case:
@@ -375,8 +376,10 @@ func (pkg *docxPackage) collectText(p *docxPart, n *xmlNode, stack []xmlName, pa
 		switch {
 		case is(parent, nsW, "t"), is(parent, nsW, "delText"), is(parent, nsA, "t"):
 			kind = parent.local
-		case is(parent, nsW, "instrText"):
-			pkg.addText(p, n, "") // a field's instruction: HYPERLINK "mailto:…"
+		case is(parent, nsW, "instrText"), is(parent, nsW, "delInstrText"), is(parent, nsM, "t"):
+			// A field's instruction (HYPERLINK "mailto:…"), kept or
+			// deleted, or the text of an equation.
+			pkg.addText(p, n, "")
 			return
 		case p.rule == ruleChart && is(parent, nsC, "v"):
 			if _, err := strconv.ParseFloat(strings.TrimSpace(n.text), 64); err != nil {
@@ -442,6 +445,19 @@ func (pkg *docxPackage) collectAttrs(p *docxPart, n *xmlNode, inMailMerge bool) 
 			case is(a.name, nsW, "instr"), is(a.name, nsW, "tooltip"), is(a.name, nsO, "title"),
 				a.name.space == "" && (a.name.local == "descr" || a.name.local == "title" || a.name.local == "alt"):
 				pkg.addAttr(p, a, "")
+			case a.name.space == "" && a.name.local == "name" && (n.name.local == "cNvPr" || n.name.local == "docPr"):
+				// A picture or shape's name: Word keeps an inserted
+				// picture's file name here ("Jane Doe passport.jpg").
+				if fileExt(a.value) != "" {
+					pkg.addFake(p, a, fakePictureName)
+				} else {
+					pkg.addAttr(p, a, "")
+				}
+			case nsW[n.name.space] && is(a.name, nsW, "val") && docxFormValues[n.name.local],
+				is(n.name, nsW, "listItem") && (is(a.name, nsW, "displayText") || is(a.name, nsW, "value")):
+				// A form field's default, help and status text and
+				// drop-down entries, and a content control's list items.
+				pkg.addAttr(p, a, "")
 			}
 		}
 		// Initials follow the fake author, so they never spell the real one.
@@ -483,6 +499,26 @@ func (pkg *docxPackage) collectAttrs(p *docxPart, n *xmlNode, inMailMerge bool) 
 	}
 }
 
+// docxFormValues are the elements of a legacy form field (w:ffData) whose
+// w:val is text.
+var docxFormValues = map[string]bool{"default": true, "helpText": true, "statusText": true, "listEntry": true}
+
+// fileExt returns a file name's lower-cased extension, or "" when it has
+// none or what follows the dot is not an extension.
+func fileExt(v string) string {
+	ext := strings.ToLower(path.Ext(strings.ReplaceAll(v, `\`, "/")))
+	if len(ext) < 2 || len(ext) > 6 || strings.ContainsAny(ext, " ?#&=,") {
+		return ""
+	}
+	return ext
+}
+
+// fakePictureName replaces a picture's file name by a keyed one with its
+// extension.
+func fakePictureName(_ context.Context, e *Engine, v string) (string, error) {
+	return "picture-" + e.key.Hex("file", v, 6) + fileExt(v), nil
+}
+
 // fakeTarget replaces a link or file path outside the document: a URL or
 // address like any other, a path (a template on C:\Users\jdoe\…, a linked
 // file) by a keyed one that keeps its extension.
@@ -496,11 +532,7 @@ func fakeTarget(ctx context.Context, e *Engine, v string) (string, error) {
 	if lower == "" || strings.HasPrefix(lower, "#") {
 		return v, nil // empty, or a place in the document
 	}
-	ext := strings.ToLower(path.Ext(strings.ReplaceAll(v, `\`, "/")))
-	if len(ext) > 6 || strings.ContainsAny(ext, " ?#&=") {
-		ext = ""
-	}
-	return "file:///anonymised/" + e.key.Hex("path", v, 10) + ext, nil
+	return "file:///anonymised/" + e.key.Hex("path", v, 10) + fileExt(v), nil
 }
 
 // mailMergeSources are the mail-merge settings that say where its data is.
@@ -648,14 +680,27 @@ func (pkg *docxPackage) rewrite(ctx context.Context, e *Engine, rep *replacer, o
 		case ruleMedia:
 			out.Attachments++
 			ext := strings.ToLower(path.Ext(p.name))
+			// Word names images image1.png; a name another program kept
+			// from the file ("Jane Doe passport.jpg") is replaced.
+			base := strings.TrimSuffix(p.name, path.Ext(p.name))
+			if !docxMediaName.MatchString(strings.ToLower(path.Base(base))) {
+				base = path.Dir(p.name) + "/image-" + e.key.Hex("file", path.Base(p.name), 6)
+			}
 			switch ext {
-			case ".png", ".jpg", ".jpeg", ".gif":
-				p.data = e.placeholder(mediaTypeOf(ext), path.Base(p.name), len(p.data), people)
-			case ".svg":
-				p.data = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#d0d0d0"/></svg>`)
+			case ".png", ".jpg", ".jpeg", ".gif", ".svg":
+				to := p.name
+				if base != strings.TrimSuffix(p.name, path.Ext(p.name)) {
+					to = pkg.freeName(base, ext, renames)
+					renames[p.name] = docxRename{to: to}
+				}
+				if ext == ".svg" {
+					p.data = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#d0d0d0"/></svg>`)
+				} else {
+					p.data = e.placeholder(mediaTypeOf(ext), path.Base(to), len(p.data), people)
+				}
 			default:
 				// EMF, WMF, BMP, TIFF…: a PNG in its place.
-				to := pkg.freeName(strings.TrimSuffix(p.name, path.Ext(p.name)), ".png", renames)
+				to := pkg.freeName(base, ".png", renames)
 				renames[p.name] = docxRename{to: to, contentType: "image/png"}
 				p.data = e.placeholder("image/png", path.Base(to), len(p.data), people)
 			}
@@ -720,10 +765,27 @@ func (pkg *docxPackage) rewrite(ctx context.Context, e *Engine, rep *replacer, o
 	}
 	for _, p := range pkg.parts {
 		if dropped[p.name] {
-			out.DroppedParts = append(out.DroppedParts, p.name)
+			out.DroppedParts = append(out.DroppedParts, e.droppedPartName(p.name))
 		}
 	}
 	return buf.Bytes(), nil
+}
+
+// docxMediaName matches the names Word gives images and the thumbnail.
+var docxMediaName = regexp.MustCompile(`^(image\d*|thumbnail)$`)
+
+// docxKnownDrops are the parts Office writes that exemplar drops (macros,
+// add-ins, ActiveX controls, ink, printer settings…), listed by name. Any
+// other dropped part is listed by a keyed name: the sender chose it, and it
+// can say anything.
+var docxKnownDrops = regexp.MustCompile(`^(word/(vbaproject\.bin|vbadata\.xml|customizations\.xml|attachedtoolbars\.bin|keymapcustomizations\.xml|activex/activex\d+\.(xml|bin)|ink/ink\d+\.xml|printersettings/printersettings\d+\.bin|webextensions/(webextension\d+|taskpanes)\.xml|_rels/(vbaproject\.bin|customizations\.xml|attachedtoolbars\.bin)\.rels|activex/_rels/activex\d+\.xml\.rels|webextensions/_rels/taskpanes\.xml\.rels)|docprops/meta\.xml|customui/customui(14)?\.xml|customui/_rels/customui(14)?\.xml\.rels)$`)
+
+// droppedPartName is how a dropped part is listed.
+func (e *Engine) droppedPartName(name string) string {
+	if docxKnownDrops.MatchString(strings.ToLower(name)) {
+		return name
+	}
+	return "part-" + e.key.Hex("part", name, 6) + fileExt(name)
 }
 
 // docxTime is every entry's time, so the same input gives the same bytes.
