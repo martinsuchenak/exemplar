@@ -315,6 +315,23 @@ replacement count; `--quiet` drops it. Every run ends with a warning on
 stderr: the output is anonymised but not reviewed. Check it before sharing:
 unlike ingest, nothing here goes through review.
 
+**In a pipeline.** Since stdout carries only the file, the tool sits between
+two commands like any filter:
+
+```bash
+cat export.json | exemplar anonymise - --format json | jq '.customer'
+exemplar anonymise notes.md --quiet | pandoc -f markdown -o notes.pdf
+exemplar anonymise notes.md 2>/dev/null | wc -w   # no summary or warning
+```
+
+A file that cannot be anonymised writes nothing to stdout, and the command
+exits non-zero; with `set -o pipefail` the pipeline fails instead of handing
+the next command an empty input. Nothing is written to stdout either until
+the whole file is anonymised, so a failure never leaves half a file behind.
+Several files cannot share one stream, so they need `--out-dir`; there a
+failed file is left out, the others are written, and the command exits
+non-zero.
+
 **Report.** `--report` prints every replacement, original next to fake, to
 stderr. It works with `--local` only: the server never sends original data
 back. For a report from the server, use `ingest --dry-run`.
@@ -329,6 +346,23 @@ so in its help.
 Over HTTP the tool is `POST /api/v1/anonymise` (see [api.md](api.md)); it is
 not an MCP tool, since real data would pass through an agent before it is
 anonymised.
+
+**From an AI agent.** An agent that runs shell commands can use the CLI, and
+[`skills/exemplar-anonymise/SKILL.md`](../skills/exemplar-anonymise/SKILL.md)
+tells it how to do so safely: pass the files to exemplar by path or pipe and
+never read the originals, read only the output, never use `--report` or
+`ingest --dry-run`, keep the output local until a person has reviewed it,
+and take the API key from the environment. It is a skill for Claude Code
+(and other agents that read `SKILL.md`); install it by copying or linking
+the folder into `~/.claude/skills/` for yourself, or into a project's
+`.claude/skills/`:
+
+```bash
+ln -s "$PWD/skills/exemplar-anonymise" ~/.claude/skills/exemplar-anonymise
+```
+
+The skill describes the CLI's flags and output, so a change to either
+updates it too.
 
 ## Consistency and the key
 

@@ -52,6 +52,9 @@ skip it.
   error kind a caller can see.
 - Every change is documented: package and exported-symbol comments in code, and
   the matching page in `docs/` (architecture, security, data model, CLI, API).
+- A change to the `anonymise` command's flags, output or rules updates
+  [`skills/exemplar-anonymise/SKILL.md`](../skills/exemplar-anonymise/SKILL.md)
+  too: users install it, and agents follow it as written.
 - `task check` passes before committing.
 
 ## Writing tests

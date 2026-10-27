@@ -285,7 +285,10 @@ there under their fake names, as one batch sharing fakes. `-` reads stdin,
 with `--format` (`md`, `csv`, `json`, …) or `--name` to say what it is.
 
 Stdout carries only the file; a per-file summary (`--quiet` drops it) and a
-warning that the output is not reviewed go to stderr. `--report`, with
+warning that the output is not reviewed go to stderr, so the command pipes
+cleanly into the next one (`… | exemplar anonymise - --format json | jq .`).
+A file that fails writes nothing to stdout and makes the command exit
+non-zero. `--report`, with
 `--local` only, prints every replacement with its original on stderr.
 `--local` takes the anonymiser flags `serve` takes (`--presidio-url`,
 `--anon-key-file`, `--anon-profiles-dir`), plus `--patterns-only` to run
