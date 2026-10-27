@@ -128,8 +128,10 @@ Only admin keys can read the log.
 ## MCP
 
 The MCP server uses the same keys and the same services, so an agent can see
-exactly what its key can see over REST. Its tools only read. Give agents a
-read-only key. Reading real-derived content through `get_fixture` is
+what its key can see over REST, except quarantine: the endpoint marks every
+request `NoQuarantine`, and the dataset service then hides quarantine even
+from an admin key, so agents never read unreviewed real-derived data. Its
+tools only read. Give agents a read-only key. Reading real-derived content through `get_fixture` is
 audit-logged like a REST download. Details in [mcp.md](mcp.md).
 
 ## SOC 2 good practice

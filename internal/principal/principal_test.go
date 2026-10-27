@@ -37,6 +37,14 @@ func TestPermissions(t *testing.T) {
 			if got := tt.p.Has(ScopeAdmin); got != tt.hasAdminScope {
 				t.Errorf("Has(admin) = %v, want %v", got, tt.hasAdminScope)
 			}
+			if got := tt.p.CanReadQuarantine(); got != tt.admin {
+				t.Errorf("CanReadQuarantine = %v, want %v", got, tt.admin)
+			}
+			hidden := tt.p
+			hidden.NoQuarantine = true
+			if hidden.CanReadQuarantine() {
+				t.Error("CanReadQuarantine with NoQuarantine")
+			}
 		})
 	}
 }

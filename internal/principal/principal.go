@@ -44,6 +44,11 @@ type Principal struct {
 	Role        Role    `json:"role"`
 	KeyID       string  `json:"key_id"`
 	Scopes      []Scope `json:"scopes"`
+	// NoQuarantine keeps quarantine datasets and their fixtures from this
+	// request, whatever the key may see. The entry point sets it, not the
+	// key: the MCP endpoint does, so agents read only reviewed data that has
+	// been promoted out of quarantine.
+	NoQuarantine bool `json:"-"`
 }
 
 // Has reports whether the key carries scope s itself.
@@ -65,6 +70,12 @@ func (p Principal) CanWrite() bool {
 // an admin's everyday read/write key cannot approve or manage accounts.
 func (p Principal) IsAdmin() bool {
 	return p.Role == RoleAdmin && p.Has(ScopeAdmin)
+}
+
+// CanReadQuarantine reports whether the request may read quarantine: an
+// admin, through an entry point that serves it.
+func (p Principal) CanReadQuarantine() bool {
+	return p.IsAdmin() && !p.NoQuarantine
 }
 
 // WithContext returns ctx carrying p.

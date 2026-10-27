@@ -2,8 +2,8 @@
 // listener as the REST API. Tools register themselves in init and,
 // like every entry point, call services rather than storage. Every request
 // needs an API key (Authorization: Bearer exm_… or X-API-Key), and the tools
-// act as that key, so MCP sees exactly what the key may see over REST.
-// The tools are read-only.
+// act as that key, so MCP sees what the key may see over REST, except
+// quarantine, which is never served here. The tools are read-only.
 package mcp
 
 import (
@@ -43,10 +43,23 @@ func NewServer(a *app.App) *mcplib.Server {
 	return server
 }
 
-// Handler serves the MCP endpoint behind API key authentication.
+// Handler serves the MCP endpoint behind API key authentication. Every
+// request is marked NoQuarantine, so the services keep quarantine from
+// agents even with an admin key.
 func Handler(a *app.App) http.Handler {
 	server := NewServer(a)
-	return auth.APIKeyMiddleware(a.Accounts)(http.HandlerFunc(server.HandleRequest))
+	return auth.APIKeyMiddleware(a.Accounts)(withoutQuarantine(http.HandlerFunc(server.HandleRequest)))
+}
+
+// withoutQuarantine marks the authenticated principal NoQuarantine.
+func withoutQuarantine(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p, ok := principal.FromContext(r.Context()); ok {
+			p.NoQuarantine = true
+			r = r.WithContext(principal.WithContext(r.Context(), p))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // caller returns the principal the authentication middleware stored.

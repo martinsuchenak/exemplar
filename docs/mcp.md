@@ -16,9 +16,13 @@ default 8080). It is on by default:
 
 Every request needs an API key, sent as `Authorization: Bearer exm_…` (what
 most MCP clients send) or `X-API-Key: exm_…`. The tools act as that key, so
-an agent sees exactly what the key may see over REST: its own workspaces, the
-global library, and quarantine only with an admin key. A read-only key is
-enough for every tool; give agents one.
+an agent sees what the key may see over REST: its own workspaces (an admin
+key: every workspace) and the global library. Quarantine is never served
+over MCP, not even to an admin key: it lists no quarantine datasets, and a
+quarantine dataset or fixture reads as not found. Agents get real-derived
+emails only once they are approved and promoted into the global library
+(`exemplar promote`). A read-only key is enough for every tool; give agents
+one.
 
 For Claude Code, add the server to `.mcp.json`:
 
@@ -53,7 +57,7 @@ The datasets the key can read.
 
 | Argument | Description |
 |----------|-------------|
-| `scope` | `global`, `workspace` or `quarantine` |
+| `scope` | `global` or `workspace` (`quarantine` lists nothing here) |
 | `name` | Exact name (all versions) |
 
 Returns `{"datasets": [Dataset], "count": n}`.

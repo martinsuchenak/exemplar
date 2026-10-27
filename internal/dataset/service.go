@@ -21,7 +21,8 @@ import (
 )
 
 // Scope decides visibility: global datasets are readable by every key,
-// workspaces by their owner, quarantine (unreviewed real-derived data) by admins.
+// workspaces by their owner, quarantine (unreviewed real-derived data) by
+// admins, and never over MCP (principal.NoQuarantine).
 type Scope string
 
 const (
@@ -222,7 +223,7 @@ func (s *Service) List(ctx context.Context, actor principal.Principal, f ListFil
 	if f.Scope != "" && !f.Scope.Valid() {
 		return nil, fmt.Errorf("%w: unknown scope %q", apperr.ErrInvalid, f.Scope)
 	}
-	return s.storage.List(ctx, s.db, f, visibility{accountID: actor.AccountID, all: actor.IsAdmin()})
+	return s.storage.List(ctx, s.db, f, visibility{accountID: actor.AccountID, all: actor.IsAdmin(), noQuarantine: !actor.CanReadQuarantine()})
 }
 
 // Freeze makes a dataset's contents read-only. Freezing twice is a no-op.
@@ -388,7 +389,7 @@ func canRead(p principal.Principal, d *Dataset) bool {
 	case ScopeWorkspace:
 		return d.OwnerAccountID == p.AccountID || p.IsAdmin()
 	default:
-		return p.IsAdmin()
+		return p.CanReadQuarantine()
 	}
 }
 

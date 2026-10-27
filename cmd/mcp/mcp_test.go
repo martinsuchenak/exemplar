@@ -171,9 +171,14 @@ func TestListDatasets(t *testing.T) {
 	if out["count"] != float64(2) || resp.StructuredContent == nil {
 		t.Errorf("alice sees %v datasets (want her workspace and the library)", out["count"])
 	}
+	// Quarantine is never served over MCP, even to an admin key.
 	out, _, _ = w.call(t, w.adminKey, "list_datasets", map[string]any{"scope": "quarantine"})
-	if out["count"] != float64(1) {
-		t.Errorf("admin quarantine = %v", out["count"])
+	if out["count"] != float64(0) {
+		t.Errorf("admin quarantine = %v, want none over MCP", out["count"])
+	}
+	out, _, _ = w.call(t, w.adminKey, "list_datasets", nil)
+	if out["count"] != float64(2) || strings.Contains(fmt.Sprint(out), w.quar.ID) {
+		t.Errorf("admin sees %v datasets (want the library and alice's workspace, not quarantine): %v", out["count"], out)
 	}
 	out, _, _ = w.call(t, w.aliceKey, "list_datasets", map[string]any{"name": "library"})
 	if out["count"] != float64(1) {
@@ -314,25 +319,43 @@ func TestGetFixtureLimitsAndRealData(t *testing.T) {
 		t.Errorf("non-UTF-8 text = %v", out)
 	}
 
-	// Real-derived content: only admins see quarantine, and reads are audited.
-	real, err := w.a.Fixtures.Create(ctx, w.admin, fixture.CreateInput{
+	// Real-derived content: quarantine is hidden from every key over MCP;
+	// once approved and promoted, it is served and every read audited.
+	inQuarantine, err := w.a.Fixtures.Create(ctx, w.admin, fixture.CreateInput{
 		DatasetID: w.quar.ID, Name: "real.eml", Source: fixture.SourceAnonymised, Content: strings.NewReader("Subject: x\r\n\r\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.call(t, w.aliceKey, "get_fixture", map[string]any{"id": real.ID}); toolCode(err) != errorCodeNotFound {
-		t.Errorf("member reading quarantine err = %v", err)
+	for _, key := range []string{w.aliceKey, w.adminKey} {
+		if _, _, err := w.call(t, key, "get_fixture", map[string]any{"id": inQuarantine.ID}); toolCode(err) != errorCodeNotFound {
+			t.Errorf("reading quarantine over MCP err = %v", err)
+		}
+		if _, _, err := w.call(t, key, "search_fixtures", map[string]any{"dataset_id": w.quar.ID}); toolCode(err) != errorCodeNotFound {
+			t.Errorf("searching quarantine over MCP err = %v", err)
+		}
 	}
-	if out, _, err := w.call(t, w.adminKey, "get_fixture", map[string]any{"id": real.ID}); err != nil || !strings.Contains(fmt.Sprint(out["content"]), "body") {
-		t.Errorf("admin read = %v, %v", out, err)
+	if _, err := w.a.Fixtures.Review(ctx, w.admin, inQuarantine.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := w.a.Datasets.Promote(ctx, w.admin, w.quar.ID, dataset.PromoteInput{Name: "real-emails"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copies, err := w.a.Fixtures.List(ctx, w.admin, promoted.Dataset.ID, fixture.ListFilter{})
+	if err != nil || len(copies) != 1 {
+		t.Fatalf("promoted = %v, %v", copies, err)
+	}
+	real := copies[0]
+	if out, _, err := w.call(t, w.aliceKey, "get_fixture", map[string]any{"id": real.ID}); err != nil || !strings.Contains(fmt.Sprint(out["content"]), "body") {
+		t.Errorf("promoted read = %v, %v", out, err)
 	}
 	events, _ := w.a.Audit.List(ctx, w.admin, audit.Filter{Action: audit.ActionFixtureDownload, TargetID: real.ID})
-	if len(events) != 1 {
+	if len(events) != 1 || events[0].AccountID != w.alice.AccountID {
 		t.Errorf("download audit events = %d, want 1", len(events))
 	}
 	// Metadata only does not read content, so it is not a download.
-	if _, _, err := w.call(t, w.adminKey, "get_fixture", map[string]any{"id": real.ID, "content": "none"}); err != nil {
+	if _, _, err := w.call(t, w.aliceKey, "get_fixture", map[string]any{"id": real.ID, "content": "none"}); err != nil {
 		t.Fatal(err)
 	}
 	if events, _ := w.a.Audit.List(ctx, w.admin, audit.Filter{Action: audit.ActionFixtureDownload, TargetID: real.ID}); len(events) != 1 {

@@ -18,6 +18,8 @@ var columns = []string{"id", "name", "description", "scope", "owner_account_id",
 type visibility struct {
 	accountID string
 	all       bool
+	// noQuarantine leaves quarantine out, even when all is set.
+	noQuarantine bool
 }
 
 // Storage holds the SQL for datasets. Only the dataset service calls it.
@@ -80,6 +82,9 @@ func (s *Storage) List(ctx context.Context, exec xdal.DBExecutor, f ListFilter, 
 			g.Where("scope = ?", string(ScopeGlobal))
 			g.OrWhere("(scope = ? AND owner_account_id = ?)", string(ScopeWorkspace), v.accountID)
 		})
+	}
+	if v.noQuarantine {
+		q = q.Where("scope <> ?", string(ScopeQuarantine))
 	}
 	if f.Scope != "" {
 		q = q.Where("scope = ?", string(f.Scope))

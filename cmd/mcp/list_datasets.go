@@ -16,9 +16,9 @@ func registerListDatasetsTool(server *mcplib.Server) {
 	datasets := services.Datasets
 	server.RegisterTool(
 		mcplib.NewTool("list_datasets",
-			"List the test-data datasets this key can read: the global library, your workspaces and, for admins, quarantine. "+
+			"List the test-data datasets this key can read: the global library and your workspaces. "+
 				"Use a dataset's id with search_fixtures.",
-			mcplib.String("scope", "Only this scope: global, workspace or quarantine"),
+			mcplib.String("scope", "Only this scope: global or workspace"),
 			mcplib.String("name", "Only datasets with exactly this name (all versions)"),
 		),
 		func(ctx context.Context, req *mcplib.ToolRequest) (*mcplib.ToolResponse, error) {

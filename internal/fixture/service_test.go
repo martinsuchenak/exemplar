@@ -154,6 +154,16 @@ func TestRealDerivedDataGoesThroughQuarantine(t *testing.T) {
 		t.Errorf("member review err = %v, want ErrForbidden", err)
 	}
 
+	// Not through an entry point that hides quarantine (MCP), even as admin.
+	viaMCP := admin
+	viaMCP.NoQuarantine = true
+	if _, _, err := a.Fixtures.Open(ctx, viaMCP, f.ID); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("open quarantine without quarantine err = %v, want ErrNotFound", err)
+	}
+	if _, err := a.Fixtures.List(ctx, viaMCP, q.ID, fixture.ListFilter{}); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("list quarantine without quarantine err = %v, want ErrNotFound", err)
+	}
+
 	// Admin reads it to review: the read is audited.
 	readAll(t, a, admin, f.ID)
 	reviewed, err := a.Fixtures.Review(ctx, admin, f.ID, true)

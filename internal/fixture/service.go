@@ -312,15 +312,15 @@ func (s *Service) List(ctx context.Context, actor principal.Principal, datasetID
 }
 
 // Open returns the fixture's content. Real-derived content is only served
-// once approved (admins may read it in quarantine to review it), and every
-// read of it is audit-logged.
+// once approved (admins may read it in quarantine to review it, but not over
+// MCP: principal.CanReadQuarantine), and every read of it is audit-logged.
 func (s *Service) Open(ctx context.Context, actor principal.Principal, id string) (io.ReadCloser, *Fixture, error) {
 	f, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return nil, nil, err
 	}
 	if f.RealDerived() {
-		if f.ReviewState != ReviewApproved && !actor.IsAdmin() {
+		if f.ReviewState != ReviewApproved && !actor.CanReadQuarantine() {
 			return nil, nil, fmt.Errorf("%w: fixture %s has not been approved", apperr.ErrForbidden, id)
 		}
 		err := s.db.WithTx(ctx, nil, func(tx *xdal.Tx) error {

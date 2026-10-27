@@ -57,6 +57,27 @@ func TestScopesAndVisibility(t *testing.T) {
 		t.Errorf("admin sees %d datasets, want 3", len(list))
 	}
 
+	// Through an entry point that does not serve quarantine (MCP), even an
+	// admin sees everything but quarantine, which reads as not found.
+	viaMCP := admin
+	viaMCP.NoQuarantine = true
+	if list, _ := a.Datasets.List(ctx, viaMCP, dataset.ListFilter{}); len(list) != 2 || list[0].ID == quarantine.ID || list[1].ID == quarantine.ID {
+		t.Errorf("admin without quarantine sees %+v, want the global dataset and the workspace", list)
+	}
+	if list, _ := a.Datasets.List(ctx, viaMCP, dataset.ListFilter{Scope: dataset.ScopeQuarantine}); len(list) != 0 {
+		t.Errorf("quarantine filter without quarantine = %+v", list)
+	}
+	for _, access := range []dataset.Access{dataset.AccessRead, dataset.AccessWrite} {
+		if _, err := a.Datasets.Authorize(ctx, nil, viaMCP, quarantine.ID, access); !errors.Is(err, apperr.ErrNotFound) {
+			t.Errorf("authorize quarantine without quarantine err = %v, want ErrNotFound", err)
+		}
+	}
+	for _, id := range []string{global.ID, ws.ID} {
+		if _, err := a.Datasets.Get(ctx, viaMCP, id); err != nil {
+			t.Errorf("admin without quarantine get %s: %v", id, err)
+		}
+	}
+
 	// Same workspace name is fine for another owner, not for the same one.
 	if _, err := a.Datasets.Create(ctx, bob, dataset.CreateInput{Name: "mine"}); err != nil {
 		t.Errorf("bob's own 'mine': %v", err)
