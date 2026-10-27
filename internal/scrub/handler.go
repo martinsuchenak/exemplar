@@ -106,6 +106,7 @@ func (h *Handler) Anonymise(w http.ResponseWriter, r *http.Request) {
 	hd.Set("X-Exemplar-Format", string(f.Format))
 	hd.Set("X-Exemplar-Replacements", strconv.Itoa(f.Replacements))
 	hd.Set("X-Exemplar-Attachments", strconv.Itoa(f.Attachments))
+	hd.Set("X-Exemplar-Attachments-Rewritten", strconv.Itoa(f.AttachmentsRewritten))
 	hd.Set("X-Exemplar-Dropped-Headers", strconv.Itoa(f.DroppedHeaders))
 	if len(f.DroppedParts) > 0 {
 		hd.Set("X-Exemplar-Dropped-Parts", strings.Join(f.DroppedParts, ","))

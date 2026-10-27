@@ -39,6 +39,11 @@ type Profile struct {
 	// They are always replaced, in any case, also inside identifiers
 	// ("acme-prod", "logo_acme.png").
 	Terms []string `toml:"terms" json:"terms"`
+	// Attachments says what happens to an email's attachments: "replace"
+	// (the default) swaps each for a generated file of the same type;
+	// "anonymise" rewrites those in a format the anonymiser reads (CSV,
+	// DOCX, RTF…) in place, and replaces the rest.
+	Attachments string `toml:"attachments" json:"attachments"`
 
 	keepLocal map[string]bool
 	stop      map[string]bool
@@ -46,6 +51,12 @@ type Profile struct {
 }
 
 var profileNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+// What a profile does with an email's attachments.
+const (
+	AttachmentsReplace   = "replace"
+	AttachmentsAnonymise = "anonymise"
+)
 
 // LoadProfiles returns the built-in profiles plus every *.toml file in dir
 // (empty for none). A file overrides a built-in profile of the same name.
@@ -107,6 +118,13 @@ func parseProfile(data []byte) (*Profile, error) {
 	}
 	if p.ScoreThreshold <= 0 || p.ScoreThreshold > 1 {
 		p.ScoreThreshold = 0.5
+	}
+	switch p.Attachments {
+	case "":
+		p.Attachments = AttachmentsReplace
+	case AttachmentsReplace, AttachmentsAnonymise:
+	default:
+		return nil, fmt.Errorf("attachments must be %q or %q, not %q", AttachmentsReplace, AttachmentsAnonymise, p.Attachments)
 	}
 	p.index()
 	return &p, nil

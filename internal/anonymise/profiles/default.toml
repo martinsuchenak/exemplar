@@ -56,6 +56,14 @@ stop_words = [
 # terms = ["Acme", "AcmeCloud", "ACX"]
 terms = []
 
+# What happens to an email's attachments. "replace" swaps each for a generated
+# file of the same type, so nothing of the original survives. "anonymise"
+# rewrites attachments in a format the anonymiser reads (text, CSV, JSON,
+# HTML, DOCX, RTF…) in place, like the email itself, and replaces the rest
+# (images, PDFs, spreadsheets). Rewritten attachments keep their content,
+# so review them as you review the email.
+attachments = "replace"
+
 # Two-label public suffixes, so "acme.com.au" keeps ".com.au" and maps only "acme".
 two_level_suffixes = [
   "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au", "co.nz", "net.nz",

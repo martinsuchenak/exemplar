@@ -88,8 +88,11 @@ type Output struct {
 	// rewritten, because no rule knows what they hold (a DOCX's macros or
 	// add-ins). Part names are not original data.
 	DroppedParts []string
-	Attachments  int
-	People       []PersonRole
+	// Attachments counts attachments replaced by generated files, and
+	// AttachmentsRewritten those rewritten in place (Profile.Attachments).
+	Attachments          int
+	AttachmentsRewritten int
+	People               []PersonRole
 }
 
 // ReportLine is one replacement. It holds original data: show it to the
@@ -164,12 +167,17 @@ func (e *Engine) prepareMessage(ctx context.Context, msg *mimetree.Part, depth i
 	}
 	var err error
 	walkLeaves(msg, func(p *mimetree.Part) {
-		if mt, _ := p.MediaType(); err == nil && mt == "message/rfc822" {
+		mt, _ := p.MediaType()
+		switch {
+		case err != nil:
+		case mt == "message/rfc822":
 			if raw, derr := p.Decoded(); derr == nil {
 				if inner, _, perr := e.parse(raw, p.Depth+1); perr == nil {
 					err = e.prepareMessage(ctx, inner, depth+1)
 				}
 			}
+		case !reportTypes[mt] && !isBodyText(p):
+			e.prepareAttachment(ctx, p)
 		}
 	})
 	return err

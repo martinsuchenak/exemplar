@@ -267,6 +267,9 @@ func summarise(cmd *cli.Command, inputs []anonymiseInput, res *scrub.Result) err
 			}
 		case !cmd.GetBool("quiet"):
 			line := fmt.Sprintf("%d %s -> %s, %d replacements", i+1, inputs[i].name, f.Name, f.Replacements)
+			if f.AttachmentsRewritten > 0 {
+				line += fmt.Sprintf(", %d attachments rewritten", f.AttachmentsRewritten)
+			}
 			if len(f.DroppedParts) > 0 {
 				line += fmt.Sprintf(", %d parts dropped (%s)", len(f.DroppedParts), strings.Join(f.DroppedParts, ", "))
 			}

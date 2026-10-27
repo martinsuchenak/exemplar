@@ -477,9 +477,19 @@ func TestExportFailingMidStreamIsAnError(t *testing.T) {
 }
 
 func TestAnonymise(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "keep.toml"), []byte("name = \"keep\"\nattachments = \"anonymise\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	_, member, _, url := server(t, func(c *app.Config) {
 		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.AnonProfilesDir = dir
 	})
+	mail := "From: Priya Shah <priya@acme.com.au>\r\nTo: t@o.com.au\r\nSubject: x\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"B\"\r\n\r\n" +
+		"--B\r\nContent-Type: text/plain\r\n\r\nHi\r\n--B\r\nContent-Type: text/csv; name=\"l.csv\"\r\nContent-Disposition: attachment; filename=\"l.csv\"\r\n\r\nName\r\nPriya\r\n--B--\r\n"
+	if m, err := member.AnonymiseFile(ctx, scrub.Request{Profile: "keep"}, "a.eml", strings.NewReader(mail), io.Discard); err != nil || m.AttachmentsRewritten != 1 || m.Attachments != 0 {
+		t.Errorf("rewritten attachments = %+v, %v", m, err)
+	}
 	file := func(name, data string) client.IngestFile {
 		return client.IngestFile{Name: name, Open: func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(data)), nil }}
 	}

@@ -55,12 +55,15 @@ type ReportLine = anonymise.ReportLine
 
 // FileResult is the outcome for one input file.
 type FileResult struct {
-	Name           string `json:"name"`
-	FixtureID      string `json:"fixture_id,omitempty"`
-	FixtureName    string `json:"fixture_name,omitempty"`
-	Replacements   int    `json:"replacements"`
-	Attachments    int    `json:"attachments"`
-	DroppedHeaders int    `json:"dropped_headers"`
+	Name         string `json:"name"`
+	FixtureID    string `json:"fixture_id,omitempty"`
+	FixtureName  string `json:"fixture_name,omitempty"`
+	Replacements int    `json:"replacements"`
+	Attachments  int    `json:"attachments"`
+	// AttachmentsRewritten counts attachments rewritten in place rather
+	// than replaced (the profile's attachments = "anonymise").
+	AttachmentsRewritten int `json:"attachments_rewritten"`
+	DroppedHeaders       int `json:"dropped_headers"`
 	// DroppedParts counts a document's parts removed rather than rewritten.
 	DroppedParts int          `json:"dropped_parts"`
 	Error        string       `json:"error,omitempty"`
@@ -198,6 +201,7 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 			continue
 		}
 		fr.Replacements, fr.Attachments, fr.DroppedHeaders, fr.DroppedParts = len(out.Replacements), out.Attachments, len(out.DroppedHeaders), len(out.DroppedParts)
+		fr.AttachmentsRewritten = out.AttachmentsRewritten
 		if req.DryRun {
 			fr.Report = out.Report()
 			res.Files = append(res.Files, fr)

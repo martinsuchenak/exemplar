@@ -180,7 +180,8 @@ func appendRole(roles []PersonRole, r PersonRole) []PersonRole {
 // body text in place, and every other leaf replaced by a dummy of its type.
 func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replacer, out *Output, people []synth.Person, depth int) error {
 	mt, _ := p.MediaType()
-	if name := filename(p); name != "" {
+	name := filename(p)
+	if name != "" {
 		inline := strings.HasPrefix(strings.ToLower(p.Header.Get("Content-Disposition")), "inline") || p.Header.Get("Content-ID") != ""
 		e.renameAttachment(p, name, inline)
 	}
@@ -229,6 +230,9 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		}
 		p.SetText(rep.Apply(text))
 	default:
+		if e.rewriteAttachment(ctx, p, mt, name, out) {
+			return nil
+		}
 		data, err := p.Decoded()
 		if err != nil {
 			return err
@@ -240,6 +244,100 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		out.Attachments++
 	}
 	return nil
+}
+
+// attachmentFormats are the formats read for an attachment whose name does
+// not give one, by its media type.
+var attachmentFormats = map[string]Format{
+	"text/plain": FormatText, "text/markdown": FormatMarkdown, "text/csv": FormatCSV, "text/tab-separated-values": FormatTSV,
+	"application/json": FormatJSON, "application/x-ndjson": FormatJSONL, "text/html": FormatHTML,
+	"application/rtf": FormatRTF, "text/rtf": FormatRTF,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": FormatDOCX,
+}
+
+// attachmentFile returns the handler and content of an attachment the
+// profile rewrites in place, named name (its original name), or false when
+// it is replaced: the profile replaces attachments, or the anonymiser does
+// not read its format. Text is converted to UTF-8 from its charset first.
+// An attached .eml is replaced: real attached emails are message/rfc822,
+// rewritten already, and rewriting one through the email handler would
+// restart the nesting limit.
+func (e *Engine) attachmentFile(p *mimetree.Part, name string) (*formatDef, File, bool) {
+	if e.profile.Attachments != AttachmentsAnonymise {
+		return nil, File{}, false
+	}
+	mt, _ := p.MediaType()
+	def, err := findFormat(name)
+	if err != nil {
+		f, ok := attachmentFormats[mt]
+		if !ok {
+			return nil, File{}, false
+		}
+		name = NameFor(f)
+		if def, err = findFormat(name); err != nil {
+			return nil, File{}, false
+		}
+	}
+	if def.format == FormatEmail {
+		return nil, File{}, false
+	}
+	var data []byte
+	if strings.HasPrefix(mt, "text/") {
+		text, err := p.Text()
+		if err != nil {
+			return nil, File{}, false
+		}
+		data = []byte(text)
+	} else if data, err = p.Decoded(); err != nil {
+		return nil, File{}, false
+	}
+	return def, File{Name: name, Data: data}, true
+}
+
+// prepareAttachment lets an attachment the profile rewrites add its names
+// to the batch, as a document of its own would.
+func (e *Engine) prepareAttachment(ctx context.Context, p *mimetree.Part) {
+	if def, file, ok := e.attachmentFile(p, filename(p)); ok {
+		// One that cannot be read is replaced when the email is rewritten.
+		_ = def.handler.prepare(ctx, e, file)
+	}
+}
+
+// rewriteAttachment rewrites an attachment in place through its format's
+// handler, when the profile says so, and reports what it replaced and
+// dropped with the email's own. It returns false to have the attachment
+// replaced instead: the profile replaces attachments, its format is not
+// one the anonymiser reads, or its handler failed (a broken file is never
+// passed through).
+func (e *Engine) rewriteAttachment(ctx context.Context, p *mimetree.Part, mt, name string, out *Output) bool {
+	def, file, ok := e.attachmentFile(p, name)
+	if !ok {
+		return false
+	}
+	att, err := def.handler.anonymise(ctx, e, file)
+	if err != nil {
+		return false
+	}
+	if strings.HasPrefix(mt, "text/") {
+		p.SetText(string(att.Data))
+	} else {
+		p.SetBytes(att.Data)
+	}
+	for orig, fake := range att.Replacements {
+		if _, ok := out.Replacements[orig]; !ok {
+			out.Replacements[orig] = fake
+		}
+	}
+	for orig, entity := range att.Entities {
+		if _, ok := out.Entities[orig]; !ok {
+			out.Entities[orig] = entity
+		}
+	}
+	for _, part := range att.DroppedParts {
+		out.DroppedParts = append(out.DroppedParts, filename(p)+": "+part)
+	}
+	out.AttachmentsRewritten++
+	return true
 }
 
 // fillerPeople are who a replaced file is about when nothing names anyone.

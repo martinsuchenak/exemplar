@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -155,5 +157,35 @@ func TestReadZipRefusesUnsafeNames(t *testing.T) {
 	}
 	if _, err := scrub.ReadZip([]byte("not a zip")); err == nil {
 		t.Error("a broken zip was read")
+	}
+}
+
+// The rewritten-attachment count reaches the response headers, for a
+// profile that rewrites attachments.
+func TestAnonymiseRouteReportsRewrittenAttachments(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "keep.toml"), []byte("name = \"keep\"\nattachments = \"anonymise\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := testutil.NewAppWith(t, func(c *app.Config) {
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.AnonProfilesDir = dir
+	})
+	_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, a)
+	mail := "From: Priya Shah <priya.shah@acme.com.au>\r\nTo: tom@other.com.au\r\nSubject: x\r\nMIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"B\"\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nHi\r\n" +
+		"--B\r\nContent-Type: text/csv; name=\"l.csv\"\r\nContent-Disposition: attachment; filename=\"l.csv\"\r\n\r\nName\r\nPriya Shah\r\n--B--\r\n"
+	req := httptest.NewRequest("POST", "/api/v1/anonymise?name=a.eml&profile=keep", strings.NewReader(mail))
+	req.Header.Set("X-API-Key", issued.Secret)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Header().Get("X-Exemplar-Attachments-Rewritten") != "1" || w.Header().Get("X-Exemplar-Attachments") != "0" ||
+		strings.Contains(w.Body.String(), "Priya") {
+		t.Errorf("= %d %v\n%s", w.Code, w.Header(), w.Body)
 	}
 }

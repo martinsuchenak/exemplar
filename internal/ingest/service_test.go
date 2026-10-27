@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -204,6 +206,35 @@ func TestIngestStoresDocuments(t *testing.T) {
 		}
 		if f.Name == "docs-004.html.twig" && !strings.Contains(body, "<p>Dear {{ name }}, from ") {
 			t.Errorf("template code changed: %s", body)
+		}
+	}
+}
+
+// A profile with attachments = "anonymise" rewrites a readable attachment
+// in place instead of replacing it.
+func TestIngestRewritesAttachmentsWhenTheProfileSays(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "keep.toml"), []byte("name = \"keep-attachments\"\nattachments = \"anonymise\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := testutil.NewAppWith(t, func(c *app.Config) {
+		c.AnonKey = anonymisetest.Key
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya", "Tom"}}
+		c.AnonProfilesDir = dir
+	})
+	admin := testutil.Admin(t, a)
+	dsID := quarantine(t, a, admin)
+	mail := "From: Priya Shah <priya.shah@acmeplumbing.com.au>\r\nTo: Tom Reid <tom.reid@acmeplumbing.com.au>\r\nSubject: List\r\n" +
+		"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"B\"\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nHi Tom\r\n" +
+		"--B\r\nContent-Type: text/csv; name=\"list.csv\"\r\nContent-Disposition: attachment; filename=\"list.csv\"\r\n\r\nName,Phone\r\nPriya Shah,0412 345 678\r\n--B--\r\n"
+	files := []ingest.File{{Name: "a.eml", Data: []byte(mail)}}
+	for profile, want := range map[string][2]int{"default": {1, 0}, "keep-attachments": {0, 1}} {
+		res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{Profile: profile, DryRun: true}, files)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f := res.Files[0]; f.Error != "" || f.Attachments != want[0] || f.AttachmentsRewritten != want[1] {
+			t.Errorf("%s: %+v", profile, f)
 		}
 	}
 }

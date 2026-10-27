@@ -508,6 +508,7 @@ paths:
             X-Exemplar-Format: { schema: { type: string }, description: Raw request only }
             X-Exemplar-Replacements: { schema: { type: integer }, description: Raw request only }
             X-Exemplar-Attachments: { schema: { type: integer }, description: Raw request only }
+            X-Exemplar-Attachments-Rewritten: { schema: { type: integer }, description: "Raw request only: attachments rewritten in place (a profile's attachments = anonymise)" }
             X-Exemplar-Dropped-Headers: { schema: { type: integer }, description: Raw request only }
             X-Exemplar-Dropped-Parts: { schema: { type: string }, description: "Raw request only: a document's dropped parts, comma-separated; absent when none" }
           content:
@@ -810,6 +811,7 @@ components:
               fixture_name: { type: string }
               replacements: { type: integer }
               attachments: { type: integer }
+              attachments_rewritten: { type: integer, description: "Attachments rewritten in place rather than replaced (a profile's attachments = anonymise)" }
               dropped_headers: { type: integer }
               dropped_parts: { type: integer, description: "A document's parts removed rather than rewritten (a DOCX's macros, an RTF's embedded object data)" }
               error: { type: string, description: Set when this file failed; the others went ahead }
@@ -837,6 +839,7 @@ components:
               format: { type: string }
               replacements: { type: integer }
               attachments: { type: integer }
+              attachments_rewritten: { type: integer }
               dropped_headers: { type: integer }
               dropped_parts: { type: array, items: { type: string }, description: "A document's parts removed rather than rewritten" }
               error: { type: string }

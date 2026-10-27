@@ -68,7 +68,7 @@ rewritten; its row in the result carries the error.
 | Money | `$`, `AUD` patterns | Fake digits, same layout |
 | Street addresses, PO boxes | Pattern | A synthetic street address |
 | Message-ID, In-Reply-To, References, Content-ID | Header and `cid:` | Keyed hashes, so threads and inline images still match |
-| Attachments | MIME disposition and type | A synthetic file of the same format, renamed `attachment-<hex>.<ext>` |
+| Attachments | MIME disposition and type | A synthetic file of the same format, renamed `attachment-<hex>.<ext>`; or, with a profile's `attachments = "anonymise"`, rewritten in place when the anonymiser reads its format (see [Attachments](#attachments)) |
 
 Images keep their size class. mail-processor treats images under 50 KB as
 signature images. A replacement stays on the same side of that line: PNG and
@@ -396,12 +396,35 @@ unknown `--profile` is answered with the names of the profiles the server has.
 | `automated_markers` | Markers of automated senders (`dmarc`, `report`, `noreply`, `alert`…): an address whose local part contains one is kept like `keep_local_parts`, and its display name ("DMARC Report") is not read as a person's name. Terms and company names inside a kept local part are still replaced (`acme-alerts@` becomes `<fake>-alerts@`) |
 | `terms` | Names that identify where the mail comes from and no detector can know: your organisation, products, client codes. Always replaced |
 | `two_level_suffixes` | Public suffixes such as `com.au`, so `acme.com.au` is read as company `acme` |
+| `attachments` | `replace` (the default) or `anonymise`; see [Attachments](#attachments) |
 
 A profile file is complete on its own: fields it leaves out are empty, not
 inherited. Start from a copy of
 [`internal/anonymise/profiles/default.toml`](../internal/anonymise/profiles/default.toml).
 A file in the profiles directory with the name of a built-in profile replaces
 it.
+
+### Attachments
+
+By default every attachment is replaced by a generated file of the same
+type, so nothing of the original survives. A profile with
+`attachments = "anonymise"` rewrites instead the attachments the anonymiser
+reads, in place, through the same handler a document of that format goes
+through: text, Markdown, CSV, TSV, JSON, JSON Lines, HTML, DOCX and RTF. The
+format comes from the attachment's file name, or its media type when the
+name gives none (`text/csv`, `application/json`…); text is converted from
+its charset to UTF-8 first. Everything else (images, PDFs, spreadsheets, an
+`.eml` sent as a file) is still replaced, and so is an attachment its
+handler cannot read: a broken file is never passed through.
+
+A rewritten attachment is read with the email's people already known, and
+its own names are learned while the batch is read, so a person named only
+in an attachment is replaced in the email's body too. Its replacements
+appear in the email's dry-run report, and what its handler dropped (a DOCX's
+macros) is listed in `dropped_parts` as `<attachment>: <part>`. Results
+count replaced attachments in `attachments` and rewritten ones in
+`attachments_rewritten`. A rewritten attachment keeps its content, so review
+it as you review the email.
 
 ## Dry run
 
@@ -419,7 +442,7 @@ ingest with the same key will produce.
 - Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, XLSX, images, `.doc`, `.dotx`, `.docm`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
 - In JSON, keys and numbers are never changed: a phone number stored as a number, or a name used as a key, survives. In templates, nothing is matched across a tag.
 - Charsets other than UTF-8, US-ASCII, ISO-8859-1 and Windows-1252 are rejected per file.
-- Attachment contents are replaced, not anonymised: a PDF's text does not survive.
+- Attachment contents are replaced, not anonymised, unless the profile rewrites attachments in a format the anonymiser reads; a PDF's text never survives.
 - Dates are kept, so a timeline can be recognised by someone who knows it.
 - Detection is not perfect. Names Presidio misses and that never appear in a header, or identifiers with no pattern (customer numbers, for example), can survive. This is why every fixture is reviewed before it leaves quarantine.
 - One request is capped at `storage.max_ingest_mb` (default 200 MiB) and 1000 files.
