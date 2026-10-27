@@ -553,16 +553,12 @@ func initials(name string) string {
 // distribute writes the matches into the pieces a value is split across:
 // each fake into the piece where its match starts, and the matched text
 // taken out of the pieces after it. The pieces keep everything else.
-func distribute(pieces []docxPiece, matches []textswap.Match) []string {
+func distribute(pieces []string, matches []textswap.Match) []string {
 	offs := make([]int, len(pieces)+1)
 	for i, p := range pieces {
-		offs[i+1] = offs[i] + len(p.value)
+		offs[i+1] = offs[i] + len(p)
 	}
-	text := strings.Builder{}
-	for _, p := range pieces {
-		text.WriteString(p.value)
-	}
-	s := text.String()
+	s := strings.Join(pieces, "")
 	out := make([]strings.Builder, len(pieces))
 	copyRange := func(from, to int) {
 		for i := range pieces {
@@ -619,7 +615,11 @@ func (pkg *docxPackage) rewrite(ctx context.Context, e *Engine, rep *replacer, o
 			}
 			values = []string{v}
 		default:
-			values = distribute(u.pieces, rep.Matches(old))
+			pieces := make([]string, len(u.pieces))
+			for j, p := range u.pieces {
+				pieces[j] = p.value
+			}
+			values = distribute(pieces, rep.Matches(old))
 		}
 		var b strings.Builder
 		for j, p := range u.pieces {

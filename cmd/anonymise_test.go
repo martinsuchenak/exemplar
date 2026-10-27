@@ -99,7 +99,7 @@ func TestAnonymiseArguments(t *testing.T) {
 	}
 	for want, args := range map[string][]string{
 		"needs --format or --name":       {"anonymise", "-", "--local", "--patterns-only"},
-		`unknown format "rtf"`:           {"anonymise", "-", "--format", "rtf", "--local", "--patterns-only"},
+		`unknown format "pdf"`:           {"anonymise", "-", "--format", "pdf", "--local", "--patterns-only"},
 		"are for stdin":                  {"anonymise", md, "--format", "md", "--local"},
 		"not both":                       {"anonymise", md, "--output", "x", "--out-dir", "y", "--local"},
 		"--patterns-only to run without": {"anonymise", md, "--local"},

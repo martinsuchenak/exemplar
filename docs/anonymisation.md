@@ -162,6 +162,7 @@ back broken.
 | JSON, JSON Lines | `.json`, `.jsonl`, `.ndjson` | Every string value | Keys, key order, spacing, numbers, booleans and the escaping of unchanged values |
 | HTML | `.html`, `.htm` | Visible text, `<title>`, `<meta>` content, comments, and the `alt`, `title`, `href`, `src`, `placeholder`, `aria-label` and `value` attributes | Markup, scripts and styles (a value found elsewhere is still replaced in them) |
 | DOCX | `.docx` | See [DOCX](#docx) | See [DOCX](#docx) |
+| RTF | `.rtf` | See [RTF](#rtf) | See [RTF](#rtf) |
 | Twig, Jinja | `.twig`, `.j2`, `.jinja`, `.jinja2` | Literal text (as HTML for `page.html.twig`), comments, and quoted strings inside tags | Every tag as written outside its strings: variables, filters and keywords are code, so `{{ customer.name }}` is untouched while `{% set signer = "Jane Doe" %}` is not. `{% verbatim %}` and `{% raw %}` bodies are literal text |
 
 A CSV column or JSON key named for an entity marks its values as that entity,
@@ -220,6 +221,46 @@ hold at most 2,000 parts and expand to at most 100 times its size (at least
 files are not zip archives and are refused with a hint. The output's entries
 keep their order, with `[Content_Types].xml` first and fixed timestamps, so
 the same file and key give the same bytes.
+
+### RTF
+
+An `.rtf` file is one stream of groups, control words and text. It is
+tokenised, the text of each destination that holds text is decoded, and only
+text that changes is written again; every other byte, unchanged text
+included, stays as it was.
+
+- **Read as text:** the body, footnotes, headers and footers, field results
+  and instructions (`HYPERLINK "mailto:…"`), comments (`\annotation`), shape
+  text and the shape properties that are text (`wzDescription`,
+  `gtextUNICODE`…), index entries, document variables and user property
+  values.
+- **Read as people:** the `\info` group's `\author`, `\operator` and
+  `\manager`, comment authors (`\atnauthor`) and the revision table's authors;
+  `\company` is a company, and a comment's `\atnid` initials follow its fake
+  author. `\title`, `\subject`, `\keywords`, `\doccomm` and `\category` are
+  text; dates and counts are kept. The template's path (`\*\template`) and
+  `\hlinkbase` are faked like DOCX link targets.
+- **Not read:** the font, colour, style and list tables, the generator, and
+  any other `\*` destination exemplar does not know.
+- **Pictures:** a PNG or JPEG is replaced by a generated one; any other
+  picture (EMF, WMF, a bitmap), embedded object data (`\*\objdata`) and the
+  data store (`\*\datastore`, which can hold SharePoint metadata) are dropped
+  and listed in `dropped_parts`. An embedded object keeps its result picture,
+  so the document shows it; the object itself no longer opens.
+- **Escapes:** `\'xx` is decoded as Windows-1252 and `\uN` as Unicode, its
+  fallback characters skipped (`\ucN`), surrogate pairs joined. A fake is
+  written as plain ASCII where it can be, as `\'xx` for Windows-1252, and as
+  `\uN` with the fallback count in effect otherwise. A file declaring another
+  code page (`\ansicpg1250`, `\mac`, `\pc`) is refused; per-font character
+  sets are not read.
+- **Runs of text:** formatting groups and control words do not split a name
+  (`{\b Sa}rah La\i ne` is "Sarah Lane"); a paragraph, line, tab, cell or a
+  destination of its own does. A fake goes into the run where its match
+  starts, as in DOCX.
+
+The output is tokenised again and must have the same groups and control
+words, apart from text, replaced pictures and dropped groups. Groups may nest
+at most 2,000 deep.
 
 ## Anonymise without ingesting
 
@@ -375,7 +416,7 @@ ingest with the same key will produce.
 
 ## Limits
 
-- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, RTF, XLSX, images, `.doc`, `.dotx`, `.docm`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
+- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, XLSX, images, `.doc`, `.dotx`, `.docm`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
 - In JSON, keys and numbers are never changed: a phone number stored as a number, or a name used as a key, survives. In templates, nothing is matched across a tag.
 - Charsets other than UTF-8, US-ASCII, ISO-8859-1 and Windows-1252 are rejected per file.
 - Attachment contents are replaced, not anonymised: a PDF's text does not survive.

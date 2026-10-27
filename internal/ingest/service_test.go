@@ -169,12 +169,13 @@ func TestIngestStoresDocuments(t *testing.T) {
 		{Name: "contacts.csv", Data: []byte("Name,Phone\nTom Reid,0412 345 678\n")},
 		{Name: "letter.html.twig", Data: []byte("<p>Dear {{ name }}, from Priya Shah</p>")},
 		{Name: "Quote.DOCX", Data: anonymisetest.DOCX("Quote for Tom Reid, 0412 345 678")},
+		{Name: "letter.rtf", Data: []byte(`{\rtf1\ansi{\info{\author Priya Shah}}\pard Dear Tom Reid, call 0412 345 678.\par}`)},
 	}
 	res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{Batch: "docs"}, files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig", "docs-005.docx"}
+	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig", "docs-005.docx", "docs-006.rtf"}
 	for i, f := range res.Files {
 		dropped := 0
 		if strings.HasSuffix(want[i], ".docx") {
@@ -185,7 +186,7 @@ func TestIngestStoresDocuments(t *testing.T) {
 		}
 	}
 	fixtures, err := a.Fixtures.List(ctx, admin, dsID, fixture.ListFilter{})
-	if err != nil || len(fixtures) != 5 {
+	if err != nil || len(fixtures) != 6 {
 		t.Fatalf("fixtures = %d, %v", len(fixtures), err)
 	}
 	for _, f := range fixtures {

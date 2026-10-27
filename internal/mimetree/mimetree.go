@@ -476,13 +476,17 @@ var cp1252 = [32]rune{
 func decode1252(raw []byte) string {
 	var b strings.Builder
 	for _, c := range raw {
-		if c >= 0x80 && c <= 0x9F {
-			b.WriteRune(cp1252[c-0x80])
-		} else {
-			b.WriteRune(rune(c))
-		}
+		b.WriteRune(Rune1252(c))
 	}
 	return b.String()
+}
+
+// Rune1252 returns the character a Windows-1252 byte stands for.
+func Rune1252(c byte) rune {
+	if c >= 0x80 && c <= 0x9F {
+		return cp1252[c-0x80]
+	}
+	return rune(c)
 }
 
 // DecodeHeader decodes RFC 2047 encoded words in a header value, with the

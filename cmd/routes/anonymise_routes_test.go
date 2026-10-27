@@ -81,7 +81,7 @@ func TestAnonymiseRoute(t *testing.T) {
 
 	for target, want := range map[string]int{
 		"/api/v1/anonymise":                              http.StatusBadRequest, // neither name nor format
-		"/api/v1/anonymise?format=rtf":                   http.StatusBadRequest, // not a format yet
+		"/api/v1/anonymise?format=pdf":                   http.StatusBadRequest, // not a format yet
 		"/api/v1/anonymise?name=a.md&format=json":        http.StatusBadRequest,
 		"/api/v1/anonymise?name=a.pdf":                   http.StatusBadRequest, // unsupported file
 		"/api/v1/anonymise?name=a.json":                  http.StatusBadRequest, // not JSON

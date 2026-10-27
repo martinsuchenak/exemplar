@@ -75,7 +75,9 @@ document format (text, Markdown, CSV, JSON, HTML, Twig and Jinja) shares
 it back and what structure must survive. DOCX has its own handler
 (`docx.go`): a rule per part, and text rewritten by splicing bytes at the
 offsets `xmlscan.go` finds, since re-encoding XML would rename namespace
-prefixes Word depends on.
+prefixes Word depends on. RTF has its own too (`rtf.go`): a tokeniser, a
+reader that knows which destinations hold text, and the same splicing, so
+only changed text is written again.
 `app.Open` builds the anonymiser from the key, Presidio URL and profiles; with
 no key or no Presidio URL, ingest reports that it is not configured. See
 [anonymisation.md](anonymisation.md).

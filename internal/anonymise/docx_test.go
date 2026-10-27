@@ -379,15 +379,9 @@ func TestDOCXRunsAreSplitAtBreaks(t *testing.T) {
 }
 
 func TestDistribute(t *testing.T) {
-	pieces := func(vs ...string) []docxPiece {
-		var out []docxPiece
-		for _, v := range vs {
-			out = append(out, docxPiece{value: v})
-		}
-		return out
-	}
+	pieces := func(vs ...string) []string { return vs }
 	for _, c := range []struct {
-		pieces  []docxPiece
+		pieces  []string
 		matches []textswap.Match
 		want    []string
 	}{
