@@ -10,12 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/audit"
 	"github.com/martinsuchenak/exemplar/internal/dataset"
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/generate"
+	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
 	"github.com/martinsuchenak/exemplar/internal/synth"
@@ -401,5 +403,66 @@ func TestQuotesUseTheProductCatalogue(t *testing.T) {
 		if products[p.SKU] != p.line {
 			t.Errorf("product %s differs between requests: %+v vs %+v", p.SKU, p.line, products[p.SKU])
 		}
+	}
+}
+
+// TestRecordsForPeopleWithoutACompany uses the people ingest makes for
+// senders at a public mail provider: they have no company. A quote or
+// project about one is named after them, its company values are empty
+// rather than invented, and company records, which need a company, are
+// refused as invalid.
+func TestRecordsForPeopleWithoutACompany(t *testing.T) {
+	a := testutil.NewAppWith(t, func(c *app.Config) {
+		c.AnonKey = anonymisetest.Key
+		c.AnonDetector = anonymisetest.Detector{}
+	})
+	admin := testutil.Admin(t, a)
+	q, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "inbox", Scope: dataset.ScopeQuarantine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mail := []ingest.File{{Name: "a.eml", Data: anonymisetest.Email("Jo Bloggs", "Sam Smith", "gmail.com", "Hello", "Hi Sam")}}
+	if _, err := a.Ingest.Ingest(ctx, admin, q.ID, ingest.Request{Batch: "b1"}, mail); err != nil {
+		t.Fatal(err)
+	}
+	people, _ := a.Persons.List(ctx, admin, person.ListFilter{})
+	if len(people) != 2 || people[0].Company != "" || people[1].Company != "" {
+		t.Fatalf("registry = %+v; want the two senders, without companies", people)
+	}
+
+	d, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "gen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := a.Generate.Generate(ctx, admin, d.ID, generate.Request{
+		Kind: generate.KindRecords, Count: 2, People: 2, Seed: 5,
+		Schemas: []synth.RecordSchema{synth.SchemaQuote, synth.SchemaProject},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]string{}
+	for _, p := range people {
+		names[p.ID] = p.FirstName + " " + p.LastName
+	}
+	for _, f := range res.Fixtures {
+		r, _, err := a.Fixtures.Open(ctx, admin, f.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		_ = json.NewDecoder(r).Decode(&doc)
+		_ = r.Close()
+		who := names[f.People[0].PersonID]
+		if !strings.HasSuffix(doc["name"].(string), " - "+who) || doc["company"] != "" {
+			t.Errorf("%s: name %q, company %q; want it named after %s, with no company", f.RecordSchema, doc["name"], doc["company"], who)
+		}
+	}
+
+	_, err = a.Generate.Generate(ctx, admin, d.ID, generate.Request{
+		Kind: generate.KindRecords, Count: 1, People: 2, Seed: 6, Schemas: []synth.RecordSchema{synth.SchemaCompany},
+	})
+	if !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "work for a company") {
+		t.Errorf("company records about individuals err = %v", err)
 	}
 }

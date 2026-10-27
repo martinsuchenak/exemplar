@@ -378,3 +378,102 @@ func TestCatalogueEntriesAreFixed(t *testing.T) {
 
 // pinnedSKU is manufacturing product entry 0's SKU number.
 const pinnedSKU = "206163"
+
+// TestPersonWithoutACompany checks every company value reads as empty for an
+// individual (no company made up from an empty name), that a fallback
+// placeholder names them instead, and that company contacts link no one.
+func TestPersonWithoutACompany(t *testing.T) {
+	dir := t.TempDir()
+	writeSchema(t, dir, "visit", `name = "visit"
+title = "{company.short|person.name} {company.name|label}"
+
+[[links]]
+role = "colleague"
+value = "company.contacts"
+
+[[fields]]
+name = "company"
+value = "company.name"
+
+[[fields]]
+name = "website"
+value = "company.website"
+
+[[fields]]
+name = "abn"
+value = "company.abn"
+
+[[fields]]
+name = "address"
+value = "company.address"
+
+[[fields]]
+name = "street"
+value = "company.address.street"
+
+[[fields]]
+name = "contacts"
+value = "company.contacts"
+
+[[fields]]
+name = "who"
+template = "{company.short|person.name}"
+`)
+	set, _, err := LoadSchemas(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := set.Get("visit")
+	g := New(8)
+	ps := people(g, 2)
+	ps[0].Company = ""
+	r, err := g.Record(s, RecordInput{People: ps[:1]}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	_ = json.Unmarshal(r.Data, &doc)
+	for _, k := range []string{"company", "website", "abn", "street"} {
+		if doc[k] != "" {
+			t.Errorf("%s = %v, want empty", k, doc[k])
+		}
+	}
+	if doc["address"] != nil || len(doc["contacts"].([]any)) != 0 || len(r.People) != 0 {
+		t.Errorf("address %v, contacts %v, links %v", doc["address"], doc["contacts"], r.People)
+	}
+	// The first alternative is empty, so the second fills it; for the title's
+	// second placeholder that is a generated label.
+	if doc["who"] != ps[0].Name() || !strings.HasPrefix(r.Title, ps[0].Name()+" ") || r.Title == ps[0].Name()+" " {
+		t.Errorf("who %q, title %q", doc["who"], r.Title)
+	}
+	// With a company the first alternative is used, and no label is drawn.
+	r, _ = g.Record(s, RecordInput{People: ps[1:]}, 0)
+	co := CompanyFor(ps[1].Company)
+	if r.Title != trimSuffix(co.Name)+" "+co.Name || len(r.People) != 1 {
+		t.Errorf("with a company: title %q, links %v", r.Title, r.People)
+	}
+
+	// Company records skip individuals, and need someone with a company.
+	company, _ := set.Get(SchemaCompany)
+	if r, err := g.Record(company, RecordInput{People: ps}, 0); err != nil || !strings.Contains(string(r.Data), co.Name) {
+		t.Errorf("company record = %s, %v", r.Data, err)
+	}
+	if _, err := g.Record(company, RecordInput{People: ps[:1]}, 0); err == nil || !strings.Contains(err.Error(), "work for a company") {
+		t.Errorf("company record about an individual err = %v", err)
+	}
+}
+
+func TestTemplateFallbackValidation(t *testing.T) {
+	for body, want := range map[string]string{
+		`template = "{company.short|}"`:          "empty alternative",
+		`template = "{|person.name}"`:            "empty alternative",
+		`template = "{company.short|boss.name}"`: "person.*, company.*",
+		`template = "{company.short|nothing}"`:   `"nothing" is not a field`,
+	} {
+		dir := t.TempDir()
+		writeSchema(t, dir, "ticket", minimal+"\n[[fields]]\nname = \"x\"\n"+body+"\n")
+		if _, _, err := LoadSchemas(dir); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", body, err, want)
+		}
+	}
+}

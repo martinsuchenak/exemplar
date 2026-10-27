@@ -160,6 +160,14 @@ of every quote is a product record with the same SKU, name and price. A
 quote's amounts are exact: each line is `qty` × `unit_price`, GST is 10% of
 the subtotal rounded to the cent, and the total adds up.
 
+Some registry people have no company: ingest creates them for senders at a
+public mail provider (`gmail.com` and the like). For such a person every
+`company.*` value is empty (`company.address` is `null`, `company.contacts`
+is `[]`), never a company invented from no name. A quote or project about
+one is named after them (`QU-482917 - Jo Bloggs`), and company records skip
+them; a request for company records about people who all lack one is refused
+as invalid.
+
 Uploaded JSON can be a record too: pass `record_schema` (any lower-case name)
 with the upload.
 
@@ -194,7 +202,7 @@ sorted.
 | Type | Example | Gives |
 |------|---------|-------|
 | `value` | `value = "company.abn"` | The record's person (`person.id`, `first_name`, `last_name`, `name`, `email`, `phone`, `job_title`, `company`, `address`, `address.street`, `.suburb`, `.state`, `.postcode`, `.country`), its company (`company.name`, `short` without Pty Ltd, `domain`, `abn`, `phone`, `website`, `industry`, `address`, `address.*`, `contacts`), or a field above |
-| `template` | `template = "{label} - {company.short}"` | Text with `{…}` filled from the same names, or from `{label}`, `{title}`, `{subject}`, `{sentence}` (text in the profile's words) |
+| `template` | `template = "{label} - {company.short\|person.name}"` | Text with `{…}` filled from the same names, or from `{label}`, `{title}`, `{subject}`, `{sentence}` (text in the profile's words). `{a\|b}` tries each alternative in turn and uses the first that is not empty; a generator later in the list draws only when it is reached |
 | `ref` | `ref = "QU"`, `ref = ""` | A reference such as `QU-482917`; `""` uses the mixed prefixes (`PL`, `CL`, `JOB`…) |
 | `pick` | `pick = ["draft", "sent"]`, `pick = "@product"` | One item of a list, or of a named list for the request's profile |
 | `int` | `int = [1, 20]` | A whole number in the range |

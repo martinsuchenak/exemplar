@@ -327,7 +327,9 @@ func (s *Service) build(g *synth.Gen, req Request, people []synth.Person) ([]ite
 			// spaced through the people by its slot in the request.
 			r, err := g.Record(schema, synth.RecordInput{Profile: req.Profile, People: people, Slot: slot, Slots: len(req.Schemas)}, i/len(req.Schemas))
 			if err != nil {
-				return nil, err
+				// The request's people do not fit the schema, such as
+				// company records about people who have no company.
+				return nil, fmt.Errorf("%w: %v", apperr.ErrInvalid, err)
 			}
 			links := make([]fixture.PersonLink, len(r.People))
 			for k, pr := range r.People {

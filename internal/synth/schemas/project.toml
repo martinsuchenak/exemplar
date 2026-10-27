@@ -15,7 +15,8 @@ date = { within_days = 200 }
 
 [[fields]]
 name = "name"
-template = "{label} - {company.short}"
+# An individual's project (no company) is named after them.
+template = "{label} - {company.short|person.name}"
 
 [[fields]]
 name = "code"

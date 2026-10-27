@@ -13,7 +13,8 @@ ref = "QU"
 
 [[fields]]
 name = "name"
-template = "{quote_number} - {company.short}"
+# An individual (no company) is quoted by name.
+template = "{quote_number} - {company.short|person.name}"
 
 [[fields]]
 name = "company"

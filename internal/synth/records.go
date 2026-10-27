@@ -49,17 +49,22 @@ type RecordInput struct {
 }
 
 // companyPerson returns the first person of the index-th distinct company
-// among people, in the order the people come.
-func companyPerson(people []Person, index int) Person {
+// among people, in the order the people come. People without a company
+// (individuals, such as a sender at a public mail provider) have no company
+// record; ok is false when nobody has one.
+func companyPerson(people []Person, index int) (p Person, ok bool) {
 	var firsts []Person
 	seen := map[string]bool{}
 	for _, p := range people {
-		if !seen[p.Company] {
+		if p.Company != "" && !seen[p.Company] {
 			seen[p.Company] = true
 			firsts = append(firsts, p)
 		}
 	}
-	return firsts[index%len(firsts)]
+	if len(firsts) == 0 {
+		return Person{}, false
+	}
+	return firsts[index%len(firsts)], true
 }
 
 // mustJSON encodes v (encoding/json sorts map keys, so output is stable);

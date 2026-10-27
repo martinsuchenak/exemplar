@@ -630,10 +630,14 @@ func TestRecordRotation(t *testing.T) {
 		seen[i] = true
 	}
 
-	ps := []Person{{ID: "a", Company: "X"}, {ID: "b", Company: "X"}, {ID: "c", Company: "Y"}}
+	// People without a company have no company record.
+	ps := []Person{{ID: "z"}, {ID: "a", Company: "X"}, {ID: "b", Company: "X"}, {ID: "c", Company: "Y"}}
 	for k, want := range []string{"a", "c", "a"} {
-		if got := companyPerson(ps, k).ID; got != want {
-			t.Errorf("company record %d is about %s, want %s", k, got, want)
+		if got, ok := companyPerson(ps, k); !ok || got.ID != want {
+			t.Errorf("company record %d is about %s, want %s", k, got.ID, want)
 		}
+	}
+	if _, ok := companyPerson([]Person{{ID: "z"}}, 0); ok {
+		t.Error("a company record about someone without a company")
 	}
 }

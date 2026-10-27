@@ -390,18 +390,27 @@ func checkName(name string, sc *Schema, sp scope, known map[string]*field) error
 	return nil
 }
 
-// tmplTok is literal text, a name to read, or a text generator to call.
+// tmplTok is literal text, or a placeholder: alternatives tried in order,
+// the first that is not empty filling it ({company.short|person.name}).
 type tmplTok struct {
 	literal string
-	name    string
-	text    string
+	alts    []tmplAlt
 }
 
-var placeholderRe = regexp.MustCompile(`\{([a-z_.]+)\}`)
+// tmplAlt is a name to read, or a text generator to call.
+type tmplAlt struct {
+	name string
+	text string
+}
 
-// compileTemplate parses "{label} - {company.short}": names to read, and
-// text generators ({label}, {title}, {subject}, {sentence}) that draw like a
-// text field. A title is filled after the fields, so its draws come last.
+var placeholderRe = regexp.MustCompile(`\{([a-z_.|]+)\}`)
+
+// compileTemplate parses "{label} - {company.short|person.name}": names to
+// read, and text generators ({label}, {title}, {subject}, {sentence}) that
+// draw like a text field. Alternatives are tried left to right, and only as
+// far as the first that is not empty, so a generator after a name draws only
+// when the name is empty. A title is filled after the fields, so its draws
+// come last.
 func compileTemplate(s string, sc *Schema, sp scope, known map[string]*field) ([]tmplTok, error) {
 	var toks []tmplTok
 	last := 0
@@ -409,32 +418,32 @@ func compileTemplate(s string, sc *Schema, sp scope, known map[string]*field) ([
 		if m[0] > last {
 			toks = append(toks, tmplTok{literal: s[last:m[0]]})
 		}
-		name := s[m[2]:m[3]]
-		if textKinds[name] && known[name] == nil {
-			toks = append(toks, tmplTok{text: name})
-		} else {
-			if err := checkName(name, sc, sp, known); err != nil {
-				return nil, err
+		var tok tmplTok
+		for _, name := range strings.Split(s[m[2]:m[3]], "|") {
+			switch {
+			case name == "":
+				return nil, fmt.Errorf("template %q has an empty alternative", s)
+			case textKinds[name] && known[name] == nil:
+				tok.alts = append(tok.alts, tmplAlt{text: name})
+			default:
+				if err := checkName(name, sc, sp, known); err != nil {
+					return nil, err
+				}
+				tok.alts = append(tok.alts, tmplAlt{name: name})
 			}
-			toks = append(toks, tmplTok{name: name})
 		}
+		toks = append(toks, tok)
 		last = m[1]
 	}
 	if last < len(s) {
 		toks = append(toks, tmplTok{literal: s[last:]})
 	}
-	if strings.ContainsAny(strings.Join(literals(toks), ""), "{}") {
-		return nil, fmt.Errorf("template %q has a malformed placeholder", s)
+	for _, t := range toks {
+		if strings.ContainsAny(t.literal, "{}") {
+			return nil, fmt.Errorf("template %q has a malformed placeholder", s)
+		}
 	}
 	return toks, nil
-}
-
-func literals(toks []tmplTok) []string {
-	var out []string
-	for _, t := range toks {
-		out = append(out, t.literal)
-	}
-	return out
 }
 
 // val is one evaluated field.
@@ -486,9 +495,16 @@ func (g *Gen) Record(s *Schema, in RecordInput, index int) (Record, error) {
 		slots := max(in.Slots, 1)
 		c.person = in.People[personIndex(in.Slot, slots, index, len(in.People))]
 		if s.Step == StepCompany {
-			c.person = companyPerson(in.People, index)
+			var ok bool
+			if c.person, ok = companyPerson(in.People, index); !ok {
+				return Record{}, fmt.Errorf("%s records need people who work for a company", s.Name)
+			}
 		}
-		c.company = CompanyFor(c.person.Company)
+		// A person without a company is an individual: every company value
+		// reads as empty, rather than a company made up from no name.
+		if c.person.Company != "" {
+			c.company = CompanyFor(c.person.Company)
+		}
 	}
 	for _, f := range s.fields {
 		v, err := c.eval(f)
@@ -646,13 +662,21 @@ func (c *evalContext) text(kind string, lo, extra int) string {
 func (c *evalContext) template(toks []tmplTok) string {
 	var b strings.Builder
 	for _, t := range toks {
-		switch {
-		case t.text != "":
-			b.WriteString(c.text(t.text, 0, 0))
-		case t.name != "":
-			b.WriteString(c.read(t.name).text)
-		default:
+		if t.alts == nil {
 			b.WriteString(t.literal)
+			continue
+		}
+		for _, a := range t.alts {
+			s := ""
+			if a.text != "" {
+				s = c.text(a.text, 0, 0)
+			} else {
+				s = c.read(a.name).text
+			}
+			if s != "" {
+				b.WriteString(s)
+				break
+			}
 		}
 	}
 	return b.String()
@@ -701,9 +725,15 @@ func (c *evalContext) read(name string) val {
 	case "company.industry":
 		v = co.Industry
 	case "company.address":
+		if co.Name == "" && sub == "" {
+			return val{json: nil}
+		}
 		v = addressVal(co.Address, sub)
 	case "company.contacts":
 		ids := c.linked("company.contacts")
+		if ids == nil {
+			ids = []string{}
+		}
 		return val{json: ids, text: strings.Join(ids, ", ")}
 	}
 	if a, ok := v.(Address); ok {
@@ -729,10 +759,14 @@ func addressVal(a Address, sub string) any {
 	return a
 }
 
-// linked returns the person IDs a link value names.
+// linked returns the person IDs a link value names. A person without a
+// company has no company contacts.
 func (c *evalContext) linked(value string) []string {
 	if value == "person.id" {
 		return []string{c.person.ID}
+	}
+	if c.person.Company == "" {
+		return nil
 	}
 	var ids []string
 	for _, q := range c.people {
