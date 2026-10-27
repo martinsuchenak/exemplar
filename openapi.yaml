@@ -428,10 +428,13 @@ paths:
   /api/v1/datasets/{id}/ingest:
     parameters: [{ $ref: "#/components/parameters/ID" }]
     post:
-      summary: Anonymise real .eml files into a quarantine dataset (admin key)
+      summary: Anonymise real emails and documents into a quarantine dataset (admin key)
       description: >
+        Each part's file name picks its format: .eml, .txt, .log, .md, .csv,
+        .tsv, .json, .jsonl, .html, .twig or .j2 (see docs/anonymisation.md).
         Parts are read into memory, never written to disk; only anonymised
-        output is stored, as unreviewed fixtures named <batch>-NNN.eml. A dry
+        output is stored, as unreviewed fixtures named <batch>-NNN plus the
+        file's extension (<batch>-001.eml, <batch>-002.csv). A dry
         run stores nothing and reports each replacement with its original
         value, so responses are never cached. Answers 400 when the server has
         no anonymiser configured.
@@ -444,7 +447,7 @@ paths:
               type: object
               required: [file]
               properties:
-                file: { type: array, maxItems: 1000, items: { type: string, format: binary }, description: One part per .eml file }
+                file: { type: array, maxItems: 1000, items: { type: string, format: binary }, description: One part per file }
                 profile: { type: string, default: default }
                 batch: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", description: Absent makes up a batch name }
                 dry_run: { type: boolean, default: false }

@@ -210,7 +210,7 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 		for i, p := range out.People {
 			links[i] = fixture.PersonLink{PersonID: p.PersonID, Role: p.Role}
 		}
-		fr.FixtureName = fmt.Sprintf("%s-%03d.%s", req.Batch, n, out.Format)
+		fr.FixtureName = fmt.Sprintf("%s-%03d%s", req.Batch, n, anonymise.Extension(f.Name))
 		fx, err := s.fixtures.Create(ctx, actor, fixture.CreateInput{
 			DatasetID:   datasetID,
 			Name:        fr.FixtureName,

@@ -9,18 +9,34 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/mimetree"
 )
 
+// supported is the error's list of extensions, in format order.
+const supported = "the supported files are .eml, .txt, .text, .log, .md, .markdown, .csv, .tsv, .json, .jsonl, .ndjson, .html, .htm, .twig, .j2, .jinja, .jinja2"
+
 func TestFormatOf(t *testing.T) {
 	for name, want := range map[string]string{
 		"a.eml":                 "eml",
 		"Jane Doe invoice.EML":  "eml",
 		"dir/thread.2025.eml":   "eml",
+		"notes.TXT":             "txt",
+		"app.log":               "txt",
+		"README.md":             "md",
+		"guide.markdown":        "md",
+		"people.csv":            "csv",
+		"people.tsv":            "tsv",
+		"contact.json":          "json",
+		"events.jsonl":          "jsonl",
+		"events.ndjson":         "jsonl",
+		"page.HTM":              "html",
+		"mail.html.twig":        "twig",
+		"letter.j2":             "jinja",
+		"letter.jinja2":         "jinja",
 		"outlook.msg":           "MSG files are not supported yet; convert to .eml first",
-		"notes.txt":             "cannot anonymise .txt: the supported files are .eml",
-		"README":                "cannot anonymise a file without an extension: the supported files are .eml",
-		"":                      "cannot anonymise a file without an extension: the supported files are .eml",
-		"archive.eml.zip":       "cannot anonymise .zip: the supported files are .eml",
-		"trailing-dot.":         "cannot anonymise a file without an extension: the supported files are .eml",
-		"looks like eml but no": "cannot anonymise a file without an extension: the supported files are .eml",
+		"report.pdf":            "cannot anonymise .pdf: " + supported,
+		"README":                "cannot anonymise a file without an extension: " + supported,
+		"":                      "cannot anonymise a file without an extension: " + supported,
+		"archive.eml.zip":       "cannot anonymise .zip: " + supported,
+		"trailing-dot.":         "cannot anonymise a file without an extension: " + supported,
+		"looks like eml but no": "cannot anonymise a file without an extension: " + supported,
 	} {
 		f, err := FormatOf(name)
 		got := string(f)
@@ -31,8 +47,30 @@ func TestFormatOf(t *testing.T) {
 			t.Errorf("FormatOf(%q) = %q, want %q", name, got, want)
 		}
 	}
-	if got := Formats(); !reflect.DeepEqual(got, []Format{FormatEmail}) {
+	want := []Format{FormatEmail, FormatText, FormatMarkdown, FormatCSV, FormatTSV, FormatJSON, FormatJSONL, FormatHTML, FormatTwig, FormatJinja}
+	if got := Formats(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Formats() = %v", got)
+	}
+	// No extension selects two formats.
+	seen := map[string]Format{}
+	for _, f := range formats {
+		for _, x := range f.exts {
+			if other, ok := seen[x]; ok {
+				t.Errorf("%s selects both %s and %s", x, other, f.format)
+			}
+			seen[x] = f.format
+		}
+	}
+}
+
+func TestExtension(t *testing.T) {
+	for name, want := range map[string]string{
+		"a.EML": ".eml", "page.html.twig": ".html.twig", "Mail.HTM.Twig": ".htm.twig", "letter.txt.j2": ".txt.j2",
+		"plain.twig": ".twig", "odd.name.twig": ".twig", "notes.md": ".md", "data.json.gz": ".gz", "README": "",
+	} {
+		if got := Extension(name); got != want {
+			t.Errorf("Extension(%q) = %q, want %q", name, got, want)
+		}
 	}
 }
 
@@ -101,13 +139,13 @@ func TestFileNamesMatchAttachmentNames(t *testing.T) {
 func TestUnsupportedFilesFailAlone(t *testing.T) {
 	e := newEngine(t, newMemRegistry())
 	files := []File{
-		{Name: "notes.txt", Data: []byte("Sarah Lane called")},
+		{Name: "notes.pdf", Data: []byte("Sarah Lane called")},
 		eml(original),
 		{Name: "outlook.msg", Data: []byte("binary")},
 	}
 	errs := e.Prepare(ctx, files)
 	if len(errs) != 3 || errs[1] != nil ||
-		errs[0] == nil || !strings.Contains(errs[0].Error(), "cannot anonymise .txt") ||
+		errs[0] == nil || !strings.Contains(errs[0].Error(), "cannot anonymise .pdf") ||
 		errs[2] == nil || !strings.Contains(errs[2].Error(), "MSG") {
 		t.Fatalf("errs = %v", errs)
 	}

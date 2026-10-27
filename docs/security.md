@@ -80,7 +80,7 @@ Only fixtures with source `anonymised` are derived from real data.
 - Uploads through the API or CLI are declared as containing no real data; real data must come through ingest.
 - Ingest (admin key, quarantine datasets only) keeps raw input in memory for the request and stores only anonymised output. Dry-run reports hold original data: they are returned with `Cache-Control: no-store` and never stored or logged; the audit event records counts only.
 - The anonymisation key is read from a file that group and others cannot read (the server refuses otherwise) or from `EXEMPLAR_ANON_KEY`, never from the config file. The registry keeps real identities only as HMACs under that key (`identity_keys`, `name_tokens`).
-- Presidio receives email text in plain form; run it next to the server on a private network or loopback. See [anonymisation.md](anonymisation.md).
+- Presidio receives email and document text in plain form; run it next to the server on a private network or loopback. See [anonymisation.md](anonymisation.md).
 - Copies made by fork or promote keep the source's provenance (`ingest_batch`, review state, reviewer).
 - `exemplar purge <batch>` (admin) deletes a batch's fixtures from every dataset, frozen ones included, for removal on request. That includes emails generated from the batch's emails as templates, which keep its `ingest_batch`.
 - Export carries approved real-derived fixtures only. Importing them needs an admin key, because they arrive approved: the review made on the exporting instance is trusted, and its reviewer is recorded as `imported_reviewer`.
@@ -104,7 +104,7 @@ Only admin keys can read the log.
 | `fixture.create`, `fixture.delete` | Fixture lifecycle |
 | `fixture.download` | Real-derived content is read |
 | `fixture.approve`, `fixture.reject` | A real-derived fixture is reviewed |
-| `fixture.ingest` | Real emails are ingested; details record batch, profile, key id, dry run and counts |
+| `fixture.ingest` | Real emails or documents are ingested; details record batch, profile, key id, dry run and counts |
 | `dataset.export`, `dataset.import` | Datasets leave or arrive in an archive; details record counts, and for imports the source build and time |
 | `instance.backup`, `instance.restore` | A backup is taken; an instance is restored (recorded in the restored log) |
 | `fixture.purge` | An ingest batch is purged; details record how many fixtures |

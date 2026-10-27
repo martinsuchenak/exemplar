@@ -254,9 +254,12 @@ copied to. It cannot be undone, so it needs `--yes`.
 exemplar ingest <dataset-id> <file-or-directory>... [--profile P] [--batch B] [--dry-run]
 ```
 
-Admin key. Sends real `.eml` files to the server, which anonymises them and
-stores them in the quarantine dataset as unreviewed fixtures named
-`<batch>-001.eml`, `<batch>-002.eml`, …. Without `--batch` a new batch name is
+Admin key. Sends real emails and documents (`.eml`, `.txt`, `.md`, `.csv`,
+`.json`, `.html`, `.twig` and the rest listed in
+[anonymisation.md](anonymisation.md#documents)) to the server, which
+anonymises them and stores them in the quarantine dataset as unreviewed
+fixtures named `<batch>-001.eml`, `<batch>-002.csv`, …, keeping each file's
+extension. Without `--batch` a new batch name is
 made up and printed; purge takes it. Directories are read as for `upload`.
 
 `--dry-run` stores nothing and prints every replacement, original next to

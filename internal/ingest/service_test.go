@@ -46,7 +46,7 @@ func emails() []ingest.File {
 	return []ingest.File{
 		{Name: "one.eml", Data: anonymisetest.Email("Priya Shah", "Tom Reid", "acmeplumbing.com.au", "Leak at site", "Hi Tom, call me on 0412 345 678. Priya")},
 		{Name: "outlook.msg", Data: []byte("binary")},
-		{Name: "notes.txt", Data: []byte("text")},
+		{Name: "report.pdf", Data: []byte("%PDF")},
 		{Name: "TWO.EML", Data: anonymisetest.Email("Tom Reid", "Priya Shah", "acmeplumbing.com.au", "Re Leak at site", "Thanks Priya, fixed. Tom")},
 	}
 }
@@ -78,7 +78,7 @@ func TestIngestStoresAnonymisedFixtures(t *testing.T) {
 	for _, f := range res.Files {
 		byName[f.Name] = f
 	}
-	if !strings.Contains(byName["outlook.msg"].Error, "MSG") || !strings.Contains(byName["notes.txt"].Error, ".eml") {
+	if !strings.Contains(byName["outlook.msg"].Error, "MSG") || !strings.Contains(byName["report.pdf"].Error, "cannot anonymise .pdf") {
 		t.Errorf("rejections = %+v", res.Files)
 	}
 	if byName["one.eml"].FixtureName != "b1-001.eml" || byName["TWO.EML"].FixtureName != "b1-002.eml" || byName["one.eml"].Replacements == 0 || byName["one.eml"].Report != nil {
@@ -153,6 +153,52 @@ func TestIngestStoresAnonymisedFixtures(t *testing.T) {
 	n, err := a.Fixtures.PurgeBatch(ctx, admin, "b2")
 	if err != nil || n != 1 {
 		t.Errorf("purge = %d, %v", n, err)
+	}
+}
+
+// TestIngestStoresDocuments checks that documents go through the same
+// batch as emails: names from the emails' headers are found in them, and
+// each is stored under its own extension, linked to no one.
+func TestIngestStoresDocuments(t *testing.T) {
+	a := newApp(t, 0)
+	admin := testutil.Admin(t, a)
+	dsID := quarantine(t, a, admin)
+	files := []ingest.File{
+		emails()[0],
+		{Name: "Site notes.MD", Data: []byte("# Leak\n\nTom Reid met Priya Shah. Call 0412 345 678.\n")},
+		{Name: "contacts.csv", Data: []byte("Name,Phone\nTom Reid,0412 345 678\n")},
+		{Name: "letter.html.twig", Data: []byte("<p>Dear {{ name }}, from Priya Shah</p>")},
+	}
+	res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{Batch: "docs"}, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig"}
+	for i, f := range res.Files {
+		if f.Error != "" || f.FixtureName != want[i] || f.Replacements == 0 {
+			t.Errorf("file %d = %+v, want %s", i, f, want[i])
+		}
+	}
+	fixtures, err := a.Fixtures.List(ctx, admin, dsID, fixture.ListFilter{})
+	if err != nil || len(fixtures) != 4 {
+		t.Fatalf("fixtures = %d, %v", len(fixtures), err)
+	}
+	for _, f := range fixtures {
+		body := content(t, a, admin, f.ID)
+		for _, s := range secrets {
+			if strings.Contains(body, s) {
+				t.Errorf("%s still contains %q:\n%s", f.Name, s, body)
+			}
+		}
+		if f.Name == "docs-001.eml" {
+			continue
+		}
+		if f.Kind != fixture.KindFile || f.Source != fixture.SourceAnonymised || f.ReviewState != fixture.ReviewUnreviewed || len(f.People) != 0 {
+			t.Errorf("document fixture = %+v", f)
+		}
+		if f.Name == "docs-004.html.twig" && !strings.Contains(body, "<p>Dear {{ name }}, from ") {
+			t.Errorf("template code changed: %s", body)
+		}
 	}
 }
 

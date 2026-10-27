@@ -93,8 +93,8 @@ type emailHandler struct{}
 
 // prepare reads an email's address headers, and those of the emails
 // attached to it, so a person named there is recognised in every file.
-func (emailHandler) prepare(ctx context.Context, e *Engine, data []byte) error {
-	root, _, err := e.parse(data, 0)
+func (emailHandler) prepare(ctx context.Context, e *Engine, f File) error {
+	root, _, err := e.parse(f.Data, 0)
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,8 @@ func nameTokens(display, local string) (tokens []string, lastFirst bool) {
 }
 
 // anonymise rewrites one email.
-func (emailHandler) anonymise(ctx context.Context, e *Engine, data []byte) (*Output, error) {
+func (emailHandler) anonymise(ctx context.Context, e *Engine, file File) (*Output, error) {
+	data := file.Data
 	root, dropped, err := e.parse(data, 0)
 	if err != nil {
 		return nil, err
@@ -499,11 +500,11 @@ func (e *Engine) replacements(ctx context.Context, f *found) (map[string]string,
 			pairs[v] = e.fakeCompany(v)
 		}
 	}
-	for v, entity := range f.entities {
+	for _, v := range fakeOrder(f.entities) {
 		if _, ok := pairs[v]; ok {
 			continue
 		}
-		fake, err := e.fake(ctx, entity, v)
+		fake, err := e.fake(ctx, f.entities[v], v)
 		if err != nil {
 			return nil, err
 		}
@@ -512,4 +513,24 @@ func (e *Engine) replacements(ctx context.Context, f *found) (map[string]string,
 		}
 	}
 	return pairs, nil
+}
+
+// fakeOrder returns the found values in the order their fakes are made:
+// names first, then the rest, each sorted. Fakes share the registry's name
+// tokens, so order matters: once "Sarah Lane" maps Lane as a last name, an
+// address sarah.lane@… reuses that mapping rather than claiming "lane" as a
+// new first name, and the same input always gives the same output.
+func fakeOrder(entities map[string]string) []string {
+	values := make([]string, 0, len(entities))
+	for v := range entities {
+		values = append(values, v)
+	}
+	sort.Slice(values, func(i, j int) bool {
+		pi, pj := entities[values[i]] == EntityPerson, entities[values[j]] == EntityPerson
+		if pi != pj {
+			return pi
+		}
+		return values[i] < values[j]
+	})
+	return values
 }

@@ -11,14 +11,26 @@ import (
 // Every format the engine reads has a handler that finds the text in a file
 // and writes the file back with the fakes in it. Handlers live in this
 // package and use the engine's detection, fakes and registry, so the same
-// person gets the same fake in every format. Email is the only format so
-// far; see docs/architecture.md.
+// person gets the same fake in every format. Email has its own handler;
+// every document format shares docHandler (document.go). See
+// docs/architecture.md and docs/anonymisation.md.
 
 // Format names a file format by its usual extension.
 type Format string
 
-// FormatEmail is an RFC 5322 message.
-const FormatEmail Format = "eml"
+// The formats the engine reads.
+const (
+	FormatEmail    Format = "eml"
+	FormatText     Format = "txt"
+	FormatMarkdown Format = "md"
+	FormatCSV      Format = "csv"
+	FormatTSV      Format = "tsv"
+	FormatJSON     Format = "json"
+	FormatJSONL    Format = "jsonl"
+	FormatHTML     Format = "html"
+	FormatTwig     Format = "twig"
+	FormatJinja    Format = "jinja"
+)
 
 // File is one file to anonymise, under the name it arrived with. The name
 // picks the format, and is original data like the content.
@@ -31,10 +43,10 @@ type File struct {
 type handler interface {
 	// prepare learns what a file says about people before any file of
 	// the batch is anonymised.
-	prepare(ctx context.Context, e *Engine, data []byte) error
+	prepare(ctx context.Context, e *Engine, f File) error
 	// anonymise rewrites one file. It leaves Output.Format and Name to
 	// the engine.
-	anonymise(ctx context.Context, e *Engine, data []byte) (*Output, error)
+	anonymise(ctx context.Context, e *Engine, f File) (*Output, error)
 }
 
 type formatDef struct {
@@ -48,6 +60,15 @@ type formatDef struct {
 
 var formats = []formatDef{
 	{format: FormatEmail, exts: []string{".eml"}, prefix: "email", handler: emailHandler{}},
+	{format: FormatText, exts: []string{".txt", ".text", ".log"}, prefix: "document", handler: docHandler{parse: parsePlain}},
+	{format: FormatMarkdown, exts: []string{".md", ".markdown"}, prefix: "document", handler: docHandler{parse: parsePlain}},
+	{format: FormatCSV, exts: []string{".csv"}, prefix: "document", handler: docHandler{parse: parseCSV(',')}},
+	{format: FormatTSV, exts: []string{".tsv"}, prefix: "document", handler: docHandler{parse: parseCSV('\t')}},
+	{format: FormatJSON, exts: []string{".json"}, prefix: "document", handler: docHandler{parse: parseJSON(false)}},
+	{format: FormatJSONL, exts: []string{".jsonl", ".ndjson"}, prefix: "document", handler: docHandler{parse: parseJSON(true)}},
+	{format: FormatHTML, exts: []string{".html", ".htm"}, prefix: "document", handler: docHandler{parse: parseHTML}},
+	{format: FormatTwig, exts: []string{".twig"}, prefix: "document", handler: docHandler{parse: parseTemplate}},
+	{format: FormatJinja, exts: []string{".j2", ".jinja", ".jinja2"}, prefix: "document", handler: docHandler{parse: parseTemplate}},
 }
 
 // notYet explains the extensions people try that cannot be read yet.
@@ -96,16 +117,32 @@ func findFormat(name string) (*formatDef, error) {
 	return nil, fmt.Errorf("cannot anonymise %s: the supported files are %s", ext, strings.Join(exts, ", "))
 }
 
+// Extension returns a file name's extension as anonymised files keep it:
+// lower-cased, and for a template also the extension of what it renders
+// (".html.twig"), which says how its text is read.
+func Extension(name string) string {
+	name = strings.ToLower(name)
+	ext := path.Ext(name)
+	if def, err := findFormat(name); err == nil && (def.format == FormatTwig || def.format == FormatJinja) {
+		inner := path.Ext(strings.TrimSuffix(name, ext))
+		if _, ok := templateRenders[inner]; ok {
+			return inner + ext
+		}
+	}
+	return ext
+}
+
 // Prepare reads every file of the batch before any is anonymised, so that a
 // person named in one file is recognised in all of them: for email, the
-// people in its address headers. It returns one error per file, nil for the
-// ones it read: a file that cannot be read fails on its own, not the batch.
+// people in its address headers; for a document, the names detection finds
+// in it. It returns one error per file, nil for the ones it read: a file
+// that cannot be read fails on its own, not the batch.
 func (e *Engine) Prepare(ctx context.Context, files []File) []error {
 	errs := make([]error, len(files))
 	for i, f := range files {
 		def, err := findFormat(f.Name)
 		if err == nil {
-			err = def.handler.prepare(ctx, e, f.Data)
+			err = def.handler.prepare(ctx, e, f)
 		}
 		errs[i] = err
 	}
@@ -118,7 +155,7 @@ func (e *Engine) Anonymise(ctx context.Context, f File) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := def.handler.anonymise(ctx, e, f.Data)
+	out, err := def.handler.anonymise(ctx, e, f)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +165,7 @@ func (e *Engine) Anonymise(ctx context.Context, f File) (*Output, error) {
 
 // fakeFileName names a file as attachments are named: the same original
 // name always gets the same fake, so references between files still match.
-// The extension is kept, lower-cased.
+// The extension is kept (see Extension).
 func (e *Engine) fakeFileName(prefix, name string) string {
-	return prefix + "-" + e.key.Hex("file", name, 6) + strings.ToLower(path.Ext(name))
+	return prefix + "-" + e.key.Hex("file", name, 6) + Extension(name)
 }

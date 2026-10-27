@@ -1,9 +1,12 @@
-# Anonymising real email
+# Anonymising real email and documents
 
-exemplar can take real `.eml` files and turn them into fixtures that are safe
-to share. It replaces personal and commercial data with consistent fakes, and
-keeps everything a mail parser depends on. The anonymiser is a Go port of
-mail-processor's `anonymise-corpus.py`.
+exemplar can take real `.eml` files, and documents such as Markdown, CSV,
+JSON, HTML and Twig templates, and turn them into fixtures that are safe to
+share. It replaces personal and commercial data with consistent fakes, and
+keeps everything a parser depends on: an email's MIME structure, a CSV's
+cells, a JSON document's keys, a template's code. The email anonymiser is a
+Go port of mail-processor's `anonymise-corpus.py`; see
+[Documents](#documents) for the other formats.
 
 Real-derived fixtures go into a quarantine dataset. An admin reviews each one,
 then approves or rejects it. Only approved fixtures leave quarantine, through
@@ -18,7 +21,7 @@ exemplar datasets create --name inbox-2025 --scope quarantine
 # 2. Check what would be replaced. The report shows ORIGINAL data: read it, don't keep it.
 exemplar ingest <dataset-id> ./mail --dry-run
 
-# 3. Ingest for real: fixtures are stored as <batch>-001.eml, <batch>-002.eml, …
+# 3. Ingest for real: fixtures are stored as <batch>-001.eml, <batch>-002.csv, …
 exemplar ingest <dataset-id> ./mail --batch inbox-2025-01
 
 # 4. Review each fixture, then approve or reject it
@@ -40,13 +43,14 @@ Ingest runs on the server. The CLI streams the files up in one
 `multipart/form-data` request. The server reads them into memory and never
 writes them to disk. It stores only the anonymised output.
 
-Every file in a request is one batch. The engine first reads every sender and
-recipient in the batch, then rewrites each email. A name from one email's
-headers is therefore found in the bodies of all the others. One file failing
-(a `.msg`, an unsupported charset, a malformed message, one over the nesting
-or part limits) does not stop the rest, whether it fails while the batch's
-headers are read or while it is rewritten; its row in the result carries the
-error.
+Every file in a request is one batch. The engine first reads every file in
+the batch: each email's senders and recipients, and the names detection finds
+in each document. Then it rewrites each file. A name from one email's headers,
+or found in one document, is therefore found in all the others, and gets the
+same fake everywhere. One file failing (a `.msg`, an unsupported charset, a
+malformed message or document, one over the nesting or part limits) does not
+stop the rest, whether it fails while the batch is read or while it is
+rewritten; its row in the result carries the error.
 
 ## What is replaced
 
@@ -142,6 +146,41 @@ all and have at most 10,000 parts; deeper or larger structures are refused
 (`mimetree.MaxDepth`, `mimetree.MaxParts`), and that email alone fails. Parsing costs one pass over the
 message per nesting level, so a hostile message cannot make it slow.
 
+## Documents
+
+The file name's extension picks the format, case aside. Each document is
+searched the way an email body is (Presidio, the patterns, the batch's names)
+and only its text is rewritten. Afterwards the output is parsed again and must
+have the same structure as the input, or the file fails rather than coming
+back broken.
+
+| Format | Extensions | What is searched | What stays exactly as sent |
+|--------|------------|------------------|----------------------------|
+| Text | `.txt`, `.text`, `.log` | The whole file | Everything but the replaced values |
+| Markdown | `.md`, `.markdown` | The whole file: text, code, front matter, link and image targets (URLs and `mailto:` addresses) | The markup |
+| CSV, TSV | `.csv`, `.tsv` | Each row, header row included | Every cell that does not change, with its quoting, and the line endings. A changed cell keeps its quotes, or gains them if the fake needs them |
+| JSON, JSON Lines | `.json`, `.jsonl`, `.ndjson` | Every string value | Keys, key order, spacing, numbers, booleans and the escaping of unchanged values |
+| HTML | `.html`, `.htm` | Visible text, `<title>`, `<meta>` content, comments, and the `alt`, `title`, `href`, `src`, `placeholder`, `aria-label` and `value` attributes | Markup, scripts and styles (a value found elsewhere is still replaced in them) |
+| Twig, Jinja | `.twig`, `.j2`, `.jinja`, `.jinja2` | Literal text (as HTML for `page.html.twig`), comments, and quoted strings inside tags | Every tag as written outside its strings: variables, filters and keywords are code, so `{{ customer.name }}` is untouched while `{% set signer = "Jane Doe" %}` is not. `{% verbatim %}` and `{% raw %}` bodies are literal text |
+
+A CSV column or JSON key named for an entity marks its values as that entity,
+even where the detector would not find them: `name`, `full_name`,
+`first_name`, `last_name`, `surname`; `email`, `e-mail`, `email_address`;
+`phone`, `mobile`, `tel`; `company`, `organisation`, `employer`. Only letters
+and digits of the label count, in any case.
+
+Text must be UTF-8, with or without a byte-order mark, or UTF-16 with one;
+the output keeps the input's encoding. Other encodings, and files holding NUL
+bytes, are refused rather than guessed. A document links to no registry
+people: a person found only by name has no address to match one by.
+
+The names found while the batch is read are mapped to their fakes before any
+file is rewritten, as an email's headers are. So "Sarah Lane" in one file and
+`sarah.lane@…` in another get matching fakes (`kenneth.huang@…` for Kenneth
+Huang), and the same files with the same key always give the same output.
+Reading a document's names first means each document goes to Presidio twice. Its texts are sent in chunks of about 32 KiB, so a
+CSV of thousands of rows takes a few calls, not one per row.
+
 ## Consistency and the key
 
 Fakes are derived from an HMAC of the real value under the anonymisation key.
@@ -232,7 +271,8 @@ ingest with the same key will produce.
 
 ## Limits
 
-- Only `.eml` files are read; the extension picks the format, case aside. Any other file fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
+- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, DOCX, RTF, XLSX, images) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
+- In JSON, keys and numbers are never changed: a phone number stored as a number, or a name used as a key, survives. In templates, nothing is matched across a tag.
 - Charsets other than UTF-8, US-ASCII, ISO-8859-1 and Windows-1252 are rejected per file.
 - Attachment contents are replaced, not anonymised: a PDF's text does not survive.
 - Dates are kept, so a timeline can be recognised by someone who knows it.

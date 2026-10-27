@@ -97,7 +97,9 @@ skip it.
   `internal/anonymise/testdata/emails-golden.json`. A refactor must leave it
   passing. Only a deliberate change in output may rewrite the file, with
   `go test ./internal/anonymise -run TestEmailGolden -update`, and the
-  commit says why.
+  commit says why. Each document format has a sample in `document_test.go`
+  holding the same secrets in every place that format can hide them; a new
+  format adds one, plus the structure it must keep and its parse errors.
 
 - **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
   that records envelopes and data, can require AUTH PLAIN and can reject a

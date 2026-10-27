@@ -18,12 +18,12 @@ func init() {
 	Register(ingestCmd())
 }
 
-// ingestCmd sends real emails to the server, which anonymises them and stores
-// the results in a quarantine dataset for review. Admin key.
+// ingestCmd sends real emails and documents to the server, which anonymises
+// them and stores the results in a quarantine dataset for review. Admin key.
 func ingestCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "ingest",
-		Usage:     "Anonymise real .eml files into a quarantine dataset (admin key)",
+		Usage:     "Anonymise real emails and documents into a quarantine dataset (admin key)",
 		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Quarantine dataset", Required: true}},
 		MinArgs:   1,
 		MaxArgs:   cli.UnlimitedArgs,

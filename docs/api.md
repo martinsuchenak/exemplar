@@ -110,7 +110,7 @@ frozen ones included, and is audit-logged.
 
 | Method and path | Who | Body | Response |
 |-----------------|-----|------|----------|
-| `POST /api/v1/datasets/{id}/ingest` | admin; quarantine datasets only | `multipart/form-data`: one or more `file` parts (`.eml`), optional `profile`, `batch`, `dry_run` fields | `201` IngestResult; `200` for a dry run |
+| `POST /api/v1/datasets/{id}/ingest` | admin; quarantine datasets only | `multipart/form-data`: one or more `file` parts (emails and documents; the file name's extension picks the format), optional `profile`, `batch`, `dry_run` fields | `201` IngestResult; `200` for a dry run |
 
 An **IngestResult** is `{"batch", "profile", "key_id", "dry_run", "files":
 […]}`. Each file is `{"name", "fixture_id", "fixture_name", "replacements",
