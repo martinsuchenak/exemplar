@@ -14,6 +14,12 @@ Two kinds of command:
   key. They work the same against a local instance and a shared server, and
   the server's services enforce every permission.
 
+A command that fails prints one line on stderr, `exemplar: <message>`, and
+exits 1. When the command line was wrong (a missing argument, an unknown
+flag, a bad value) a second line names the command's help, for example
+`Run 'exemplar promote --help' for usage.` Logs (`--log-level`,
+`--log-format`) are the server's; command errors are not log entries.
+
 ## Host commands
 
 ### Storage flags

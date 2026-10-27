@@ -6,9 +6,8 @@ import (
 	"os"
 
 	"github.com/paularlott/cli"
-	cli_toml "github.com/paularlott/cli/toml"
 	"github.com/paularlott/cli/env"
-	logslog "github.com/paularlott/logger/slog"
+	cli_toml "github.com/paularlott/cli/toml"
 
 	"github.com/martinsuchenak/exemplar/build"
 	"github.com/martinsuchenak/exemplar/cmd"
@@ -17,18 +16,12 @@ import (
 var configFile = "exemplar-config.toml"
 
 func main() {
-	log := logslog.New(logslog.Config{
-		Level:  "info",
-		Format: "console",
-		Writer: os.Stdout,
-	})
-
 	_ = env.Load()
 
 	app := &cli.Command{
-		Name:    "exemplar",
-		Usage:   "exemplar service",
-		Version: build.Version + " (" + build.Date + ")",
+		Name:       "exemplar",
+		Usage:      "exemplar service",
+		Version:    build.Version + " (" + build.Date + ")",
 		ConfigFile: cli_toml.NewConfigFile(&configFile, nil),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -60,7 +53,8 @@ func main() {
 	}
 
 	if err := app.Execute(context.Background()); err != nil {
-		log.Error("application error", "error", err)
-		os.Exit(1)
+		// A plain line on stderr, not a log entry: the person at the
+		// terminal reads it. The server logs its own errors.
+		os.Exit(cmd.ReportError(os.Stderr, app, os.Args[1:], err))
 	}
 }
