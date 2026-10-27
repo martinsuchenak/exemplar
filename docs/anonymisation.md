@@ -43,8 +43,10 @@ writes them to disk. It stores only the anonymised output.
 Every file in a request is one batch. The engine first reads every sender and
 recipient in the batch, then rewrites each email. A name from one email's
 headers is therefore found in the bodies of all the others. One file failing
-(a `.msg`, an unsupported charset, a malformed message) does not stop the
-rest; its row in the result carries the error.
+(a `.msg`, an unsupported charset, a malformed message, one over the nesting
+or part limits) does not stop the rest, whether it fails while the batch's
+headers are read or while it is rewritten; its row in the result carries the
+error.
 
 ## What is replaced
 
@@ -70,33 +72,74 @@ JPEG files are padded with a metadata chunk, so they still decode.
 
 ## What is kept
 
-- MIME structure, boundaries, transfer encodings and charsets (non-UTF-8 text is converted to UTF-8 and re-encoded as quoted-printable).
+- MIME structure, transfer encodings and charsets (non-UTF-8 text is converted to UTF-8 and re-encoded as quoted-printable). Multipart boundaries are the sender's text, so each is replaced with a keyed one (`=_<hex>`).
 - HTML markup; only text and attribute values are replaced.
 - Dates, subjects' structure (`Re:`, `Fwd:`), greetings and sign-offs (the profile's stop words).
 - Public mail providers' domains and system senders such as `noreply@` (the profile's keep lists).
 - Attached emails (`message/rfc822`) are anonymised recursively; delivery reports keep their fields with addresses replaced.
 
-Headers not on the allowlist are dropped: `Received`, DKIM and ARC signatures,
-`X-MS-Exchange-*`, `X-Originating-IP` and the like. They carry addresses, IPs
-and tenant ids that nothing downstream reads. The result reports how many were
-dropped. The allowlist is `keepHeaders` in `internal/anonymise/engine.go`. Kept
-headers that hold free text (`Subject`, `Thread-Topic`, `Content-Description`,
-`X-Mailer`, `User-Agent`) go through the same replacements as bodies, and so
-does each MIME part's `Content-Description`.
+### Headers
 
-MIME parts (and nested multiparts) keep only the headers they need to parse
-(`Content-Type`, `Content-Transfer-Encoding`, `Content-Disposition`,
-`Content-ID`, `Content-Language`, `Content-Description`, `Content-Location`,
-`Content-Features`, `Content-MD5`, `MIME-Version`); any other part header,
-such as `X-*` or `Comments`, is dropped and counted with the dropped message
-headers. A part's `Content-Location` URL gets the fake domain; a relative one
-is renamed like an attachment. Text before the first boundary and after the
-last (preamble and epilogue, where list footers sit) goes through the same
-detection and replacement as bodies.
+Every header a message or MIME part keeps has a kind, and the kind says how
+its value is anonymised. Any header without one is dropped: `Received`, DKIM
+and ARC signatures, `X-MS-Exchange-*`, `X-Originating-IP` and the like on a
+message; `X-*`, `Comments`, `Content-MD5`, `Content-Features` and anything
+else on a part. They carry addresses, IPs and tenant ids that nothing
+downstream reads. The table is `messageHeaderKinds` and `partHeaderKinds`
+in `internal/anonymise/headers.go`.
+
+| Kind | Headers | Value |
+|------|---------|-------|
+| Address | `From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Sender`, `Return-Path`, `Disposition-Notification-To` | Rebuilt from the parsed mailboxes: each address mapped to its registry person, display names replaced, comments dropped. An unparseable list keeps only the addresses in it, faked; `Return-Path: <>` stays |
+| ID | `Message-ID`, `In-Reply-To`, `References`, `Content-ID` | Only the `<id>`s, each a keyed hash; text around them is dropped |
+| Free text | `Subject`, `Thread-Topic`, `X-Mailer`, `User-Agent`, `Content-Description` | Detected and replaced like a body, at every level |
+| URL list | `List-Unsubscribe`, `List-Post`, `List-Help` | Only the `<URL>`s, faked like other URLs (`List-Post: NO` stays) |
+| List-Id | `List-Id` | The phrase as free text, the `<id>` as a host |
+| Location | `Content-Location` | A URL gets the fake domain; a relative name is renamed like an attachment |
+| Structure | the rest | Rebuilt from its parsed tokens before anything reads the message, or dropped when it does not parse |
+
+The structural rules keep only what each header's grammar allows, so a
+comment, an extra word or an unknown parameter cannot carry personal data
+through:
+
+- `Content-Type`: the media type and the parameters a reader needs (`charset`,
+  `boundary`, `name`, `method`, `report-type`, `type`, `start`, `format`,
+  `delsp`, `reply-type`, `protocol`, `micalg`), each checked; `name` is
+  renamed with the attachment and `start` faked with the `Content-ID` it
+  names.
+- `Content-Disposition`: `inline` or `attachment` and the file name, which is
+  renamed; dates, sizes and other parameters are dropped.
+- `Content-Transfer-Encoding`: one of the five standard encodings.
+  `MIME-Version`: `1.0`.
+- `Content-Language`, `Accept-Language`: language tags (with weights for
+  `Accept-Language`).
+- `Date`: reformatted as `Mon, 3 Feb 2025 09:15:00 +1100`, without comments.
+- `Thread-Index`: each 22- or 5-byte block replaced by a keyed one, so
+  emails in one conversation still share a prefix.
+- `Auto-Submitted`, `Precedence`, `Importance`, `X-Priority`,
+  `X-Auto-Response-Suppress`, `X-MS-Has-Attach`, `List-Unsubscribe-Post`:
+  only their known values. `X-Autoreply` and `X-Autorespond` become `yes`,
+  since classifiers read only that they are there. `X-MS-TNEF-Correlator` is
+  kept only when empty.
+
+A header that may appear only once (anything but the address and URL lists)
+keeps its first copy, the one parsers read; later copies are dropped, so a
+second `Content-Type` cannot slip a value past the rules. The result's
+dropped-header count includes the headers dropped by these rules.
+
+Text before the first boundary and after the last (preamble and epilogue,
+where list footers sit) goes through the same detection and replacement as
+bodies.
+
+The regression test for all of this is Strix's slot corpus
+(`TestPartHeaderSlotsLeakNothing`, `TestMessageHeaderSlotsLeakNothing` in
+`internal/anonymise/headers_test.go`): a unique address in every header slot
+of a part and a message, plain, in comments, in parameters and duplicated,
+none of which may survive.
 
 A message may nest multiparts and attached emails at most 32 levels deep in
 all and have at most 10,000 parts; deeper or larger structures are refused
-(`mimetree.MaxDepth`, `mimetree.MaxParts`). Parsing costs one pass over the
+(`mimetree.MaxDepth`, `mimetree.MaxParts`), and that email alone fails. Parsing costs one pass over the
 message per nesting level, so a hostile message cannot make it slow.
 
 ## Consistency and the key

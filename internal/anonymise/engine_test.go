@@ -179,8 +179,10 @@ func run(t *testing.T, e *Engine, emails ...string) []*Output {
 	for i, m := range emails {
 		raw[i] = []byte(m)
 	}
-	if err := e.Prepare(ctx, raw); err != nil {
-		t.Fatal(err)
+	for i, err := range e.Prepare(ctx, raw) {
+		if err != nil {
+			t.Fatalf("preparing email %d: %v", i, err)
+		}
 	}
 	outs := make([]*Output, len(emails))
 	for i, m := range raw {

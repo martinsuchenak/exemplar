@@ -473,6 +473,12 @@ func (s *Service) planImport(ctx context.Context, actor principal.Principal, dat
 	plan.datasets = parentsFirst(datasets)
 	people := map[string]person.Person{}
 	for _, p := range persons {
+		if err := person.CheckImport(p); err != nil {
+			return nil, err
+		}
+		if _, ok := people[p.ID]; ok {
+			return nil, fmt.Errorf("%w: archive: person %s appears twice", apperr.ErrInvalid, p.ID)
+		}
 		people[p.ID] = p
 	}
 	linked := map[string]bool{}

@@ -265,3 +265,23 @@ func TestLineEndingsAreKept(t *testing.T) {
 		t.Error("CRLF and LF input serialise differently")
 	}
 }
+
+func TestSetBoundary(t *testing.T) {
+	msg := "Content-Type: multipart/mixed; charset=x; boundary=\"old@sender\"\r\n\r\n--old@sender\r\nContent-Type: text/plain\r\n\r\nhi\r\n--old@sender--\r\n"
+	p, err := Parse([]byte(msg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.SetBoundary("=_new")
+	out := string(p.Bytes())
+	if strings.Contains(out, "old@sender") {
+		t.Errorf("old boundary survived:\n%s", out)
+	}
+	again, err := Parse([]byte(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, params := again.MediaType(); again.Boundary != "=_new" || params["charset"] != "x" || len(again.Parts) != 1 {
+		t.Errorf("reparsed: boundary %q, params %v, %d parts", again.Boundary, params, len(again.Parts))
+	}
+}

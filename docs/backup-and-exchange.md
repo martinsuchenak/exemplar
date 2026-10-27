@@ -60,8 +60,11 @@ frozen state; the importing account becomes the owner. Then:
   one first.
 - Global and quarantine datasets need an admin key, as when creating them.
 - People are matched first by ID, then by email (two instances generating with
-  one seed make the same people), and added otherwise. Registry addresses must
-  be on `.example` domains.
+  one seed make the same people), and added otherwise. Only people a fixture
+  links are added, but every person record is checked: a record with an
+  unsafe ID, no first name or an address off `.example`, or one that appears
+  twice, refuses the whole archive (`person.CheckImport`), so a hand-made
+  archive is told about it rather than the record being left out silently.
 - Fixtures keep their provenance: source, generator, anonymisation profile and
   key id, ingest batch. `exemplar purge <batch>` on the importing instance
   removes imported real-derived fixtures too.

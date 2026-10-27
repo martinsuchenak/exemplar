@@ -15,29 +15,12 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/textswap"
 )
 
-// Header handling, ported from anonymise-corpus.py. Headers not in
-// keepHeaders are dropped: Received, DKIM and ARC signatures,
-// X-MS-Exchange-*, X-Originating-IP and the like carry addresses, IPs and
-// tenant ids that nothing downstream reads.
+// Which headers are kept, and how each is rewritten, is in headers.go.
 var (
-	keepHeaders = set([]string{
-		"From", "To", "Cc", "Bcc", "Reply-To", "Sender", "Return-Path", "Subject", "Date",
-		"Message-ID", "In-Reply-To", "References", "MIME-Version", "Content-Type",
-		"Content-Transfer-Encoding", "Content-Disposition", "Content-ID", "Content-Language",
-		"Content-Description", "Thread-Topic", "Thread-Index", "Auto-Submitted", "X-Autoreply",
-		"X-Autorespond", "X-Auto-Response-Suppress", "Precedence", "List-Id", "List-Unsubscribe",
-		"List-Unsubscribe-Post", "List-Post", "List-Help", "Importance", "X-Priority", "X-Mailer",
-		"User-Agent", "Disposition-Notification-To", "Accept-Language", "X-MS-Has-Attach",
-		"X-MS-TNEF-Correlator",
-	})
-	addressHeaders = set([]string{"From", "To", "Cc", "Bcc", "Reply-To", "Sender", "Return-Path", "Disposition-Notification-To"})
-	idHeaders      = set([]string{"Message-ID", "In-Reply-To", "References"})
-	textHeaders    = set([]string{"Subject", "Thread-Topic", "Content-Description", "X-Mailer", "User-Agent"})
-	urlHeaders     = set([]string{"List-Unsubscribe", "List-Post", "List-Help", "List-Id"})
-	headerRoles    = map[string]string{"from": "from", "sender": "from", "to": "to", "cc": "cc", "bcc": "bcc", "reply-to": "reply-to"}
-	reportTypes    = set([]string{"message/delivery-status", "message/disposition-notification"})
-	emailRe        = regexp.MustCompile(`[\w.+'-]+@[\w-]+(?:\.[\w-]+)+`)
-	letterRe       = regexp.MustCompile(`[A-Za-z]+`)
+	headerRoles = map[string]string{"from": "from", "sender": "from", "to": "to", "cc": "cc", "bcc": "bcc", "reply-to": "reply-to"}
+	reportTypes = set([]string{"message/delivery-status", "message/disposition-notification"})
+	emailRe     = regexp.MustCompile(`[\w.+'-]+@[\w-]+(?:\.[\w-]+)+`)
+	letterRe    = regexp.MustCompile(`[A-Za-z]+`)
 )
 
 // Engine anonymises a batch of emails with one key, profile, detector and
@@ -101,18 +84,30 @@ type Output struct {
 }
 
 // Prepare reads the address headers of every email in the batch, so that a
-// person named in one email's headers is recognised in all of them.
-func (e *Engine) Prepare(ctx context.Context, emails [][]byte) error {
-	for _, data := range emails {
-		root, err := mimetree.Parse(data)
-		if err != nil {
-			return err
+// person named in one email's headers is recognised in all of them. It
+// returns one error per email, nil for the ones it read: an email that
+// cannot be read fails on its own, not the batch.
+func (e *Engine) Prepare(ctx context.Context, emails [][]byte) []error {
+	errs := make([]error, len(emails))
+	for i, data := range emails {
+		root, _, err := e.parse(data, 0)
+		if err == nil {
+			err = e.prepareMessage(ctx, root, 0)
 		}
-		if err := e.prepareMessage(ctx, root, 0); err != nil {
-			return err
-		}
+		errs[i] = err
 	}
-	return nil
+	return errs
+}
+
+// parse reads a message nested depth levels deep (0 for an email, an
+// attached message's Depth+1) and cleans its headers. It returns the names
+// of the headers clean dropped.
+func (e *Engine) parse(data []byte, depth int) (*mimetree.Part, []string, error) {
+	root, err := mimetree.ParseAt(data, depth)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing: %w", err)
+	}
+	return root, e.clean(root, true), nil
 }
 
 func (e *Engine) prepareMessage(ctx context.Context, msg *mimetree.Part, depth int) error {
@@ -120,7 +115,7 @@ func (e *Engine) prepareMessage(ctx context.Context, msg *mimetree.Part, depth i
 		return fmt.Errorf("message nests attached emails more than %d levels deep", mimetree.MaxDepth)
 	}
 	for _, f := range msg.Header.Fields {
-		if !addressHeaders[strings.ToLower(f.Name)] {
+		if messageHeaderKinds[strings.ToLower(f.Name)] != kindAddress {
 			continue
 		}
 		addrs, err := mail.ParseAddressList(mimetree.DecodeHeader(f.Value))
@@ -137,7 +132,7 @@ func (e *Engine) prepareMessage(ctx context.Context, msg *mimetree.Part, depth i
 	walkLeaves(msg, func(p *mimetree.Part) {
 		if mt, _ := p.MediaType(); err == nil && mt == "message/rfc822" {
 			if raw, derr := p.Decoded(); derr == nil {
-				if inner, perr := mimetree.ParseAt(raw, p.Depth+1); perr == nil {
+				if inner, _, perr := e.parse(raw, p.Depth+1); perr == nil {
 					err = e.prepareMessage(ctx, inner, depth+1)
 				}
 			}
@@ -255,9 +250,9 @@ func nameTokens(display, local string) (tokens []string, lastFirst bool) {
 
 // Anonymise rewrites one email. Prepare must have seen it.
 func (e *Engine) Anonymise(ctx context.Context, data []byte) (*Output, error) {
-	root, err := mimetree.Parse(data)
+	root, dropped, err := e.parse(data, 0)
 	if err != nil {
-		return nil, fmt.Errorf("parsing: %w", err)
+		return nil, err
 	}
 	if _, err := mail.ReadMessage(bytes.NewReader(data)); err != nil {
 		return nil, fmt.Errorf("not a valid email: %w", err)
@@ -275,7 +270,7 @@ func (e *Engine) Anonymise(ctx context.Context, data []byte) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &Output{Replacements: pairs, Entities: f.entities}
+	out := &Output{Replacements: pairs, Entities: f.entities, DroppedHeaders: dropped}
 	if err := e.rewrite(ctx, root, rep, out, true); err != nil {
 		return nil, err
 	}
@@ -305,46 +300,21 @@ func (e *Engine) sets(pairs map[string]string, f *found) textswap.Sets {
 	return sets
 }
 
-// collect finds personal data in one message (and messages attached to it).
+// collect finds personal data in one message (and messages attached to it):
+// in every kept header that holds text, as well as in the bodies.
 func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found, depth int) error {
 	if depth > mimetree.MaxDepth {
 		return fmt.Errorf("message nests attached emails more than %d levels deep", mimetree.MaxDepth)
 	}
-	for _, field := range msg.Header.Fields {
-		name := strings.ToLower(field.Name)
-		value := mimetree.DecodeHeader(field.Value)
-		switch {
-		case addressHeaders[name]:
-			addrs, err := mail.ParseAddressList(value)
-			if err != nil {
-				for _, a := range emailRe.FindAllString(value, -1) {
-					f.add(a, EntityEmail)
-				}
-				continue
-			}
-			for _, a := range addrs {
-				id, err := e.resolve(ctx, a.Name, a.Address)
-				if err != nil {
-					return err
-				}
-				f.add(a.Address, EntityEmail)
-				domain := a.Address[strings.LastIndex(a.Address, "@")+1:]
-				f.add(domain, EntityDomain)
-				e.addDomainCompany(domain, f)
-				if a.Name != "" && id != nil && id.person.Email != "" {
-					f.add(a.Name, EntityPerson)
-				}
-			}
-		case textHeaders[name]:
-			if err := e.detect(ctx, value, f); err != nil {
-				return err
-			}
-		}
-	}
-	var err error
+	err := e.collectHeaders(ctx, msg, f)
 	msg.Walk(func(p *mimetree.Part) {
 		if err != nil {
 			return
+		}
+		if p != msg {
+			if err = e.collectHeaders(ctx, p, f); err != nil {
+				return
+			}
 		}
 		if p.IsMultipart() {
 			// The preamble and epilogue are text around the boundary lines,
@@ -359,9 +329,6 @@ func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found, dept
 			}
 			return
 		}
-		if cid := strings.Trim(p.Header.Get("Content-ID"), "<> "); cid != "" {
-			f.add(cid, EntityContentID)
-		}
 		mt, _ := p.MediaType()
 		switch {
 		case mt == "message/rfc822":
@@ -370,7 +337,7 @@ func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found, dept
 				err = derr
 				return
 			}
-			inner, perr := mimetree.ParseAt(raw, p.Depth+1)
+			inner, _, perr := e.parse(raw, p.Depth+1)
 			if perr != nil {
 				err = perr
 				return
@@ -395,6 +362,50 @@ func (e *Engine) collect(ctx context.Context, msg *mimetree.Part, f *found, dept
 		}
 	})
 	return err
+}
+
+// collectHeaders finds personal data in one part's headers by their kind:
+// the people in address headers, and whatever detect finds in free text.
+// The structural headers hold no text of their own once cleaned, and IDs
+// and URLs are faked whole.
+func (e *Engine) collectHeaders(ctx context.Context, p *mimetree.Part, f *found) error {
+	for _, field := range p.Header.Fields {
+		value := mimetree.DecodeHeader(field.Value)
+		switch messageHeaderKinds[strings.ToLower(field.Name)] {
+		case kindAddress:
+			addrs, err := mail.ParseAddressList(value)
+			if err != nil {
+				for _, a := range emailRe.FindAllString(value, -1) {
+					f.add(a, EntityEmail)
+				}
+				continue
+			}
+			for _, a := range addrs {
+				id, err := e.resolve(ctx, a.Name, a.Address)
+				if err != nil {
+					return err
+				}
+				f.add(a.Address, EntityEmail)
+				domain := a.Address[strings.LastIndex(a.Address, "@")+1:]
+				f.add(domain, EntityDomain)
+				e.addDomainCompany(domain, f)
+				if a.Name != "" && id != nil && id.person.Email != "" {
+					f.add(a.Name, EntityPerson)
+				}
+			}
+		case kindText:
+			if err := e.detect(ctx, value, f); err != nil {
+				return err
+			}
+		case kindListID:
+			if err := e.detect(ctx, urlInAngles.ReplaceAllString(value, " "), f); err != nil {
+				return err
+			}
+		case kindContentID:
+			f.add(strings.Trim(value, "<> "), EntityContentID)
+		}
+	}
+	return nil
 }
 
 // addDomainCompany adds the company name a sender's domain spells:

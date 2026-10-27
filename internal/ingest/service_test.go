@@ -3,6 +3,7 @@ package ingest_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -246,6 +247,33 @@ func TestIngestRules(t *testing.T) {
 	}
 	if plain.Ingest.Profiles() != nil {
 		t.Error("unconfigured server lists profiles")
+	}
+}
+
+// TestUnreadableEmailFailsAlone checks that an email over the parser's
+// limits fails on its own while the rest of the batch is stored; it used to
+// fail the whole batch when the batch's headers were read.
+func TestUnreadableEmailFailsAlone(t *testing.T) {
+	a := newApp(t, 0)
+	admin := testutil.Admin(t, a)
+	dsID := quarantine(t, a, admin)
+	var deep strings.Builder
+	deep.WriteString("From: a@b.com.au\r\nTo: c@d.com.au\r\nContent-Type: multipart/mixed; boundary=q0\r\n\r\n")
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&deep, "--q%d\r\nContent-Type: multipart/mixed; boundary=q%d\r\n\r\n", i, i+1)
+	}
+	files := emails()
+	files = []ingest.File{files[0], {Name: "deep.eml", Data: []byte(deep.String())}, files[3]}
+
+	res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{Batch: "b1"}, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Files[1].Error, "levels deep") || res.Files[1].FixtureID != "" {
+		t.Errorf("deep email = %+v", res.Files[1])
+	}
+	if res.Files[0].FixtureID == "" || res.Files[2].FixtureID == "" {
+		t.Errorf("the readable emails were not stored: %+v", res.Files)
 	}
 }
 

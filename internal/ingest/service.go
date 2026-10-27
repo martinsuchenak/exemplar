@@ -173,27 +173,29 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 	}
 
 	res := &Result{Batch: req.Batch, Profile: profile.Name, KeyID: s.cfg.Key.ID, DryRun: req.DryRun}
-	var emails [][]byte
+	var emails []File
+	var raw [][]byte
 	for _, f := range files {
 		if err := checkName(f.Name); err != nil {
 			res.Files = append(res.Files, FileResult{Name: f.Name, Error: err.Error()})
 			continue
 		}
-		emails = append(emails, f.Data)
+		emails, raw = append(emails, f), append(raw, f.Data)
 	}
 	// Learn every sender and recipient first, so names from one email's
-	// headers are found in all of them.
-	if err := engine.Prepare(ctx, emails); err != nil {
-		return nil, fmt.Errorf("reading the batch's headers: %w", err)
-	}
+	// headers are found in all of them. An email that cannot be read (over
+	// the nesting or part limits, say) fails on its own.
+	prepared := engine.Prepare(ctx, raw)
 
 	stored, n := 0, 0
-	for _, f := range files {
-		if checkName(f.Name) != nil {
-			continue
-		}
+	for i, f := range emails {
 		n++
 		fr := FileResult{Name: f.Name}
+		if err := prepared[i]; err != nil {
+			fr.Error = "reading the headers: " + err.Error()
+			res.Files = append(res.Files, fr)
+			continue
+		}
 		out, err := engine.Anonymise(ctx, f.Data)
 		if err != nil {
 			fr.Error = err.Error()

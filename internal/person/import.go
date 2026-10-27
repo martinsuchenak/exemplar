@@ -14,6 +14,17 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/storeutil"
 )
 
+// CheckImport reports whether an exported person may be imported: an ID
+// that is safe in API paths, a name, and a .example address. Imports check
+// every person in an archive with it, linked to a fixture or not, so a bad
+// record is refused rather than silently left out.
+func CheckImport(p Person) error {
+	if !storeutil.ValidID(p.ID) || p.FirstName == "" || !strings.HasSuffix(strings.ToLower(p.Email), ".example") || !strings.Contains(p.Email, "@") {
+		return fmt.Errorf("%w: archive person %q needs an id, a name and a .example address", apperr.ErrInvalid, p.ID)
+	}
+	return nil
+}
+
 // Import adds an exported person inside tx and returns the ID they have
 // here. A person with the same ID is already here: that ID. A person with the
 // same email is already here: their ID, since registry emails identify people
@@ -24,8 +35,8 @@ func (s *Service) Import(ctx context.Context, tx *xdal.Tx, actor principal.Princ
 	if !actor.CanWrite() {
 		return "", false, fmt.Errorf("%w: importing people needs a write key", apperr.ErrForbidden)
 	}
-	if !storeutil.ValidID(p.ID) || p.FirstName == "" || !strings.HasSuffix(strings.ToLower(p.Email), ".example") || !strings.Contains(p.Email, "@") {
-		return "", false, fmt.Errorf("%w: archive person %q needs an id, a name and a .example address", apperr.ErrInvalid, p.ID)
+	if err := CheckImport(p); err != nil {
+		return "", false, err
 	}
 	if _, err := s.storage.Get(ctx, tx, p.ID); err == nil {
 		return p.ID, false, nil

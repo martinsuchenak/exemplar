@@ -32,20 +32,54 @@ func (e *Engine) rewriteAt(ctx context.Context, msg *mimetree.Part, rep *replace
 	if depth > mimetree.MaxDepth {
 		return fmt.Errorf("message nests attached emails more than %d levels deep", mimetree.MaxDepth)
 	}
-	var people []synth.Person
-	kept := msg.Header.Fields[:0:0]
-	for _, field := range msg.Header.Fields {
-		name := strings.ToLower(field.Name)
-		if !keepHeaders[name] {
-			out.DroppedHeaders = append(out.DroppedHeaders, field.Name)
-			continue
+	people, err := e.rewriteHeaders(ctx, msg, rep, out, top)
+	if err != nil {
+		return err
+	}
+	if len(people) == 0 {
+		people = []synth.Person{synth.New(e.key.Seed("filler", "people")).Person(synth.New(1).CompanyName())}
+	}
+
+	msg.Walk(func(p *mimetree.Part) {
+		if err != nil {
+			return
 		}
+		if p != msg {
+			if _, err = e.rewriteHeaders(ctx, p, rep, out, false); err != nil {
+				return
+			}
+		}
+		if p.IsMultipart() {
+			// The preamble and epilogue are text around the boundary lines;
+			// mailing-list footers there often carry addresses.
+			p.Preamble = []byte(rep.Apply(string(p.Preamble)))
+			p.Epilogue = []byte(rep.Apply(string(p.Epilogue)))
+			return
+		}
+		err = e.rewriteLeaf(ctx, p, rep, out, people, depth)
+	})
+	return err
+}
+
+// rewriteHeaders rewrites each of p's headers by its kind (see headers.go;
+// clean has already dropped the rest and rebuilt the structural ones) and
+// returns the registry people its address headers name. top is true for
+// the outer message, whose people are linked to the fixture.
+func (e *Engine) rewriteHeaders(ctx context.Context, p *mimetree.Part, rep *replacer, out *Output, top bool) ([]synth.Person, error) {
+	var people []synth.Person
+	kept := p.Header.Fields[:0:0]
+	for _, field := range p.Header.Fields {
+		name := strings.ToLower(field.Name)
 		value := mimetree.DecodeHeader(field.Value)
-		switch {
-		case addressHeaders[name]:
+		switch messageHeaderKinds[name] {
+		case kindAddress:
 			v, ps, err := e.rewriteAddresses(ctx, value, rep)
 			if err != nil {
-				return err
+				return nil, err
+			}
+			if v == "" {
+				out.DroppedHeaders = append(out.DroppedHeaders, field.Name)
+				continue
 			}
 			field.Value = v
 			people = append(people, ps...)
@@ -56,11 +90,13 @@ func (e *Engine) rewriteAt(ctx context.Context, msg *mimetree.Part, rep *replace
 					}
 				}
 			}
-		case idHeaders[name]:
+		case kindID:
 			field.Value = e.fakeMessageIDs(value)
-		case textHeaders[name]:
+		case kindContentID:
+			field.Value = "<" + e.fakeID(strings.Trim(value, "<> ")) + ">"
+		case kindText:
 			field.Value = mimetree.EncodeHeader(rep.Apply(value))
-		case urlHeaders[name]:
+		case kindURLs, kindListID:
 			var err error
 			v := urlInAngles.ReplaceAllStringFunc(value, func(m string) string {
 				if err != nil {
@@ -71,39 +107,25 @@ func (e *Engine) rewriteAt(ctx context.Context, msg *mimetree.Part, rep *replace
 				return "<" + u + ">"
 			})
 			if err != nil {
-				return err
+				return nil, err
 			}
+			// List-Id's phrase is free text, scanned by collect.
 			field.Value = mimetree.EncodeHeader(rep.Apply(v))
+		case kindLocation:
+			v, err := e.fakeLocation(ctx, value)
+			if err != nil {
+				return nil, err
+			}
+			field.Value = v
 		}
 		kept = append(kept, field)
 	}
-	msg.Header.Fields = kept
-	if len(people) == 0 {
-		people = []synth.Person{synth.New(e.key.Seed("filler", "people")).Person(synth.New(1).CompanyName())}
+	p.Header.Fields = kept
+	// multipart/related names its root part by Content-ID, faked above.
+	if _, params := p.MediaType(); params["start"] != "" {
+		p.SetParam("start", "<"+e.fakeID(strings.Trim(params["start"], "<>"))+">")
 	}
-
-	var err error
-	msg.Walk(func(p *mimetree.Part) {
-		if err != nil {
-			return
-		}
-		if p.IsMultipart() {
-			// A nested multipart's own headers get the same pass as a leaf's.
-			if p != msg {
-				dropPartHeaders(p, out)
-				if err = e.rewritePartHeaders(ctx, p, rep); err != nil {
-					return
-				}
-			}
-			// The preamble and epilogue are text around the boundary lines;
-			// mailing-list footers there often carry addresses.
-			p.Preamble = []byte(rep.Apply(string(p.Preamble)))
-			p.Epilogue = []byte(rep.Apply(string(p.Epilogue)))
-			return
-		}
-		err = e.rewriteLeaf(ctx, p, rep, out, people, p == msg, depth)
-	})
-	return err
+	return people, nil
 }
 
 // rewriteAddresses maps every address in an address header and returns the
@@ -111,17 +133,20 @@ func (e *Engine) rewriteAt(ctx context.Context, msg *mimetree.Part, rep *replace
 func (e *Engine) rewriteAddresses(ctx context.Context, value string, rep *replacer) (string, []synth.Person, error) {
 	addrs, err := mail.ParseAddressList(value)
 	if err != nil {
-		// Unparseable: replace what can be recognised.
-		var ferr error
-		v := emailRe.ReplaceAllStringFunc(value, func(a string) string {
-			if ferr != nil {
-				return a
+		// Unparseable: keep only the addresses in it, each faked. An empty
+		// value drops the header, except the null sender.
+		if strings.TrimSpace(value) == "<>" {
+			return "<>", nil, nil
+		}
+		var fakes []string
+		for _, a := range emailRe.FindAllString(value, -1) {
+			fake, err := e.fakeEmail(ctx, a)
+			if err != nil {
+				return "", nil, err
 			}
-			var fake string
-			fake, ferr = e.fakeEmail(ctx, a)
-			return fake
-		})
-		return mimetree.EncodeHeader(rep.Apply(v)), nil, ferr
+			fakes = append(fakes, fake)
+		}
+		return strings.Join(fakes, ", "), nil, nil
 	}
 	var people []synth.Person
 	parts := make([]string, len(addrs))
@@ -153,23 +178,11 @@ func appendRole(roles []PersonRole, r PersonRole) []PersonRole {
 
 // rewriteLeaf rewrites one leaf: attached messages recursively, reports and
 // body text in place, and every other leaf replaced by a dummy of its type.
-func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replacer, out *Output, people []synth.Person, root bool, depth int) error {
+func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replacer, out *Output, people []synth.Person, depth int) error {
 	mt, _ := p.MediaType()
-	if !root {
-		// The message's own headers were filtered by keepHeaders above; a
-		// part's headers have had no such pass, so drop the non-structural
-		// ones here (custom part headers can carry personal data).
-		dropPartHeaders(p, out)
-	}
-	if cid := p.Header.Get("Content-ID"); cid != "" {
-		p.Header.Set("Content-ID", "<"+e.fakeID(strings.Trim(cid, "<> "))+">")
-	}
 	if name := filename(p); name != "" {
 		inline := strings.HasPrefix(strings.ToLower(p.Header.Get("Content-Disposition")), "inline") || p.Header.Get("Content-ID") != ""
 		e.renameAttachment(p, name, inline)
-	}
-	if err := e.rewritePartHeaders(ctx, p, rep); err != nil {
-		return err
 	}
 	switch {
 	case mt == "message/rfc822":
@@ -177,10 +190,11 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 		if err != nil {
 			return err
 		}
-		inner, err := mimetree.ParseAt(raw, p.Depth+1)
+		inner, dropped, err := e.parse(raw, p.Depth+1)
 		if err != nil {
 			return err
 		}
+		out.DroppedHeaders = append(out.DroppedHeaders, dropped...)
 		if err := e.rewriteAt(ctx, inner, rep, out, false, depth+1); err != nil {
 			return err
 		}
@@ -228,58 +242,19 @@ func (e *Engine) rewriteLeaf(ctx context.Context, p *mimetree.Part, rep *replace
 	return nil
 }
 
-// partHeaders are the headers a MIME part needs to parse; every other header
-// on a part is dropped, as unknown headers on a message are. Custom part
-// headers (X-*, Comments and the like) can carry addresses and names no
-// detector reads, so they must not reach the output.
-var partHeaders = set([]string{
-	"Content-Type", "Content-Transfer-Encoding", "Content-Disposition", "Content-ID",
-	"Content-Language", "Content-Description", "Content-Location", "Content-Features",
-	"Content-MD5", "MIME-Version",
-})
-
-// rewritePartHeaders rewrites the part headers that carry free text or a
-// URL: a description often repeats a file name or what the part is about
-// ("acme.com.au!1792800000.xml.gz" on a DMARC report), and Content-Location
-// names where the part came from.
-func (e *Engine) rewritePartHeaders(ctx context.Context, p *mimetree.Part, rep *replacer) error {
-	if desc := p.Header.Get("Content-Description"); desc != "" {
-		p.Header.Set("Content-Description", mimetree.EncodeHeader(rep.Apply(mimetree.DecodeHeader(desc))))
-	}
-	if loc := strings.Trim(strings.TrimSpace(p.Header.Get("Content-Location")), "<>"); loc != "" {
-		if !strings.Contains(loc, "://") && !strings.HasPrefix(strings.ToLower(loc), "www.") {
-			// A relative reference is a file name ("ann-lee-photo.png"):
-			// renamed like an attachment, keeping the extension. The same
-			// name gets the same fake, so references between parts still
-			// match.
-			fake := "part-" + e.key.Hex("location", loc, 6)
-			if ext := strings.TrimPrefix(path.Ext(loc), "."); ext != "" && len(ext) <= 5 {
-				fake += "." + strings.ToLower(ext)
-			}
-			p.Header.Set("Content-Location", fake)
-			return nil
+// fakeLocation rewrites a Content-Location. A relative reference is a file
+// name ("ann-lee-photo.png"): renamed like an attachment, keeping the
+// extension, and the same name gets the same fake, so references between
+// parts still match. An absolute one is a URL, faked like any other.
+func (e *Engine) fakeLocation(ctx context.Context, loc string) (string, error) {
+	if !strings.Contains(loc, "://") && !strings.HasPrefix(strings.ToLower(loc), "www.") {
+		fake := "part-" + e.key.Hex("location", loc, 6)
+		if ext := strings.TrimPrefix(path.Ext(loc), "."); ext != "" && len(ext) <= 5 {
+			fake += "." + strings.ToLower(ext)
 		}
-		fake, err := e.fakeURL(ctx, loc)
-		if err != nil {
-			return err
-		}
-		p.Header.Set("Content-Location", fake)
+		return fake, nil
 	}
-	return nil
-}
-
-// dropPartHeaders removes p's headers that carry no structure, counting them
-// like dropped message headers.
-func dropPartHeaders(p *mimetree.Part, out *Output) {
-	kept := p.Header.Fields[:0:0]
-	for _, f := range p.Header.Fields {
-		if !partHeaders[strings.ToLower(f.Name)] {
-			out.DroppedHeaders = append(out.DroppedHeaders, f.Name)
-			continue
-		}
-		kept = append(kept, f)
-	}
-	p.Header.Fields = kept
+	return e.fakeURL(ctx, loc)
 }
 
 // filename returns a part's file name from Content-Disposition or Content-Type.

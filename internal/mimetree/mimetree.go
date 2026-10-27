@@ -163,6 +163,13 @@ func (p *Part) SetParam(name, value string) {
 	p.Header.Set("Content-Type", mime.FormatMediaType(mt, params))
 }
 
+// SetBoundary replaces a multipart's boundary, in its Content-Type too.
+// The caller makes sure the new boundary is not in the parts' content.
+func (p *Part) SetBoundary(b string) {
+	p.Boundary = b
+	p.SetParam("boundary", b)
+}
+
 // IsMultipart reports whether the part has child parts.
 func (p *Part) IsMultipart() bool {
 	return p.Boundary != ""

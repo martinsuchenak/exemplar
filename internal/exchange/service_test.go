@@ -318,6 +318,25 @@ func TestImportRejects(t *testing.T) {
 		}
 	}
 
+	// Every person record is checked, not only the ones a fixture links: a
+	// hand-made archive gets told about a bad record instead of the record
+	// being left out without a word.
+	unlinked := map[string][]person.Person{
+		"unlinked path in person id":     {func() person.Person { q := p; q.ID = "../p1"; return q }()},
+		"unlinked real address":          {func() person.Person { q := p; q.Email = "ann@acme.com"; return q }()},
+		"unlinked person without a name": {func() person.Person { q := p; q.FirstName = ""; return q }()},
+		"person twice":                   {p, p},
+	}
+	for name, persons := range unlinked {
+		data := craft(t, map[string]int{"datasets": 1, "persons": len(persons)}, []dataset.Dataset{d}, persons, nil, nil)
+		if _, err := dst.Exchange.Import(ctx, admin, bytes.NewReader(data)); !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "person") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	if ds, _ := dst.Datasets.List(ctx, admin, dataset.ListFilter{}); len(ds) != 0 {
+		t.Errorf("a refused archive left %d datasets", len(ds))
+	}
+
 	// A workspace of the same name but another ID is a conflict.
 	if _, err := dst.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "work"}); err != nil {
 		t.Fatal(err)
