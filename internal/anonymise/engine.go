@@ -23,9 +23,10 @@ var (
 	letterRe    = regexp.MustCompile(`[A-Za-z]+`)
 )
 
-// Engine anonymises a batch of emails with one key, profile, detector and
-// registry. Call Prepare with every email of the batch first, then
-// Anonymise each. An Engine is not safe for concurrent use.
+// Engine anonymises a batch of files with one key, profile, detector and
+// registry. Call Prepare with every file of the batch first, then Anonymise
+// each. Each format is read and written by its handler (format.go). An
+// Engine is not safe for concurrent use.
 type Engine struct {
 	key      Key
 	profile  *Profile
@@ -70,8 +71,12 @@ type PersonRole struct {
 	Role     string `json:"role"`
 }
 
-// Output is one anonymised email.
+// Output is one anonymised file.
 type Output struct {
+	Format Format
+	// Name is the file's fake name: the format's prefix and a keyed hash
+	// of the original name, keeping its extension (email-3f9a1c.eml).
+	Name string
 	Data []byte
 	// Replacements maps original text to its fake. It contains the
 	// original personal data: never store or log it.
@@ -83,20 +88,17 @@ type Output struct {
 	People         []PersonRole
 }
 
-// Prepare reads the address headers of every email in the batch, so that a
-// person named in one email's headers is recognised in all of them. It
-// returns one error per email, nil for the ones it read: an email that
-// cannot be read fails on its own, not the batch.
-func (e *Engine) Prepare(ctx context.Context, emails [][]byte) []error {
-	errs := make([]error, len(emails))
-	for i, data := range emails {
-		root, _, err := e.parse(data, 0)
-		if err == nil {
-			err = e.prepareMessage(ctx, root, 0)
-		}
-		errs[i] = err
+// emailHandler reads and rewrites RFC 5322 messages.
+type emailHandler struct{}
+
+// prepare reads an email's address headers, and those of the emails
+// attached to it, so a person named there is recognised in every file.
+func (emailHandler) prepare(ctx context.Context, e *Engine, data []byte) error {
+	root, _, err := e.parse(data, 0)
+	if err != nil {
+		return err
 	}
-	return errs
+	return e.prepareMessage(ctx, root, 0)
 }
 
 // parse reads a message nested depth levels deep (0 for an email, an
@@ -248,8 +250,8 @@ func nameTokens(display, local string) (tokens []string, lastFirst bool) {
 	return nil, false
 }
 
-// Anonymise rewrites one email. Prepare must have seen it.
-func (e *Engine) Anonymise(ctx context.Context, data []byte) (*Output, error) {
+// anonymise rewrites one email.
+func (emailHandler) anonymise(ctx context.Context, e *Engine, data []byte) (*Output, error) {
 	root, dropped, err := e.parse(data, 0)
 	if err != nil {
 		return nil, err

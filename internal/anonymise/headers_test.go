@@ -331,13 +331,13 @@ func TestPrepareFailsPerEmail(t *testing.T) {
 		fmt.Fprintf(&deep, "--q%d\r\nContent-Type: multipart/mixed; boundary=q%d\r\n\r\n", i, i+1)
 	}
 	e := newEngine(t, newMemRegistry())
-	errs := e.Prepare(ctx, [][]byte{[]byte(original), []byte(deep.String()), []byte(reply)})
+	errs := e.Prepare(ctx, []File{eml(original), eml(deep.String()), eml(reply)})
 	if len(errs) != 3 || errs[0] != nil || errs[2] != nil || errs[1] == nil || !strings.Contains(errs[1].Error(), "levels deep") {
 		t.Fatalf("errs = %v", errs)
 	}
 	// The good emails were still read: the reply's body names Sarah, known
 	// only from the first email's From.
-	out, err := e.Anonymise(ctx, []byte(reply))
+	out, err := e.Anonymise(ctx, eml(reply))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestPrepareFailsPerEmail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if errs := e.Prepare(ctx, [][]byte{[]byte(original)}); errs[0] == nil || !strings.Contains(errs[0].Error(), "registry down") {
+	if errs := e.Prepare(ctx, []File{eml(original)}); errs[0] == nil || !strings.Contains(errs[0].Error(), "registry down") {
 		t.Errorf("registry error = %v", errs)
 	}
 }

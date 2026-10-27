@@ -55,14 +55,21 @@ with `emailtemplate`, which is pure like `synth`.
 ```
 ingest.Service ─> admin check, dataset.Service.Authorize (write, quarantine only)
                ─> person.Service.Identities (hashed identity and name-token registry)
-               ─> anonymise.Engine.Prepare (every header in the batch)
-               ─> anonymise.Engine.Anonymise (each email: mimetree, Presidio, patterns, synth)
+               ─> anonymise.FormatOf (each file's extension picks its format)
+               ─> anonymise.Engine.Prepare (every file in the batch: for email, its address headers)
+               ─> anonymise.Engine.Anonymise (each file through its format's handler;
+                                              email: mimetree, Presidio, patterns, synth)
                ─> fixture.Service.Create (each email: blob, provenance, people, audit)
                ─> audit (fixture.ingest)
 ```
 
 `anonymise` reaches storage only through its `Registry` interface and Presidio
 only through its `Detector` interface, so it is tested with in-memory fakes.
+Each file format has a handler in `internal/anonymise/format.go`, which
+finds the people in a file and writes it back with the fakes in it. Every
+handler shares the engine's detection, fakes and registry, so a person gets
+the same fake in every format. Email is the only format so far; document
+formats are to follow.
 `app.Open` builds the anonymiser from the key, Presidio URL and profiles; with
 no key or no Presidio URL, ingest reports that it is not configured. See
 [anonymisation.md](anonymisation.md).
@@ -127,7 +134,7 @@ bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
 | `internal/synth` | Pure, seeded content generation: people, companies, text, files, emails, and records from schema files (`schemas/*.toml`). No database. |
 | `internal/client` | Typed REST client; remote CLI commands use it. Errors unwrap to `apperr` kinds. |
 | `internal/ingest` | Takes real emails into quarantine: access checks, the anonymiser, storing fixtures, the dry-run report. |
-| `internal/anonymise` | The anonymisation engine: detection (Presidio client and patterns), keyed pseudonyms, MIME rewriting, profiles. No database; `anonymisetest` has a fake detector. |
+| `internal/anonymise` | The anonymisation engine: one handler per file format (email so far), detection (Presidio client and patterns), keyed pseudonyms, MIME rewriting, profiles. No database; `anonymisetest` has a fake detector. |
 | `internal/archive` | The archive format shared by export/import and backup/restore; rejects unexpected entries and blobs that do not match their hash. |
 | `internal/exchange` | Exports datasets to archives and imports them, through the dataset, fixture and person services. |
 | `internal/backup` | Host-only backup (database snapshot plus contents) and restore (staged, checked, swapped in). |

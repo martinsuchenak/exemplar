@@ -232,7 +232,7 @@ ingest with the same key will produce.
 
 ## Limits
 
-- `.msg` (Outlook) files are rejected; convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
+- Only `.eml` files are read; the extension picks the format, case aside. Any other file fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
 - Charsets other than UTF-8, US-ASCII, ISO-8859-1 and Windows-1252 are rejected per file.
 - Attachment contents are replaced, not anonymised: a PDF's text does not survive.
 - Dates are kept, so a timeline can be recognised by someone who knows it.

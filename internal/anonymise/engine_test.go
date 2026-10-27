@@ -175,24 +175,29 @@ var secrets = []string{
 
 func run(t *testing.T, e *Engine, emails ...string) []*Output {
 	t.Helper()
-	raw := make([][]byte, len(emails))
+	files := make([]File, len(emails))
 	for i, m := range emails {
-		raw[i] = []byte(m)
+		files[i] = eml(m)
 	}
-	for i, err := range e.Prepare(ctx, raw) {
+	for i, err := range e.Prepare(ctx, files) {
 		if err != nil {
 			t.Fatalf("preparing email %d: %v", i, err)
 		}
 	}
 	outs := make([]*Output, len(emails))
-	for i, m := range raw {
-		out, err := e.Anonymise(ctx, m)
+	for i, f := range files {
+		out, err := e.Anonymise(ctx, f)
 		if err != nil {
 			t.Fatalf("email %d: %v", i, err)
 		}
 		outs[i] = out
 	}
 	return outs
+}
+
+// eml is an email as a file to anonymise.
+func eml(data string) File {
+	return File{Name: "message.eml", Data: []byte(data)}
 }
 
 func newEngine(t *testing.T, reg Registry) *Engine {

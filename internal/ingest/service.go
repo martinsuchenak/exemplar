@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -173,22 +172,21 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 	}
 
 	res := &Result{Batch: req.Batch, Profile: profile.Name, KeyID: s.cfg.Key.ID, DryRun: req.DryRun}
-	var emails []File
-	var raw [][]byte
+	var batch []anonymise.File
 	for _, f := range files {
-		if err := checkName(f.Name); err != nil {
+		if _, err := anonymise.FormatOf(f.Name); err != nil {
 			res.Files = append(res.Files, FileResult{Name: f.Name, Error: err.Error()})
 			continue
 		}
-		emails, raw = append(emails, f), append(raw, f.Data)
+		batch = append(batch, anonymise.File{Name: f.Name, Data: f.Data})
 	}
 	// Learn every sender and recipient first, so names from one email's
 	// headers are found in all of them. An email that cannot be read (over
 	// the nesting or part limits, say) fails on its own.
-	prepared := engine.Prepare(ctx, raw)
+	prepared := engine.Prepare(ctx, batch)
 
 	stored, n := 0, 0
-	for i, f := range emails {
+	for i, f := range batch {
 		n++
 		fr := FileResult{Name: f.Name}
 		if err := prepared[i]; err != nil {
@@ -196,7 +194,7 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 			res.Files = append(res.Files, fr)
 			continue
 		}
-		out, err := engine.Anonymise(ctx, f.Data)
+		out, err := engine.Anonymise(ctx, f)
 		if err != nil {
 			fr.Error = err.Error()
 			res.Files = append(res.Files, fr)
@@ -212,7 +210,7 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 		for i, p := range out.People {
 			links[i] = fixture.PersonLink{PersonID: p.PersonID, Role: p.Role}
 		}
-		fr.FixtureName = fmt.Sprintf("%s-%03d.eml", req.Batch, n)
+		fr.FixtureName = fmt.Sprintf("%s-%03d.%s", req.Batch, n, out.Format)
 		fx, err := s.fixtures.Create(ctx, actor, fixture.CreateInput{
 			DatasetID:   datasetID,
 			Name:        fr.FixtureName,
@@ -245,18 +243,6 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 		return nil, err
 	}
 	return res, nil
-}
-
-// checkName accepts .eml files; .msg cannot be anonymised yet.
-func checkName(name string) error {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".eml":
-		return nil
-	case ".msg":
-		return errors.New("MSG files are not supported yet; convert to .eml first")
-	default:
-		return errors.New("only .eml files can be ingested")
-	}
 }
 
 // storeError keeps a storage failure's message without internal details.

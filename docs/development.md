@@ -91,6 +91,13 @@ skip it.
   for small real-looking emails. Configure an app with
   `testutil.NewAppWith(t, func(c *app.Config) { c.AnonKey = anonymisetest.Key; c.AnonDetector = … })`.
   Tests assert that no original value survives anywhere in the output.
+  `TestEmailGolden` pins the email output byte for byte: 70 emails (the
+  hand-made ones in the tests, and generated ones of every shape for both
+  profiles), inputs and outputs stored in
+  `internal/anonymise/testdata/emails-golden.json`. A refactor must leave it
+  passing. Only a deliberate change in output may rewrite the file, with
+  `go test ./internal/anonymise -run TestEmailGolden -update`, and the
+  commit says why.
 
 - **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
   that records envelopes and data, can require AUTH PLAIN and can reject a

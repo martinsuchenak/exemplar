@@ -340,15 +340,15 @@ func fromAddress(data []byte) (string, error) {
 
 func TestBadInput(t *testing.T) {
 	e := newEngine(t, newMemRegistry())
-	if _, err := e.Anonymise(ctx, []byte("no headers at all")); err == nil {
+	if _, err := e.Anonymise(ctx, eml("no headers at all")); err == nil {
 		t.Error("non-email accepted")
 	}
 	sjis := "From: a@b.com.au\r\nTo: c@d.com.au\r\nContent-Type: text/plain; charset=shift_jis\r\n\r\n\x82\xa0\r\n"
-	if _, err := e.Anonymise(ctx, []byte(sjis)); !errors.Is(err, mimetree.ErrCharset) {
+	if _, err := e.Anonymise(ctx, eml(sjis)); !errors.Is(err, mimetree.ErrCharset) {
 		t.Errorf("unsupported charset err = %v", err)
 	}
 	broken := "From: \"Unclosed <a@b.com.au\r\nTo: c@d.com.au\r\nSubject: x\r\n\r\nbody\r\n"
-	out, err := e.Anonymise(ctx, []byte(broken))
+	out, err := e.Anonymise(ctx, eml(broken))
 	if err != nil || strings.Contains(string(out.Data), "b.com.au") {
 		t.Errorf("unparseable address header = %v\n%s", err, out.Data)
 	}
@@ -639,7 +639,7 @@ func TestHostileNestingIsRefused(t *testing.T) {
 		fmt.Fprintf(&b, "--q%d\r\nContent-Type: multipart/mixed; boundary=q%d\r\n\r\n", i, i+1)
 	}
 	e := newEngine(t, newMemRegistry())
-	if _, err := e.Anonymise(ctx, []byte(b.String())); err == nil || !strings.Contains(err.Error(), "levels deep") {
+	if _, err := e.Anonymise(ctx, eml(b.String())); err == nil || !strings.Contains(err.Error(), "levels deep") {
 		t.Errorf("err = %v", err)
 	}
 }
