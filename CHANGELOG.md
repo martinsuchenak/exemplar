@@ -9,6 +9,17 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+### Added
+
+- MCP: `list_datasets` takes a `query`, words matched in dataset names,
+  descriptions and tags, and `search_fixtures` a `query` matched in fixture
+  names.
+
+### Changed
+
+- MCP: `search_fixtures` takes `dataset`, a dataset's id or name, instead of
+  `dataset_id`, and returns the dataset it searched.
+
 ## [0.1.0] - 2026-10-28
 
 ### Added

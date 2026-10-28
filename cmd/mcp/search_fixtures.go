@@ -13,12 +13,13 @@ func init() {
 }
 
 func registerSearchFixturesTool(server *mcplib.Server) {
-	fixtures := services.Fixtures
+	datasets, fixtures := services.Datasets, services.Fixtures
 	server.RegisterTool(
 		mcplib.NewTool("search_fixtures",
-			"Search a dataset's fixtures (emails, files and JSON records) by kind, format, scenario, tag, record schema or the person they mention. "+
-				"Returns metadata only, ordered by name; use get_fixture for content.",
-			mcplib.String("dataset_id", "Dataset to search (from list_datasets)", mcplib.Required()),
+			"Search a dataset's fixtures (emails, files and JSON records) by words in their name, kind, format, scenario, tag, record schema or the person they mention. "+
+				"Returns the dataset searched and fixture metadata, ordered by name; use get_fixture for content.",
+			mcplib.String("dataset", "Dataset to search: its id, or its exact name for the newest version (from list_datasets)", mcplib.Required()),
+			mcplib.String("query", "Words that must each appear in the fixture name, e.g. reply eml; case is ignored"),
 			mcplib.String("kind", "email, file or record"),
 			mcplib.String("format", "File format, e.g. eml, pdf, json"),
 			mcplib.String("scenario", "Scenario label, e.g. reply or bounce for generated emails"),
@@ -34,17 +35,22 @@ func registerSearchFixturesTool(server *mcplib.Server) {
 			if err != nil {
 				return nil, err
 			}
-			datasetID, err := required(req, "dataset_id")
+			ref, err := required(req, "dataset")
 			if err != nil {
 				return nil, err
 			}
-			list, err := fixtures.List(ctx, p, datasetID, fixture.ListFilter{
+			d, err := datasets.Resolve(ctx, p, ref)
+			if err != nil {
+				return nil, toolError(err)
+			}
+			list, err := fixtures.List(ctx, p, d.ID, fixture.ListFilter{
 				Kind:         fixture.Kind(req.StringOr("kind", "")),
 				Format:       req.StringOr("format", ""),
 				Scenario:     req.StringOr("scenario", ""),
 				Tag:          req.StringOr("tag", ""),
 				RecordSchema: req.StringOr("record_schema", ""),
 				PersonID:     req.StringOr("person_id", ""),
+				Query:        req.StringOr("query", ""),
 				ReviewState:  fixture.ReviewState(req.StringOr("review_state", "")),
 				Limit:        req.IntOr("limit", 0),
 				Offset:       req.IntOr("offset", 0),
@@ -52,7 +58,7 @@ func registerSearchFixturesTool(server *mcplib.Server) {
 			if err != nil {
 				return nil, toolError(err)
 			}
-			return mcplib.NewToolResponseStructured(map[string]any{"fixtures": list, "count": len(list)}), nil
+			return mcplib.NewToolResponseStructured(map[string]any{"dataset": d, "fixtures": list, "count": len(list)}), nil
 		},
 	)
 }

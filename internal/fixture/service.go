@@ -154,8 +154,14 @@ type ListFilter struct {
 	RecordSchema string
 	// PersonID matches fixtures that mention the person.
 	PersonID string
-	Limit    int
-	Offset   int
+	// Query matches fixtures with every word of it (see
+	// storeutil.SearchTerms) in their name. ASCII letters ignore case.
+	Query  string
+	Limit  int
+	Offset int
+
+	// terms are Query's words, split by the service.
+	terms []string
 }
 
 const (
@@ -297,6 +303,11 @@ func (s *Service) List(ctx context.Context, actor principal.Principal, datasetID
 	if lf.Offset < 0 {
 		lf.Offset = 0
 	}
+	terms, err := storeutil.SearchTerms(lf.Query)
+	if err != nil {
+		return nil, err
+	}
+	lf.terms = terms
 	list, err := s.storage.List(ctx, s.db, datasetID, lf)
 	if err != nil {
 		return nil, err

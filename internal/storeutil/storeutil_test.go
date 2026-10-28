@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/martinsuchenak/exemplar/internal/apperr"
 )
 
 func TestNewIDIsUniqueAndSortable(t *testing.T) {
@@ -81,6 +83,44 @@ func TestValidID(t *testing.T) {
 	} {
 		if ValidID(id) != ok {
 			t.Errorf("ValidID(%q) != %v", id, ok)
+		}
+	}
+}
+
+func TestSearchTerms(t *testing.T) {
+	for query, want := range map[string][]string{
+		"":                    nil,
+		"  ":                  nil,
+		"crm contacts":        {"crm", "contacts"},
+		"crm-contacts_v2.csv": {"crm", "contacts", "v2", "csv"},
+		"a/b, c\td":           {"a", "b", "c", "d"},
+		"Žluťoučký kůň":       {"Žluťoučký", "kůň"},
+	} {
+		got, err := SearchTerms(query)
+		if err != nil || len(got) != len(want) || (len(want) > 0 && !reflect.DeepEqual(got, want)) {
+			t.Errorf("SearchTerms(%q) = %q, %v; want %q", query, got, err, want)
+		}
+	}
+	for _, query := range []string{strings.Repeat("x", maxSearchLen+1), strings.Repeat("w ", maxSearchTerms+1)} {
+		if _, err := SearchTerms(query); !errors.Is(err, apperr.ErrInvalid) {
+			t.Errorf("SearchTerms(%d chars) err = %v, want ErrInvalid", len(query), err)
+		}
+	}
+	if got, err := SearchTerms(strings.Repeat("w ", maxSearchTerms)); err != nil || len(got) != maxSearchTerms {
+		t.Errorf("SearchTerms at the limit = %d terms, %v", len(got), err)
+	}
+}
+
+func TestContainsPattern(t *testing.T) {
+	for in, want := range map[string]string{
+		"crm":  "%crm%",
+		"100%": `%100\%%`,
+		"a_b":  `%a\_b%`,
+		`c:\x`: `%c:\\x%`,
+		"":     "%%",
+	} {
+		if got := ContainsPattern(in); got != want {
+			t.Errorf("ContainsPattern(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

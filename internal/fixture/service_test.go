@@ -555,3 +555,41 @@ func TestPersonLinksAndRecordSchemas(t *testing.T) {
 		}
 	}
 }
+
+func TestListQuery(t *testing.T) {
+	a := testutil.NewApp(t)
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	ws := newDataset(t, a, alice, "mine", dataset.ScopeWorkspace)
+	for _, name := range []string{"Q3 Report.pdf", "reply-to-report.eml", "50%off.txt", "plain.eml"} {
+		if _, err := a.Fixtures.Create(ctx, alice, fixture.CreateInput{DatasetID: ws.ID, Name: name, Content: strings.NewReader(name)}); err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+	}
+	for _, tt := range []struct {
+		f     fixture.ListFilter
+		names string
+	}{
+		{fixture.ListFilter{Query: "report"}, "Q3 Report.pdf,reply-to-report.eml"}, // ASCII letters ignore case
+		{fixture.ListFilter{Query: "report eml"}, "reply-to-report.eml"},           // every word
+		{fixture.ListFilter{Query: "q3.pdf"}, "Q3 Report.pdf"},                     // separators split words
+		{fixture.ListFilter{Query: "%"}, "50%off.txt"},                             // a literal %
+		{fixture.ListFilter{Query: "eml", Kind: fixture.KindEmail, Limit: 1}, "plain.eml"},
+		{fixture.ListFilter{Query: "missing"}, ""},
+	} {
+		got, err := a.Fixtures.List(ctx, alice, ws.ID, tt.f)
+		if err != nil {
+			t.Fatalf("%+v: %v", tt.f, err)
+		}
+		var names []string
+		for _, f := range got {
+			names = append(names, f.Name)
+		}
+		if strings.Join(names, ",") != tt.names {
+			t.Errorf("%+v = %v, want %s", tt.f, names, tt.names)
+		}
+	}
+	if _, err := a.Fixtures.List(ctx, alice, ws.ID, fixture.ListFilter{Query: "a b c d e f g h i"}); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("nine-word query err = %v, want ErrInvalid", err)
+	}
+}

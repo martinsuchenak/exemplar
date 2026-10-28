@@ -1,15 +1,20 @@
 // Package storeutil holds small helpers shared by the storage layers: IDs,
-// timestamp and JSON column encoding, and constraint error detection.
+// timestamp and JSON column encoding, constraint error detection and word
+// search.
 package storeutil
 
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
+
+	"github.com/martinsuchenak/exemplar/internal/apperr"
 )
 
 // idRe matches the IDs exemplar makes (UUIDv7) and anything close enough to
@@ -83,3 +88,36 @@ func IsUniqueViolation(err error) bool {
 func IsForeignKeyViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
 }
+
+// Limits on a search query, so one cannot build an arbitrarily long SQL
+// condition.
+const (
+	maxSearchLen   = 200
+	maxSearchTerms = 8
+)
+
+// SearchTerms splits a search query into the words that must each appear:
+// whitespace and the punctuation names use between words (- _ . / ,)
+// separate them, so "crm contacts" finds "crm-contacts". An empty query gives
+// no terms; one too long gives apperr.ErrInvalid.
+func SearchTerms(query string) ([]string, error) {
+	if len(query) > maxSearchLen {
+		return nil, fmt.Errorf("%w: query is longer than %d characters", apperr.ErrInvalid, maxSearchLen)
+	}
+	terms := strings.FieldsFunc(query, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("-_./,", r)
+	})
+	if len(terms) > maxSearchTerms {
+		return nil, fmt.Errorf("%w: query has more than %d words", apperr.ErrInvalid, maxSearchTerms)
+	}
+	return terms, nil
+}
+
+// ContainsPattern returns a LIKE pattern matching s anywhere in a value, with
+// LIKE's wildcards in s escaped; use it with ESCAPE '\'. SQLite's LIKE
+// ignores the case of ASCII letters only.
+func ContainsPattern(s string) string {
+	return "%" + likeEscaper.Replace(s) + "%"
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)

@@ -342,3 +342,143 @@ func TestQuarantineForkSkipsUnapproved(t *testing.T) {
 		t.Errorf("member reading approved copy: %v", err)
 	}
 }
+
+func TestListQuery(t *testing.T) {
+	a := testutil.NewApp(t)
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	bob := testutil.Member(t, a, admin, "bob")
+	if _, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "crm-contacts", Scope: dataset.ScopeGlobal, Description: "Contacts for the CRM", Tags: []string{"Sales"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "coverage", Scope: dataset.ScopeGlobal, Description: "Covers 100% of the edge cases"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Datasets.Create(ctx, alice, dataset.CreateInput{Name: "Inbox", Description: "Email replies"}); err != nil {
+		t.Fatal(err)
+	}
+
+	names := func(p principal.Principal, query string) string {
+		t.Helper()
+		list, err := a.Datasets.List(ctx, p, dataset.ListFilter{Query: query})
+		if err != nil {
+			t.Fatalf("query %q: %v", query, err)
+		}
+		var out []string
+		for _, d := range list {
+			out = append(out, d.Name)
+		}
+		return strings.Join(out, ",")
+	}
+	for query, want := range map[string]string{
+		"":             "coverage,crm-contacts,Inbox",
+		"crm contacts": "crm-contacts",          // words, in any order
+		"contacts_crm": "crm-contacts",          // separators split words
+		"CRM":          "crm-contacts",          // ASCII letters ignore case
+		"SALES":        "crm-contacts",          // a tag
+		"replies":      "Inbox",                 // the description
+		"inbox email":  "Inbox",                 // name and description together
+		"%":            "coverage",              // a literal %, not a wildcard
+		"co":           "coverage,crm-contacts", // part of a word
+		"crm replies":  "",                      // every word must match
+	} {
+		if got := names(alice, query); got != want {
+			t.Errorf("query %q = %q, want %q", query, got, want)
+		}
+	}
+	// The query narrows what the key may read; it never widens it.
+	if got := names(bob, "inbox"); got != "" {
+		t.Errorf("bob's query for alice's workspace = %q", got)
+	}
+	for _, query := range []string{strings.Repeat("x", 201), "a b c d e f g h i"} {
+		if _, err := a.Datasets.List(ctx, alice, dataset.ListFilter{Query: query}); !errors.Is(err, apperr.ErrInvalid) {
+			t.Errorf("query of %d chars err = %v, want ErrInvalid", len(query), err)
+		}
+	}
+}
+
+func TestResolve(t *testing.T) {
+	a := testutil.NewApp(t)
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	bob := testutil.Member(t, a, admin, "bob")
+
+	src, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "draft"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newest *dataset.Dataset
+	for range 2 {
+		res, err := a.Datasets.Promote(ctx, admin, src.ID, dataset.PromoteInput{Name: "library"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		newest = res.Dataset
+	}
+	mine, err := a.Datasets.Create(ctx, alice, dataset.CreateInput{Name: "mine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Datasets.Create(ctx, bob, dataset.CreateInput{Name: "mine"}); err != nil {
+		t.Fatal(err)
+	}
+	// A fork keeps its source's name, so alice now has "library" twice.
+	if _, err := a.Datasets.Fork(ctx, alice, newest.ID, dataset.ForkInput{}); err != nil {
+		t.Fatal(err)
+	}
+	quarantine, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "inbox", Scope: dataset.ScopeQuarantine})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		who  principal.Principal
+		ref  string
+		want string
+	}{
+		{alice, mine.ID, mine.ID},   // an id
+		{alice, " mine ", mine.ID},  // her workspace, by name
+		{bob, "library", newest.ID}, // the newest global version
+		{bob, newest.ID, newest.ID}, // a global dataset, by id
+		{admin, "inbox", quarantine.ID},
+	} {
+		d, err := a.Datasets.Resolve(ctx, tt.who, tt.ref)
+		if err != nil || d.ID != tt.want {
+			t.Errorf("Resolve(%q) = %+v, %v; want %s", tt.ref, d, err, tt.want)
+		}
+	}
+
+	// A name that means several datasets is refused, listing them: alice's
+	// "library" fork and the global one; alice's and bob's "mine" for admin.
+	for _, tt := range []struct {
+		who  principal.Principal
+		name string
+	}{{alice, "library"}, {admin, "mine"}} {
+		_, err := a.Datasets.Resolve(ctx, tt.who, tt.name)
+		if !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "2 datasets") {
+			t.Errorf("resolving %q err = %v, want ErrInvalid naming 2 datasets", tt.name, err)
+		}
+	}
+
+	viaMCP := admin
+	viaMCP.NoQuarantine = true
+	none := alice
+	none.Scopes = nil
+	for _, tt := range []struct {
+		who  principal.Principal
+		ref  string
+		want error
+	}{
+		{alice, "", apperr.ErrInvalid},
+		{alice, "nothing", apperr.ErrNotFound},
+		{bob, mine.ID, apperr.ErrNotFound},    // another's workspace, by id
+		{bob, "draft", apperr.ErrNotFound},    // another's workspace, by name
+		{viaMCP, "inbox", apperr.ErrNotFound}, // quarantine, by name
+		{viaMCP, quarantine.ID, apperr.ErrNotFound},
+		{none, "library", apperr.ErrForbidden},
+	} {
+		if _, err := a.Datasets.Resolve(ctx, tt.who, tt.ref); !errors.Is(err, tt.want) {
+			t.Errorf("Resolve(%q) err = %v, want %v", tt.ref, err, tt.want)
+		}
+	}
+}

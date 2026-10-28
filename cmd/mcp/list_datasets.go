@@ -17,9 +17,11 @@ func registerListDatasetsTool(server *mcplib.Server) {
 	server.RegisterTool(
 		mcplib.NewTool("list_datasets",
 			"List the test-data datasets this key can read: the global library and your workspaces. "+
-				"Use a dataset's id with search_fixtures.",
+				"Use query to find them by words in their name, description or tags. "+
+				"Pass a dataset's name or id to search_fixtures.",
 			mcplib.String("scope", "Only this scope: global or workspace"),
 			mcplib.String("name", "Only datasets with exactly this name (all versions)"),
+			mcplib.String("query", "Words that must each appear in the name, description or a tag, e.g. crm contacts; case is ignored"),
 		),
 		func(ctx context.Context, req *mcplib.ToolRequest) (*mcplib.ToolResponse, error) {
 			p, err := caller(ctx)
@@ -29,6 +31,7 @@ func registerListDatasetsTool(server *mcplib.Server) {
 			list, err := datasets.List(ctx, p, dataset.ListFilter{
 				Scope: dataset.Scope(req.StringOr("scope", "")),
 				Name:  req.StringOr("name", ""),
+				Query: req.StringOr("query", ""),
 			})
 			if err != nil {
 				return nil, toolError(err)

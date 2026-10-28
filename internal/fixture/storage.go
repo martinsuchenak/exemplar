@@ -156,6 +156,9 @@ func (s *Storage) List(ctx context.Context, exec xdal.DBExecutor, datasetID stri
 	if lf.Tag != "" {
 		q = q.Where("EXISTS (SELECT 1 FROM json_each(fixtures.tags) WHERE json_each.value = ?)", lf.Tag)
 	}
+	for _, term := range lf.terms {
+		q = q.Where(`name LIKE ? ESCAPE '\'`, storeutil.ContainsPattern(term))
+	}
 	query, args, err := q.OrderBy("name").Limit(int64(lf.Limit)).Offset(int64(lf.Offset)).Build()
 	if err != nil {
 		return nil, err

@@ -67,7 +67,14 @@ type CreateInput struct {
 // ListFilter narrows List; empty fields match everything.
 type ListFilter struct {
 	Scope Scope
-	Name  string
+	// Name matches exactly.
+	Name string
+	// Query matches datasets with every word of it (see storeutil.SearchTerms)
+	// in their name, description or a tag. ASCII letters ignore case.
+	Query string
+
+	// terms are Query's words, split by the service.
+	terms []string
 }
 
 // Access is what a caller wants to do with a dataset.
@@ -226,7 +233,60 @@ func (s *Service) List(ctx context.Context, actor principal.Principal, f ListFil
 	if f.Scope != "" && !f.Scope.Valid() {
 		return nil, fmt.Errorf("%w: unknown scope %q", apperr.ErrInvalid, f.Scope)
 	}
+	terms, err := storeutil.SearchTerms(f.Query)
+	if err != nil {
+		return nil, err
+	}
+	f.terms = terms
 	return s.storage.List(ctx, s.db, f, visibility{accountID: actor.AccountID, all: actor.IsAdmin(), noQuarantine: !actor.CanReadQuarantine()})
+}
+
+// Resolve finds the dataset the caller means by ref: its id or its exact
+// name. A name means the newest version, and must name one dataset the caller
+// can read (the global one, or one workspace); when it names several, the
+// caller has to pass an id, and the error lists them.
+func (s *Service) Resolve(ctx context.Context, actor principal.Principal, ref string) (*Dataset, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, fmt.Errorf("%w: a dataset id or name is required", apperr.ErrInvalid)
+	}
+	d, err := s.Get(ctx, actor, ref)
+	if !errors.Is(err, apperr.ErrNotFound) {
+		return d, err
+	}
+	list, err := s.List(ctx, actor, ListFilter{Name: ref})
+	if err != nil {
+		return nil, err
+	}
+	// Versions of one dataset share its name and scope, and outside the
+	// global library its owner; keep the newest of each.
+	newest := map[string]*Dataset{}
+	var keys []string
+	for i := range list {
+		d := &list[i]
+		key := string(d.Scope)
+		if d.Scope != ScopeGlobal {
+			key += "/" + d.OwnerAccountID
+		}
+		cur, seen := newest[key]
+		if !seen {
+			keys = append(keys, key)
+		}
+		if !seen || d.Version > cur.Version {
+			newest[key] = d
+		}
+	}
+	switch len(keys) {
+	case 0:
+		return nil, fmt.Errorf("dataset %s: %w", ref, apperr.ErrNotFound)
+	case 1:
+		return newest[keys[0]], nil
+	}
+	found := make([]string, len(keys))
+	for i, key := range keys {
+		found[i] = fmt.Sprintf("%s (%s)", newest[key].ID, newest[key].Scope)
+	}
+	return nil, fmt.Errorf("%w: %d datasets are named %q, pass one's id: %s", apperr.ErrInvalid, len(keys), ref, strings.Join(found, ", "))
 }
 
 // Freeze makes a dataset's contents read-only. Freezing twice is a no-op.

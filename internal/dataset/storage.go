@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/martinsuchenak/xdal/pkg/xdal"
@@ -91,6 +92,12 @@ func (s *Storage) List(ctx context.Context, exec xdal.DBExecutor, f ListFilter, 
 	}
 	if f.Name != "" {
 		q = q.Where("name = ?", f.Name)
+	}
+	for _, term := range f.terms {
+		p := storeutil.ContainsPattern(term)
+		// Tags are stored lower-case (normaliseTags).
+		tag := storeutil.ContainsPattern(strings.ToLower(term))
+		q = q.Where(`(name LIKE ? ESCAPE '\' OR description LIKE ? ESCAPE '\' OR EXISTS (SELECT 1 FROM json_each(datasets.tags) WHERE json_each.value LIKE ? ESCAPE '\'))`, p, p, tag)
 	}
 	query, args, err := q.OrderBy("scope", "name", "version").Build()
 	if err != nil {

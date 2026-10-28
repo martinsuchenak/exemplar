@@ -59,8 +59,15 @@ The datasets the key can read.
 |----------|-------------|
 | `scope` | `global` or `workspace` (`quarantine` lists nothing here) |
 | `name` | Exact name (all versions) |
+| `query` | Words that must each appear in the name, description or a tag |
 
 Returns `{"datasets": [Dataset], "count": n}`.
+
+A query is up to 200 characters and 8 words. Whitespace and the
+punctuation names use between words (`-`, `_`, `.`, `/`, `,`) separate
+words, and each word matches anywhere, in any order: `crm contacts` finds
+`crm-contacts`, and so does `contacts`. ASCII letters ignore case; other
+letters match exactly.
 
 ### `search_fixtures`
 
@@ -68,7 +75,8 @@ A dataset's fixtures, metadata only, ordered by name.
 
 | Argument | Description |
 |----------|-------------|
-| `dataset_id` | Required |
+| `dataset` | Required: the dataset's id or its exact name |
+| `query` | Words that must each appear in the fixture name, as in `list_datasets` |
 | `kind` | `email`, `file` or `record` |
 | `format` | e.g. `eml`, `pdf`, `json` |
 | `scenario`, `tag` | Labels; generated emails have their shape as scenario |
@@ -77,7 +85,14 @@ A dataset's fixtures, metadata only, ordered by name.
 | `review_state` | `not-required`, `unreviewed`, `approved`, `rejected` |
 | `limit`, `offset` | Paging; limit defaults to 100, at most 1000 |
 
-Returns `{"fixtures": [Fixture], "count": n}`.
+Returns `{"dataset": Dataset, "fixtures": [Fixture], "count": n}`, with the
+dataset searched.
+
+A name means the newest version of a global dataset, or a workspace. When
+it names more than one dataset the key can read (a global dataset and a
+fork of it, which keeps its name, or two accounts' workspaces seen with an
+admin key), the tool refuses and lists their ids, and the agent passes one
+of those.
 
 ### `get_fixture`
 

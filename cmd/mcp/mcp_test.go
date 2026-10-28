@@ -184,6 +184,16 @@ func TestListDatasets(t *testing.T) {
 	if out["count"] != float64(1) {
 		t.Errorf("by name = %v", out["count"])
 	}
+	// query finds datasets by words; quarantine stays out of it.
+	for query, want := range map[string]float64{"LIB": 1, "mine": 1, "inbox": 0, "lib mine": 0} {
+		out, _, err := w.call(t, w.adminKey, "list_datasets", map[string]any{"query": query})
+		if err != nil || out["count"] != want {
+			t.Errorf("query %q = %v, %v; want %v", query, out["count"], err, want)
+		}
+	}
+	if _, _, err := w.call(t, w.aliceKey, "list_datasets", map[string]any{"query": strings.Repeat("x", 201)}); toolCode(err) != mcplib.ErrorCodeInvalidParams {
+		t.Errorf("long query err = %v", err)
+	}
 	if _, _, err := w.call(t, w.aliceKey, "list_datasets", map[string]any{"scope": "public"}); toolCode(err) != mcplib.ErrorCodeInvalidParams {
 		t.Errorf("bad scope err = %v", err)
 	}
@@ -194,7 +204,7 @@ func TestListDatasets(t *testing.T) {
 
 func TestSearchFixtures(t *testing.T) {
 	w := newWorld(t)
-	out, _, err := w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset_id": w.workspace.ID})
+	out, _, err := w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset": w.workspace.ID})
 	if err != nil || out["count"] != float64(len(w.generated)) {
 		t.Fatalf("all = %v, %v (want %d)", out["count"], err, len(w.generated))
 	}
@@ -206,25 +216,51 @@ func TestSearchFixtures(t *testing.T) {
 		`{"review_state":"unreviewed"}`: 0,
 		`{"limit":1,"offset":1}`:        1,
 	} {
-		a := map[string]any{"dataset_id": w.workspace.ID}
+		a := map[string]any{"dataset": w.workspace.ID}
 		_ = json.Unmarshal([]byte(args), &a)
 		out, _, err := w.call(t, w.aliceKey, "search_fixtures", a)
 		if err != nil || out["count"] != want {
 			t.Errorf("%s = %v, %v; want %v", args, out["count"], err, want)
 		}
 	}
-	out, _, _ = w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset_id": w.workspace.ID, "person_id": w.personID})
+	out, _, _ = w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset": w.workspace.ID, "person_id": w.personID})
 	if out["count"].(float64) < 1 {
 		t.Error("person filter found nothing")
 	}
 
-	if _, _, err := w.call(t, w.aliceKey, "search_fixtures", nil); toolCode(err) != mcplib.ErrorCodeInvalidParams {
-		t.Errorf("missing dataset_id err = %v", err)
+	// A dataset by name, and the dataset searched comes back with the fixtures.
+	out, _, err = w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset": "mine", "format": "pdf"})
+	if err != nil || out["count"] != float64(1) || out["dataset"].(map[string]any)["id"] != w.workspace.ID {
+		t.Errorf("by dataset name = %v, %v", out, err)
 	}
-	if _, _, err := w.call(t, w.bobKey, "search_fixtures", map[string]any{"dataset_id": w.workspace.ID}); toolCode(err) != errorCodeNotFound {
+	// query matches words in fixture names.
+	pdf := w.fixtureByFormat("pdf").Name
+	out, _, err = w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset": "mine", "query": strings.ToUpper(pdf)})
+	if err != nil || out["count"] != float64(1) {
+		t.Errorf("query %q = %v, %v; want 1", pdf, out["count"], err)
+	}
+	if _, _, err := w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset": "mine", "query": "a b c d e f g h i"}); toolCode(err) != mcplib.ErrorCodeInvalidParams {
+		t.Errorf("nine-word query err = %v", err)
+	}
+	if _, _, err := w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset": "nothing"}); toolCode(err) != errorCodeNotFound {
+		t.Errorf("unknown dataset name err = %v", err)
+	}
+	// A name that means two datasets: the admin sees alice's "mine" and bob's.
+	mustDataset(t, w.a, w.bob, "mine", dataset.ScopeWorkspace)
+	if _, _, err := w.call(t, w.adminKey, "search_fixtures", map[string]any{"dataset": "mine"}); toolCode(err) != mcplib.ErrorCodeInvalidParams {
+		t.Errorf("ambiguous name err = %v", err)
+	}
+	if _, _, err := w.call(t, w.bobKey, "search_fixtures", map[string]any{"dataset": "mine"}); err != nil {
+		t.Errorf("bob's own mine: %v", err)
+	}
+
+	if _, _, err := w.call(t, w.aliceKey, "search_fixtures", nil); toolCode(err) != mcplib.ErrorCodeInvalidParams {
+		t.Errorf("missing dataset err = %v", err)
+	}
+	if _, _, err := w.call(t, w.bobKey, "search_fixtures", map[string]any{"dataset": w.workspace.ID}); toolCode(err) != errorCodeNotFound {
 		t.Errorf("bob searching alice's workspace err = %v", err)
 	}
-	if _, _, err := w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset_id": w.workspace.ID, "kind": "video"}); toolCode(err) != mcplib.ErrorCodeInvalidParams {
+	if _, _, err := w.call(t, w.aliceKey, "search_fixtures", map[string]any{"dataset": w.workspace.ID, "kind": "video"}); toolCode(err) != mcplib.ErrorCodeInvalidParams {
 		t.Errorf("bad kind err = %v", err)
 	}
 }
@@ -331,8 +367,10 @@ func TestGetFixtureLimitsAndRealData(t *testing.T) {
 		if _, _, err := w.call(t, key, "get_fixture", map[string]any{"id": inQuarantine.ID}); toolCode(err) != errorCodeNotFound {
 			t.Errorf("reading quarantine over MCP err = %v", err)
 		}
-		if _, _, err := w.call(t, key, "search_fixtures", map[string]any{"dataset_id": w.quar.ID}); toolCode(err) != errorCodeNotFound {
-			t.Errorf("searching quarantine over MCP err = %v", err)
+		for _, ref := range []string{w.quar.ID, w.quar.Name} {
+			if _, _, err := w.call(t, key, "search_fixtures", map[string]any{"dataset": ref}); toolCode(err) != errorCodeNotFound {
+				t.Errorf("searching quarantine %q over MCP err = %v", ref, err)
+			}
 		}
 	}
 	if _, err := w.a.Fixtures.Review(ctx, w.admin, inQuarantine.ID, true); err != nil {
