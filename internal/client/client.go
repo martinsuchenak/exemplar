@@ -140,6 +140,9 @@ func (c *Client) ListDatasets(ctx context.Context, f dataset.ListFilter) ([]data
 	if f.Name != "" {
 		q.Set("name", f.Name)
 	}
+	if f.Query != "" {
+		q.Set("query", f.Query)
+	}
 	var out []dataset.Dataset
 	return out, c.do(ctx, http.MethodGet, "/api/v1/datasets", q, nil, &out)
 }
@@ -150,10 +153,10 @@ func (c *Client) CreateDataset(ctx context.Context, in dataset.CreateInput) (*da
 	return &out, c.do(ctx, http.MethodPost, "/api/v1/datasets", nil, in, &out)
 }
 
-// GetDataset returns one dataset.
-func (c *Client) GetDataset(ctx context.Context, id string) (*dataset.Dataset, error) {
+// GetDataset returns one dataset, by id or exact name.
+func (c *Client) GetDataset(ctx context.Context, ref string) (*dataset.Dataset, error) {
 	var out dataset.Dataset
-	return &out, c.do(ctx, http.MethodGet, "/api/v1/datasets/"+url.PathEscape(id), nil, nil, &out)
+	return &out, c.do(ctx, http.MethodGet, "/api/v1/datasets/"+url.PathEscape(ref), nil, nil, &out)
 }
 
 // DeleteDataset deletes a dataset and its fixtures.
@@ -194,6 +197,7 @@ func (c *Client) ListFixtures(ctx context.Context, datasetID string, f fixture.L
 	set("review_state", string(f.ReviewState))
 	set("record_schema", f.RecordSchema)
 	set("person_id", f.PersonID)
+	set("query", f.Query)
 	if f.Limit > 0 {
 		q.Set("limit", fmt.Sprint(f.Limit))
 	}

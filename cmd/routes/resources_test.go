@@ -195,3 +195,45 @@ func TestContentDownloadHeaders(t *testing.T) {
 func jsonDecode(r io.Reader, v interface{}) error {
 	return json.NewDecoder(r).Decode(v)
 }
+
+// GET /datasets/{id} takes a name too; the lists take ?query=.
+func TestDatasetNamesAndQueries(t *testing.T) {
+	mux, key, dsID := testServer(t)
+	if w := call(mux, "POST", "/api/v1/datasets/"+dsID+"/fixtures?name=Quarterly%20Report.pdf", key, "x"); w.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", w.Code, w.Body)
+	}
+
+	var d dataset.Dataset
+	w := call(mux, "GET", "/api/v1/datasets/mine", key, "")
+	if w.Code != http.StatusOK || jsonDecode(w.Body, &d) != nil || d.ID != dsID {
+		t.Errorf("by name: %d %s", w.Code, w.Body)
+	}
+	for path, want := range map[string]int{
+		"/api/v1/datasets?query=MINE":                         1,
+		"/api/v1/datasets?query=mine%20other":                 0,
+		"/api/v1/datasets/" + dsID + "/fixtures?query=report": 1,
+		"/api/v1/datasets/" + dsID + "/fixtures?query=eml":    0,
+	} {
+		var list []map[string]any
+		w := call(mux, "GET", path, key, "")
+		if w.Code != http.StatusOK || jsonDecode(w.Body, &list) != nil || len(list) != want {
+			t.Errorf("%s: %d %s; want %d results", path, w.Code, w.Body, want)
+		}
+	}
+	long := strings.Repeat("x", 201)
+	for _, path := range []string{"/api/v1/datasets?query=" + long, "/api/v1/datasets/" + dsID + "/fixtures?query=" + long} {
+		if w := call(mux, "GET", path, key, ""); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d, want 400", path[:30], w.Code)
+		}
+	}
+	// A name meaning two datasets is a 400 naming them; other routes take ids only.
+	if w := call(mux, "POST", "/api/v1/datasets/"+dsID+"/promote", key, ""); w.Code != http.StatusCreated {
+		t.Fatalf("promote: %d", w.Code)
+	}
+	if w := call(mux, "GET", "/api/v1/datasets/mine", key, ""); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "2 datasets") {
+		t.Errorf("ambiguous name: %d %s", w.Code, w.Body)
+	}
+	if w := call(mux, "GET", "/api/v1/datasets/mine/fixtures", key, ""); w.Code != http.StatusNotFound {
+		t.Errorf("fixtures by name: %d, want 404", w.Code)
+	}
+}

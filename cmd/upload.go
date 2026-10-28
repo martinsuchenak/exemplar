@@ -25,7 +25,7 @@ func uploadCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "upload",
 		Usage:     "Upload files into a dataset (declares they contain no real data)",
-		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Dataset to add to", Required: true}},
+		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset", Usage: "Dataset to add to (id or name)", Required: true}},
 		MinArgs:   1,
 		MaxArgs:   cli.UnlimitedArgs,
 		Flags: withClientFlags(
@@ -36,7 +36,7 @@ func uploadCmd() *cli.Command {
 			&cli.StringFlag{Name: "generator", Usage: "Tool that generated synthetic files"},
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
-			datasetID, err := requireArg(cmd, "dataset-id")
+			datasetID, err := requireArg(cmd, "dataset")
 			if err != nil {
 				return err
 			}
@@ -46,6 +46,9 @@ func uploadCmd() *cli.Command {
 			}
 			c, err := newClient(cmd)
 			if err != nil {
+				return err
+			}
+			if datasetID, err = resolveDataset(ctx, c, datasetID); err != nil {
 				return err
 			}
 

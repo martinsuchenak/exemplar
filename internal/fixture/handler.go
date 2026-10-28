@@ -23,7 +23,7 @@ func NewHandler(s *Service) *Handler {
 }
 
 // List returns a dataset's fixtures. Query parameters: kind, format,
-// scenario, tag, review_state, record_schema, person_id, limit, offset.
+// scenario, tag, review_state, record_schema, person_id, query, limit, offset.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p, ok := rest.Caller(w, r)
 	if !ok {
@@ -48,6 +48,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		ReviewState:  ReviewState(q.Get("review_state")),
 		RecordSchema: q.Get("record_schema"),
 		PersonID:     q.Get("person_id"),
+		Query:        q.Get("query"),
 		Limit:        limit,
 		Offset:       offset,
 	})

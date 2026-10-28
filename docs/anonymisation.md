@@ -19,18 +19,18 @@ promote. The access rules are in [security.md](security.md).
 exemplar datasets create --name inbox-2025 --scope quarantine
 
 # 2. Check what would be replaced. The report shows ORIGINAL data: read it, don't keep it.
-exemplar ingest <dataset-id> ./mail --dry-run
+exemplar ingest inbox-2025 ./mail --dry-run
 
 # 3. Ingest for real: fixtures are stored as <batch>-001.eml, <batch>-002.csv, …
-exemplar ingest <dataset-id> ./mail --batch inbox-2025-01
+exemplar ingest inbox-2025 ./mail --batch inbox-2025-01
 
-# 4. Review each fixture, then approve or reject it
-exemplar fixtures download <fixture-id>
-exemplar approve <fixture-id>...
-exemplar reject <fixture-id>...
+# 4. Review each fixture: it opens, you approve, reject or skip it
+exemplar review inbox-2025
+#    or by hand: exemplar fixtures download <fixture-id>, then
+#    exemplar approve <fixture-id>... / exemplar reject <fixture-id>...
 
 # 5. Copy the approved fixtures into the next version of a global dataset
-exemplar promote <dataset-id> --name inbox --description "Reviewed anonymised emails"
+exemplar promote inbox-2025 --name inbox --description "Reviewed anonymised emails"
 
 # 6. Use approved emails as templates for as many synthetic variants as you need
 exemplar generate <workspace-id> --kind emails --count 50 --from <global-fixture-id>

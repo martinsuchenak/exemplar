@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/paularlott/cli"
 
 	"github.com/martinsuchenak/exemplar/internal/client"
@@ -43,6 +45,22 @@ func withClientFlags(flags ...cli.Flag) []cli.Flag {
 
 func newClient(cmd *cli.Command) (*client.Client, error) {
 	return client.New(cmd.GetString("server"), cmd.GetString("api-key"))
+}
+
+// resolveDataset returns the id of the dataset ref names: an id, or an exact
+// name (the newest version), which the server resolves with the key's access
+// rules. An id goes through as it is, as the server would take it first
+// anyway, so the command's own route reports on it. Commands that take a
+// dataset accept either; deleting one takes an id.
+func resolveDataset(ctx context.Context, c *client.Client, ref string) (string, error) {
+	if _, err := uuid.Parse(ref); err == nil {
+		return ref, nil
+	}
+	d, err := c.GetDataset(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	return d.ID, nil
 }
 
 // render prints v as JSON with --json, otherwise as a table of rows.

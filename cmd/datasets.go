@@ -26,6 +26,7 @@ func datasetsCmd() *cli.Command {
 				Flags: withClientFlags(
 					&cli.StringFlag{Name: "scope", Usage: "global, workspace or quarantine"},
 					&cli.StringFlag{Name: "name", Usage: "Exact dataset name"},
+					&cli.StringFlag{Name: "query", Usage: "Words that must each appear in the name, description or a tag"},
 				),
 				Run: func(ctx context.Context, cmd *cli.Command) error {
 					c, err := newClient(cmd)
@@ -35,6 +36,7 @@ func datasetsCmd() *cli.Command {
 					list, err := c.ListDatasets(ctx, dataset.ListFilter{
 						Scope: dataset.Scope(cmd.GetString("scope")),
 						Name:  cmd.GetString("name"),
+						Query: cmd.GetString("query"),
 					})
 					if err != nil {
 						return err
@@ -75,15 +77,18 @@ func datasetsCmd() *cli.Command {
 			{
 				Name:      "freeze",
 				Usage:     "Make a dataset's contents read-only",
-				Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Dataset to freeze", Required: true}},
+				Arguments: []cli.Argument{&cli.StringArg{Name: "dataset", Usage: "Dataset to freeze (id or name)", Required: true}},
 				Flags:     withClientFlags(),
 				Run: func(ctx context.Context, cmd *cli.Command) error {
-					id, err := requireArg(cmd, "dataset-id")
+					id, err := requireArg(cmd, "dataset")
 					if err != nil {
 						return err
 					}
 					c, err := newClient(cmd)
 					if err != nil {
+						return err
+					}
+					if id, err = resolveDataset(ctx, c, id); err != nil {
 						return err
 					}
 					d, err := c.FreezeDataset(ctx, id)

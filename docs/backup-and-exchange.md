@@ -39,7 +39,7 @@ never overwrites a file.
 ## Export and import
 
 ```bash
-exemplar export <dataset-id>... --output team-fixtures.tar.gz
+exemplar export <dataset>... --output team-fixtures.tar.gz
 exemplar import team-fixtures.tar.gz        # against another server
 ```
 

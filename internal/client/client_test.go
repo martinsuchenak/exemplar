@@ -151,6 +151,15 @@ func TestDatasetsFixturesAndCopies(t *testing.T) {
 	if err != nil || len(list) != 1 {
 		t.Fatalf("alice list = %+v, %v", list, err)
 	}
+	if list, err := alice.ListFixtures(ctx, global.ID, fixture.ListFilter{Query: "HELLO eml"}); err != nil || len(list) != 1 {
+		t.Errorf("fixtures by query = %+v, %v", list, err)
+	}
+	if list, err := alice.ListDatasets(ctx, dataset.ListFilter{Query: "emai"}); err != nil || len(list) != 1 {
+		t.Errorf("datasets by query = %+v, %v", list, err)
+	}
+	if got, err := alice.GetDataset(ctx, "emails"); err != nil || got.ID != global.ID {
+		t.Errorf("dataset by name = %+v, %v", got, err)
+	}
 	if got, err := alice.GetFixture(ctx, up.ID); err != nil || got.Name != "hello.eml" {
 		t.Errorf("get fixture = %+v, %v", got, err)
 	}

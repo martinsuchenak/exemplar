@@ -18,13 +18,13 @@ func exportCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "export",
 		Usage:     "Export datasets to an archive for another instance",
-		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Dataset to export", Required: true}},
+		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset", Usage: "Dataset to export (id or name); more may follow", Required: true}},
 		MaxArgs:   cli.UnlimitedArgs,
 		Flags: withClientFlags(
 			&cli.StringFlag{Name: "output", Usage: "Archive file to write (.tar.gz); never overwritten", Required: true},
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
-			id, err := requireArg(cmd, "dataset-id")
+			id, err := requireArg(cmd, "dataset")
 			if err != nil {
 				return err
 			}
@@ -33,6 +33,11 @@ func exportCmd() *cli.Command {
 				return err
 			}
 			ids := append([]string{id}, cmd.GetArgs()...)
+			for i := range ids {
+				if ids[i], err = resolveDataset(ctx, c, ids[i]); err != nil {
+					return err
+				}
+			}
 			var counts map[string]int
 			path := cmd.GetString("output")
 			err = writeArchive(path, func(w io.Writer) error {

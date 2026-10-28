@@ -62,13 +62,21 @@ clients report something useful.
 
 | Method and path | Who | Body / query | Response |
 |-----------------|-----|--------------|----------|
-| `GET /api/v1/datasets` | any key | `?scope=`, `?name=` | Datasets you can read |
+| `GET /api/v1/datasets` | any key | `?scope=`, `?name=`, `?query=` | Datasets you can read |
 | `POST /api/v1/datasets` | write key; global and quarantine: admin | `{"name", "description", "scope", "tags"}` | `201` Dataset |
-| `GET /api/v1/datasets/{id}` | readers | | Dataset |
+| `GET /api/v1/datasets/{id}` | readers | `{id}` may be the exact name | Dataset |
 | `DELETE /api/v1/datasets/{id}` | owner or admin | | `204`; fixtures and unused contents go too |
 | `POST /api/v1/datasets/{id}/freeze` | owner or admin | | Dataset |
 | `POST /api/v1/datasets/{id}/fork` | write key that can read the source | `{"name", "description"}` (optional) | `201` CopyResult |
 | `POST /api/v1/datasets/{id}/promote` | admin | `{"name", "description"}` (optional) | `201` CopyResult |
+
+`GET /api/v1/datasets/{id}` also takes a dataset's exact name, so a client
+can turn a name into an id; every other route takes an id. A name means the
+newest version of a global dataset, or a workspace, among what the key can
+read; one that names several answers `400` with their ids. `?query=` (on
+this list and on a dataset's fixtures) matches words, each of which must
+appear in a dataset's name, description or a tag, or a fixture's name; see
+[cli.md](cli.md#naming-a-dataset).
 
 A **CopyResult** is `{"dataset": Dataset, "copied": n, "skipped": n}`. Fork
 creates a workspace you own; promote creates the next version of a global
@@ -81,7 +89,7 @@ since the quarantine one is about review.
 
 | Method and path | Who | Body / query | Response |
 |-----------------|-----|--------------|----------|
-| `GET /api/v1/datasets/{id}/fixtures` | readers | `?kind= &format= &scenario= &tag= &review_state= &record_schema= &person_id= &limit= &offset=` | Fixtures, by name; limit defaults to 100, at most 1000 |
+| `GET /api/v1/datasets/{id}/fixtures` | readers | `?kind= &format= &scenario= &tag= &review_state= &record_schema= &person_id= &query= &limit= &offset=` | Fixtures, by name; limit defaults to 100, at most 1000 |
 | `POST /api/v1/datasets/{id}/fixtures` | can change the dataset | Raw content as the body; `?name=` (required) `&kind= &format= &mime_type= &scenario= &tags=a,b &source= &generator= &record_schema=` | `201` Fixture |
 | `GET /api/v1/fixtures/{id}` | readers | | Fixture |
 | `GET /api/v1/fixtures/{id}/content` | readers | | The content |

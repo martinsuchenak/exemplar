@@ -24,7 +24,7 @@ func ingestCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "ingest",
 		Usage:     "Anonymise real emails and documents into a quarantine dataset (admin key)",
-		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Quarantine dataset", Required: true}},
+		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset", Usage: "Quarantine dataset (id or name)", Required: true}},
 		MinArgs:   1,
 		MaxArgs:   cli.UnlimitedArgs,
 		Flags: withClientFlags(
@@ -33,7 +33,7 @@ func ingestCmd() *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "Show every replacement without storing anything (prints original data)"},
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
-			id, err := requireArg(cmd, "dataset-id")
+			id, err := requireArg(cmd, "dataset")
 			if err != nil {
 				return err
 			}
@@ -43,6 +43,9 @@ func ingestCmd() *cli.Command {
 			}
 			c, err := newClient(cmd)
 			if err != nil {
+				return err
+			}
+			if id, err = resolveDataset(ctx, c, id); err != nil {
 				return err
 			}
 			files := make([]client.IngestFile, len(paths))

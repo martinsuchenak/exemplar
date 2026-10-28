@@ -22,7 +22,9 @@ func main() {
 		Name:       "exemplar",
 		Usage:      "exemplar service",
 		Version:    build.String(),
-		ConfigFile: cli_toml.NewConfigFile(&configFile, nil),
+		// The config file is read from the current directory, then the
+		// user's config directory (cmd.ConfigSearchPath).
+		ConfigFile: cli_toml.NewConfigFile(&configFile, cmd.ConfigSearchPath(&configFile)),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:         "config",

@@ -28,7 +28,7 @@ func pushMailpitCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "push-mailpit",
 		Usage:     "Send a dataset's emails to Mailpit over SMTP, tagged with a run ID",
-		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Dataset whose .eml fixtures to send", Required: true}},
+		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset", Usage: "Dataset whose .eml fixtures to send (id or name)", Required: true}},
 		Flags: withClientFlags(
 			&cli.StringFlag{
 				Name:         "smtp",
@@ -48,12 +48,15 @@ func pushMailpitCmd() *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "List what would be sent without sending"},
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
-			id, err := requireArg(cmd, "dataset-id")
+			id, err := requireArg(cmd, "dataset")
 			if err != nil {
 				return err
 			}
 			c, err := newClient(cmd)
 			if err != nil {
+				return err
+			}
+			if id, err = resolveDataset(ctx, c, id); err != nil {
 				return err
 			}
 			run := cmd.GetString("run")

@@ -18,18 +18,21 @@ func promoteCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "promote",
 		Usage:     "Copy a dataset into the global library as a frozen version (admin key)",
-		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Dataset to promote", Required: true}},
+		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset", Usage: "Dataset to promote (id or name)", Required: true}},
 		Flags: withClientFlags(
 			&cli.StringFlag{Name: "name", Usage: "Global dataset name (default: the source's name)"},
 			&cli.StringFlag{Name: "description", Usage: "Global dataset description (default: the source's)"},
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
-			id, err := requireArg(cmd, "dataset-id")
+			id, err := requireArg(cmd, "dataset")
 			if err != nil {
 				return err
 			}
 			c, err := newClient(cmd)
 			if err != nil {
+				return err
+			}
+			if id, err = resolveDataset(ctx, c, id); err != nil {
 				return err
 			}
 			res, err := c.Promote(ctx, id, dataset.PromoteInput{

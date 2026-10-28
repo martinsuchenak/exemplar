@@ -5,7 +5,29 @@ exemplar [--config FILE] [--log-level LEVEL] [--log-format FORMAT] <command> [fl
 ```
 
 Each setting can come from a flag, an environment variable or
-`exemplar-config.toml`.
+`exemplar-config.toml`, in that order.
+
+## Config file
+
+`exemplar-config.toml` (or `.exemplar-config.toml`) is read from the
+current directory, or failing that from your config directory:
+`$XDG_CONFIG_HOME/exemplar/`, or `~/.config/exemplar/`, on Linux and macOS,
+and `%AppData%\exemplar\` on Windows. Only the first one found is read.
+`--config` (`CONFIG_FILE`) names another file; a path with a directory in
+it is read only where it points.
+
+The config directory suits the CLI on your own machine: point it at your
+server once instead of exporting `EXEMPLAR_SERVER` in every shell. The API
+key is never read from a config file.
+
+```toml
+# ~/.config/exemplar/exemplar-config.toml
+[client]
+server = "https://exemplar.example.internal"
+```
+
+A server started in a directory without a config file reads this one too,
+so keep server settings next to the server.
 
 Two kinds of command:
 
@@ -107,12 +129,29 @@ Prints shell completion setup: `--shell bash|zsh|fish`.
 | `--json` | | | off: print a table |
 
 Keep the key in `EXEMPLAR_API_KEY` rather than on the command line, where it
-ends up in shell history. `--json` prints the API's JSON, for scripts.
+ends up in shell history. `--json` prints the API's JSON, for scripts. The
+server can live in your [config file](#config-file) instead.
 
 ```bash
 export EXEMPLAR_SERVER=https://exemplar.internal
 export EXEMPLAR_API_KEY=exm_...
 ```
+
+### Naming a dataset
+
+Commands that take a `<dataset>` take its id or its exact name: `exemplar
+generate crm-contacts --kind records`. A name means the newest version of a
+global dataset, or a workspace, among the datasets your key can read. When
+it names more than one (a global dataset and your fork of it, which keeps
+its name, or, with an admin key, two accounts' workspaces), the command
+stops and lists their ids; pass one of those. `datasets delete` takes an id
+only.
+
+`datasets list --query` and `fixtures list --query` find by words: each
+word must appear, in any order, in a dataset's name, description or a tag,
+or in a fixture's name. Whitespace and `-`, `_`, `.`, `/`, `,` separate
+words, so `--query "crm contacts"` finds `crm-contacts`. ASCII letters
+ignore case. A query is up to 200 characters and 8 words.
 
 ### `accounts`
 
@@ -134,17 +173,25 @@ export EXEMPLAR_API_KEY=exm_...
 
 | Command | Description |
 |---------|-------------|
-| `datasets list [--scope S] [--name N]` | Datasets you can read |
+| `datasets list [--scope S] [--name N] [--query Q]` | Datasets you can read |
 | `datasets create --name N [--scope workspace\|global\|quarantine] [--description D] [--tags a,b]` | Global and quarantine need an admin key |
-| `datasets freeze <dataset-id>` | Make contents read-only |
+| `datasets freeze <dataset>` | Make contents read-only |
 | `datasets delete <dataset-id>` | Delete with all fixtures |
 
 ### `fixtures`
 
 | Command | Description |
 |---------|-------------|
-| `fixtures list <dataset-id> [--kind] [--format] [--scenario] [--tag] [--review-state] [--record-schema] [--person ID] [--limit] [--offset]` | |
+| `fixtures list <dataset> [--kind] [--format] [--scenario] [--tag] [--review-state] [--record-schema] [--person ID] [--query Q] [--limit] [--offset]` | |
 | `fixtures download <fixture-id> [--output FILE]` | To stdout, or a new file (never overwrites) |
+| `fixtures download-all <dataset> --dir DIR [the list filters, without paging]` | Every match, as `DIR/<fixture name>` |
+
+`download-all` creates `DIR` (mode 700) and writes each file with mode 600.
+It checks every target first and writes nothing if one exists, so download
+into a new or empty directory. A fixture that fails is reported and the rest
+are still written; the command then exits non-zero. With an admin key it
+writes unreviewed real-derived data too, and says so: delete it once
+reviewed.
 
 ### `persons`
 
@@ -162,7 +209,7 @@ export EXEMPLAR_API_KEY=exm_...
 ### `generate`
 
 ```bash
-exemplar generate <dataset-id> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--from <fixture-id>,...] [--schemas contact,quote] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
+exemplar generate <dataset> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--from <fixture-id>,...] [--schemas contact,quote] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
 ```
 
 Fills a dataset with synthetic content about registry people and prints the
@@ -173,7 +220,7 @@ people) instead of shapes.
 ### `upload`
 
 ```bash
-exemplar upload <dataset-id> <file-or-directory>... [--scenario S] [--tags a,b] [--kind K] [--source uploaded|synthetic|public-corpus] [--generator G]
+exemplar upload <dataset> <file-or-directory>... [--scenario S] [--tags a,b] [--kind K] [--source uploaded|synthetic|public-corpus] [--generator G]
 ```
 
 Each file becomes a fixture named after the file. A directory uploads the
@@ -184,7 +231,7 @@ command exits non-zero. Uploading declares the files hold no real data.
 ### `push-mailpit`
 
 ```bash
-exemplar push-mailpit <dataset-id> [--smtp localhost:1025] [--run ID] [--to a@x.test,b@x.test] [--scenario S] [--tag T] [--limit N] [--raw] [--dry-run]
+exemplar push-mailpit <dataset> [--smtp localhost:1025] [--run ID] [--to a@x.test,b@x.test] [--scenario S] [--tag T] [--limit N] [--raw] [--dry-run]
 ```
 
 Sends a dataset's `.eml` fixtures to Mailpit (or any SMTP server) for a test
@@ -214,15 +261,15 @@ key (which may read them only to review them); the command says how many it
 skipped.
 
 ```bash
-exemplar generate <dataset-id> --kind emails --count 24
-exemplar push-mailpit <dataset-id> --run "$CI_JOB_ID"
+exemplar generate <dataset> --kind emails --count 24
+exemplar push-mailpit <dataset> --run "$CI_JOB_ID"
 # then in the test: GET http://mailpit:8025/api/v1/search?query=tag:exemplar-run-$CI_JOB_ID
 ```
 
 ### `fork`
 
 ```bash
-exemplar fork <dataset-id> [--name N] [--description D]
+exemplar fork <dataset> [--name N] [--description D]
 ```
 
 Copies a dataset you can read into a new workspace you own. Contents are
@@ -231,7 +278,7 @@ shared, not duplicated.
 ### `promote`
 
 ```bash
-exemplar promote <dataset-id> [--name N] [--description D]
+exemplar promote <dataset> [--name N] [--description D]
 ```
 
 Admin key. Copies a dataset into the global library as the next version of
@@ -252,7 +299,7 @@ copied to. It cannot be undone, so it needs `--yes`.
 ### `ingest`
 
 ```bash
-exemplar ingest <dataset-id> <file-or-directory>... [--profile P] [--batch B] [--dry-run]
+exemplar ingest <dataset> <file-or-directory>... [--profile P] [--batch B] [--dry-run]
 ```
 
 Admin key. Sends real emails and documents (`.eml`, `.txt`, `.md`, `.csv`,
@@ -307,12 +354,41 @@ exemplar reject <fixture-id>...
 Admin key. Records the review of real-derived fixtures. Only approved fixtures
 are copied by fork and promote; rejected ones stay in quarantine until the
 dataset or batch is deleted. Each id is reviewed on its own; failures are
-listed and make the command exit non-zero.
+listed and make the command exit non-zero. `review` does the same one
+fixture at a time, without copying ids.
+
+### `review`
+
+```bash
+exemplar review <quarantine-dataset> [--kind K] [--query Q] [--no-open]
+```
+
+Admin key. Walks the dataset's unreviewed fixtures in name order. Each one
+is downloaded to a new private temporary directory, opened in your system's
+default app for its type (`open` on macOS, `xdg-open` on Linux, the file
+association on Windows; an `.eml` opens in your mail client), and waits for
+your answer:
+
+| Answer | Does |
+|--------|------|
+| `a`, `approve` | Approve it, as `exemplar approve` would |
+| `r`, `reject` | Reject it |
+| `s`, `skip` | Leave it unreviewed for next time |
+| `o`, `open` | Open it again |
+| `q`, `quit` | Stop; the rest stay unreviewed |
+
+Each local copy is deleted once you answer, and the directory when the walk
+ends, however it ends. The app you open a file in may keep its own copy (a
+mail client's import, a recent-files list), so check what yours does before
+reviewing real data. `--no-open` prints each file's path instead, for
+opening it yourself or over SSH; so does an opener that fails. The end of
+input counts as quit. The walk ends with a tally: approved, rejected,
+skipped and left.
 
 ### `export`, `import`
 
 ```bash
-exemplar export <dataset-id>... --output FILE
+exemplar export <dataset>... --output FILE
 exemplar import FILE
 ```
 
@@ -330,5 +406,5 @@ real-derived fixtures are skipped and listed on stderr. See
 exemplar datasets create --name replies
 exemplar upload 01a1... ./samples/replies --scenario outlook-reply --tags reply
 exemplar fixtures list 01a1...
-exemplar fork <global-dataset-id> --name my-emails
+exemplar fork <global-dataset> --name my-emails
 ```

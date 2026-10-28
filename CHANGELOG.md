@@ -14,6 +14,18 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 - MCP: `list_datasets` takes a `query`, words matched in dataset names,
   descriptions and tags, and `search_fixtures` a `query` matched in fixture
   names.
+- CLI: every command that takes a dataset takes its name as well as its id
+  (`exemplar generate crm-contacts …`), except `datasets delete`;
+  `datasets list` and `fixtures list` take `--query`. Over REST,
+  `GET /api/v1/datasets/{id}` takes a name and both lists take `?query=`.
+- `exemplar review <dataset>` walks a quarantine dataset's unreviewed
+  fixtures one at a time: each opens in its default app, you approve,
+  reject or skip it, and its local copy is deleted.
+- `exemplar fixtures download-all <dataset> --dir DIR` writes every fixture
+  that matches the list filters to a directory.
+- The config file is also read from `~/.config/exemplar/` (or
+  `$XDG_CONFIG_HOME/exemplar/`, `%AppData%\exemplar\` on Windows) when the
+  current directory has none, so the CLI can keep `client.server` there.
 
 ### Changed
 

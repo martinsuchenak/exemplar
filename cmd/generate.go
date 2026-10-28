@@ -22,7 +22,7 @@ func generateCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "generate",
 		Usage:     "Fill a dataset with synthetic files, emails or records",
-		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset-id", Usage: "Dataset to fill", Required: true}},
+		Arguments: []cli.Argument{&cli.StringArg{Name: "dataset", Usage: "Dataset to fill (id or name)", Required: true}},
 		Flags: withClientFlags(
 			&cli.StringFlag{Name: "kind", Usage: "files, emails or records", Required: true},
 			&cli.IntFlag{Name: "count", DefaultValue: 10, Usage: fmt.Sprintf("How many items (1-%d); a thread email counts once", generate.MaxCount)},
@@ -37,7 +37,7 @@ func generateCmd() *cli.Command {
 			&cli.StringFlag{Name: "tags", Usage: "Comma-separated tags"},
 		),
 		Run: func(ctx context.Context, cmd *cli.Command) error {
-			id, err := requireArg(cmd, "dataset-id")
+			id, err := requireArg(cmd, "dataset")
 			if err != nil {
 				return err
 			}
@@ -64,6 +64,9 @@ func generateCmd() *cli.Command {
 			}
 			c, err := newClient(cmd)
 			if err != nil {
+				return err
+			}
+			if id, err = resolveDataset(ctx, c, id); err != nil {
 				return err
 			}
 			res, err := c.Generate(ctx, id, req)

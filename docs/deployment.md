@@ -43,29 +43,29 @@ export EXEMPLAR_SERVER=https://exemplar.example.internal
 export EXEMPLAR_API_KEY=exm_...   # an admin key, from bootstrap or `exemplar keys`
 ```
 
+The server can instead go in `~/.config/exemplar/exemplar-config.toml`
+(`[client] server = "…"`), so every shell has it; see
+[cli.md](cli.md#config-file).
+
 Real data in, reviewed fixtures out:
 
 ```bash
 # Ingest from this machine: the server anonymises with the Presidio beside
 # it, so the anonymisation key never leaves the deployment.
-exemplar ingest <quarantine-dataset-id> ./mail --batch inbox-2025-01
+exemplar ingest inbox-2025 ./mail --batch inbox-2025-01
 
-# What is waiting for review
-exemplar fixtures list <quarantine-dataset-id> --review-state unreviewed
-
-# Look at each one: an .eml in a mail client, a document in its own app
-exemplar fixtures download <fixture-id> --output ~/review/<fixture-id>.eml
-
-# Record the review
-exemplar approve <fixture-id>...
-exemplar reject <fixture-id>...
+# Review what is waiting: each fixture opens on this machine (an .eml in
+# your mail client), you approve, reject or skip it, and its copy is deleted
+exemplar review inbox-2025
 
 # Copy the approved ones into a global dataset
-exemplar promote <quarantine-dataset-id> --name inbox --description "Reviewed anonymised emails"
+exemplar promote inbox-2025 --name inbox --description "Reviewed anonymised emails"
 ```
 
-A downloaded fixture is anonymised but not yet reviewed: keep it on your
-machine and delete it once reviewed. There is no web UI, and Mailpit is no
+`review` keeps its copies in a private temporary directory and deletes
+them as it goes. A fixture you download yourself (`fixtures download`) is
+anonymised but not yet reviewed: keep it on your machine and delete it once
+reviewed. There is no web UI, and Mailpit is no
 preview either, since unreviewed real-derived emails are never sent. The
 workflow is in [anonymisation.md](anonymisation.md).
 

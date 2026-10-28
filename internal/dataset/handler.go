@@ -19,14 +19,14 @@ func NewHandler(s *Service) *Handler {
 	return &Handler{service: s}
 }
 
-// List returns the datasets the caller can read (?scope=, ?name=).
+// List returns the datasets the caller can read (?scope=, ?name=, ?query=).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p, ok := rest.Caller(w, r)
 	if !ok {
 		return
 	}
 	q := r.URL.Query()
-	list, err := h.service.List(r.Context(), p, ListFilter{Scope: Scope(q.Get("scope")), Name: q.Get("name")})
+	list, err := h.service.List(r.Context(), p, ListFilter{Scope: Scope(q.Get("scope")), Name: q.Get("name"), Query: q.Get("query")})
 	if err != nil {
 		rest.RespondServiceError(w, err)
 		return
@@ -53,13 +53,14 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	rest.RespondJSON(w, http.StatusCreated, d)
 }
 
-// Get returns one dataset.
+// Get returns one dataset, by id or exact name (see Service.Resolve), so
+// clients can turn a name into an id. Every other route takes an id.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	p, ok := rest.Caller(w, r)
 	if !ok {
 		return
 	}
-	d, err := h.service.Get(r.Context(), p, r.PathValue("id"))
+	d, err := h.service.Resolve(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		rest.RespondServiceError(w, err)
 		return

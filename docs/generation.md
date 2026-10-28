@@ -11,12 +11,12 @@ and audit apply). It uses only the Go standard library.
 
 ```bash
 exemplar datasets create --name demo
-exemplar generate <dataset-id> --kind emails --count 24          # every shape, twice
-exemplar generate <dataset-id> --kind files --formats pdf,xlsx --count 6
-exemplar generate <dataset-id> --kind records --count 10 --people 4
-exemplar generate <dataset-id> --kind records --schemas product,quote --count 20
+exemplar generate <dataset> --kind emails --count 24          # every shape, twice
+exemplar generate <dataset> --kind files --formats pdf,xlsx --count 6
+exemplar generate <dataset> --kind records --count 10 --people 4
+exemplar generate <dataset> --kind records --schemas product,quote --count 20
 exemplar schemas list                                              # the record schemas this server has
-exemplar fixtures list <dataset-id> --person <person-id>           # everything about one person
+exemplar fixtures list <dataset> --person <person-id>           # everything about one person
 ```
 
 The same request over the API is `POST /api/v1/datasets/{id}/generate` with a
@@ -106,7 +106,7 @@ footer. A template keeps that real shape. Any approved real-derived email is a
 template, and so is any email with linked people, such as a generated one:
 
 ```bash
-exemplar generate <dataset-id> --kind emails --count 20 --from <fixture-id>,<fixture-id>
+exemplar generate <dataset> --kind emails --count 20 --from <fixture-id>,<fixture-id>
 ```
 
 Each email is one of the templates, in turn, with its linked people (`from`,
@@ -280,7 +280,7 @@ records only on a build from before the change.
 
 ## Into a mailbox
 
-`exemplar push-mailpit <dataset-id>` sends the generated emails to Mailpit,
+`exemplar push-mailpit <dataset>` sends the generated emails to Mailpit,
 tagged with a run ID; see [cli.md](cli.md).
 
 ## Limits and failures

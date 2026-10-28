@@ -89,10 +89,10 @@ go run . serve
 # Use the CLI against it
 export EXEMPLAR_API_KEY=exm_...
 go run . datasets create --name replies
-go run . upload <dataset-id> ./samples --scenario outlook-reply
-go run . generate <dataset-id> --kind emails --count 24
-go run . push-mailpit <dataset-id> --run my-test
-go run . fixtures list <dataset-id>
+go run . upload replies ./samples --scenario outlook-reply
+go run . generate replies --kind emails --count 24
+go run . push-mailpit replies --run my-test
+go run . fixtures list replies
 
 # Or the API
 curl -H "X-API-Key: $EXEMPLAR_API_KEY" http://localhost:8080/api/v1/me
@@ -110,7 +110,7 @@ server runs) and move datasets between instances with `exemplar export` and
 
 ## Configuration
 
-Configuration is loaded from `exemplar-config.toml` and can be overridden via environment variables or flags.
+Configuration is loaded from `exemplar-config.toml`, in the current directory or `~/.config/exemplar/`, and can be overridden via environment variables or flags.
 
 | Option | Env Var | Default | Description |
 |--------|---------|---------|-------------|
