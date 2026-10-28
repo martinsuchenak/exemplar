@@ -31,6 +31,67 @@ environment variables in [cli.md](cli.md) (`SERVER_PORT`, `PRESIDIO_URL`,
 `MAX_INGEST_MB`…). The key comes from `EXEMPLAR_ANON_KEY` or a key file
 (`ANON_KEY_FILE`, mode 600).
 
+## Working with a deployed server
+
+Everything an admin does, reviewing included, goes through the API: the
+`exemplar` CLI on their own machine, pointed at the server, does it. Only
+`bootstrap`, `backup` and `restore` open the database directly, so they run
+beside it (`docker exec`, `docker compose exec`, `nomad alloc exec`).
+
+```bash
+export EXEMPLAR_SERVER=https://exemplar.example.internal
+export EXEMPLAR_API_KEY=exm_...   # an admin key, from bootstrap or `exemplar keys`
+```
+
+Real data in, reviewed fixtures out:
+
+```bash
+# Ingest from this machine: the server anonymises with the Presidio beside
+# it, so the anonymisation key never leaves the deployment.
+exemplar ingest <quarantine-dataset-id> ./mail --batch inbox-2025-01
+
+# What is waiting for review
+exemplar fixtures list <quarantine-dataset-id> --review-state unreviewed
+
+# Look at each one: an .eml in a mail client, a document in its own app
+exemplar fixtures download <fixture-id> --output ~/review/<fixture-id>.eml
+
+# Record the review
+exemplar approve <fixture-id>...
+exemplar reject <fixture-id>...
+
+# Copy the approved ones into a global dataset
+exemplar promote <quarantine-dataset-id> --name inbox --description "Reviewed anonymised emails"
+```
+
+A downloaded fixture is anonymised but not yet reviewed: keep it on your
+machine and delete it once reviewed. There is no web UI, and Mailpit is no
+preview either, since unreviewed real-derived emails are never sent. The
+workflow is in [anonymisation.md](anonymisation.md).
+
+Reach the server over HTTPS, through a proxy of your choice (see
+[Behind a reverse proxy](#behind-a-reverse-proxy)), or over a network you
+trust end to end: an admin key and real data in quarantine travel on the
+connection.
+
+## Behind a reverse proxy
+
+Which proxy fronts exemplar is up to you; whatever it is, it has to:
+
+- **terminate TLS**, since an admin key and real data in quarantine travel
+  on the connection, and exemplar itself speaks plain HTTP;
+- **allow long, large uploads**: a body up to `storage.max_ingest_mb`
+  (default 200 MiB), and up to an hour per request;
+- **not cache**: responses include quarantined fixtures.
+
+It finds the server at `EXEMPLAR_BIND:EXEMPLAR_PORT` with Docker Compose
+(set `EXEMPLAR_BIND` to an address the proxy can reach). On Nomad the job
+registers the `exemplar` service with Nomad's service discovery, at the
+client's address and a port Nomad picks, so a proxy that reads Nomad
+services, or renders its config from them with a Nomad template, follows
+the allocation when it moves; one that needs a fixed address can have it
+from a `static` port (`port "http" { static = 8080 to = 8080 }`).
+
 ## Docker image
 
 Each release publishes a signed multi-arch image (`linux/amd64`,
