@@ -33,11 +33,20 @@ environment variables in [cli.md](cli.md) (`SERVER_PORT`, `PRESIDIO_URL`,
 
 ## Docker image
 
+Each release publishes a signed multi-arch image (`linux/amd64`,
+`linux/arm64`) to `ghcr.io/martinsuchenak/exemplar`, tagged with the
+version, the minor version (`0.2`) and `latest`:
+
 ```bash
-docker build --build-arg VERSION=$(git describe --tags --always) -t exemplar .
-docker run -d --name exemplar -p 127.0.0.1:8080:8080 -v exemplar-data:/app/data exemplar
+docker run -d --name exemplar -p 127.0.0.1:8080:8080 -v exemplar-data:/app/data ghcr.io/martinsuchenak/exemplar:latest
 docker exec exemplar exemplar bootstrap   # prints the first admin key, once
 ```
+
+Or build it from a checkout with `task docker` (the `Dockerfile`; releases
+use `Dockerfile.release`, which copies in the release binaries). Verify a
+published image with `cosign verify ghcr.io/martinsuchenak/exemplar:<version>
+--certificate-identity-regexp 'https://github.com/martinsuchenak/exemplar/'
+--certificate-oidc-issuer https://token.actions.githubusercontent.com`.
 
 - The image runs `exemplar serve` as user `app`, UID 10001. A named volume
   just works; a host directory mounted at `/app/data` must be writable by
@@ -126,8 +135,9 @@ service discovery, with a `/health` check.
 The cluster needs:
 
 - clients with the Docker driver and the CNI plugins (bridge networking);
-- the image where clients can pull it: build it as above and push it to
-  your registry;
+- the image where clients can pull it: the job uses the published
+  `ghcr.io/martinsuchenak/exemplar:latest` unless `-var image=…` names
+  another (pin a version in production);
 - a host volume called `exemplar-data`, writable by UID 10001, in the
   client's configuration. It pins the job to that client:
 
@@ -146,7 +156,7 @@ Then:
 # The anonymisation key (optional: without it, ingest stays off)
 nomad var put nomad/jobs/exemplar anon_key=$(openssl rand -hex 32)
 
-nomad job run -var image=registry.example.com/exemplar:1.0.0 exemplar.nomad
+nomad job run -var image=ghcr.io/martinsuchenak/exemplar:0.1.0 exemplar.nomad
 
 # The first admin key
 nomad alloc exec -task exemplar <alloc-id> exemplar bootstrap

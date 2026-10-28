@@ -21,7 +21,7 @@ func main() {
 	app := &cli.Command{
 		Name:       "exemplar",
 		Usage:      "exemplar service",
-		Version:    build.Version + " (" + build.Date + ")",
+		Version:    build.String(),
 		ConfigFile: cli_toml.NewConfigFile(&configFile, nil),
 		Flags: []cli.Flag{
 			&cli.StringFlag{

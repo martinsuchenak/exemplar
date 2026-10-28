@@ -1,65 +1,127 @@
-name: CI
+name: ci
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 # Actions are pinned to commit hashes (a tag or branch can be moved to other
 # code); Dependabot (.github/dependabot.yml) proposes updates to the pins.
+# build/ci_test.go fails on an unpinned one. Tools are installed at fixed
+# versions, so a run means the same thing as `task check` here.
+
+env:
+  GO_VERSION: '1.27.3'
+  TASK_VERSION: 'v3.53.1'
+  GOLANGCI_LINT_VERSION: 'v2.14.0'
+  GOVULNCHECK_VERSION: 'v1.8.0'
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  go:
+    name: Go (fmt, vet, lint, test)
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Go
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      with:
-        go-version-file: go.mod
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
-    - name: Install Task
-      uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
-      with:
-        version: 3.x
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Task
+        run: go install github.com/go-task/task/v3/cmd/task@${{ env.TASK_VERSION }}
 
-    - name: Verify dependencies
-      run: go mod verify
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l build cmd internal main.go)
+          if [ -n "$unformatted" ]; then
+            echo "Files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
 
-    - name: Test
-      run: task test
+      - name: Check go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
 
-  lint:
-    runs-on: ubuntu-latest
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Vet
+        run: task vet
+
+      - name: Lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
+          task lint
+
+      - name: Test
+        run: go test ./... -count=1
+
+      - name: Check for known vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+          govulncheck ./...
+
+  race:
+    name: Go (race detector)
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Go
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      with:
-        go-version-file: go.mod
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+      - name: Test with race detector
+        run: go test ./... -count=1 -race -timeout 30m
 
-  build:
-    runs-on: ubuntu-latest
-    needs: [test, lint]
+  # The release builds every platform; catch a build that breaks on one
+  # before a tag, not after it. One job per target, in parallel. linux/amd64
+  # is the tests' own platform.
+  cross:
+    name: Go (cross-compile ${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        target: [darwin/amd64, darwin/arm64, windows/amd64, windows/arm64, linux/arm64]
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
-    - name: Build Docker Image
-      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-      with:
-        context: .
-        push: false
-        tags: exemplar:latest
+      - name: Cross-compile
+        env:
+          TARGET: ${{ matrix.target }}
+        run: CGO_ENABLED=0 GOOS=${TARGET%/*} GOARCH=${TARGET#*/} go build -o /dev/null .
+
+  docker:
+    name: Docker image and deployment files
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build image
+        run: docker build --build-arg VERSION=ci --build-arg COMMIT=${{ github.sha }} -t exemplar:ci .
+
+      - name: Check the image runs
+        run: docker run --rm exemplar:ci --version
+
+      - name: Check docker-compose.yml
+        run: docker compose config -q

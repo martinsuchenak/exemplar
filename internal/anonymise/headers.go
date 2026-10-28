@@ -294,7 +294,7 @@ func languages(weights bool) func(*Engine, *mimetree.Part, string) (string, bool
 		for _, item := range strings.Split(v, ",") {
 			tag, q, hasQ := strings.Cut(strings.TrimSpace(item), ";")
 			tag = strings.TrimSpace(tag)
-			if !languageRe.MatchString(tag) && !(weights && tag == "*") {
+			if !languageRe.MatchString(tag) && (!weights || tag != "*") {
 				return "", false
 			}
 			if hasQ {

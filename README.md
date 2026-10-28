@@ -56,6 +56,18 @@ the [exemplar-anonymise skill](skills/exemplar-anonymise/SKILL.md); see
 | Docker | ✅ |
 | Nomad | ✅ |
 
+## Install
+
+```bash
+brew install --cask martinsuchenak/tap/exemplar          # macOS
+docker pull ghcr.io/martinsuchenak/exemplar:latest        # linux/amd64, linux/arm64
+```
+
+Or download an archive for Linux, macOS or Windows from the
+[releases](https://github.com/martinsuchenak/exemplar/releases); each is
+signed and has an SBOM. To deploy it with Presidio, see
+[docs/deployment.md](docs/deployment.md).
+
 ## Quick Start
 
 ```bash
@@ -126,4 +138,4 @@ Key dependencies used in this project:
 
 ## License
 
-MIT
+Apache License 2.0 - see [LICENSE](LICENSE) and [NOTICE](NOTICE).

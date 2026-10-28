@@ -68,12 +68,15 @@
 ## Standard Commands
 
 ```sh
-task build
-task build-local
+task build:local   # bin/exemplar (alias: build-local)
+task build         # every release platform
 task test
-task lint
-task check   # full CI gate: vet + lint + test:race
+task lint          # golangci-lint over ./...
+task check         # full CI gate: vet + lint + test:race
+task release -- v0.2.0   # needs a CHANGELOG.md section; tags once CI passed
 ```
+
+Releases run GoReleaser (`.goreleaser.yml`, `.github/workflows/release.yml`); every user-visible change gets a line under `## [Unreleased]` in `CHANGELOG.md`. See `docs/development.md#releasing`.
 
 ## Feature-Specific Commands
 

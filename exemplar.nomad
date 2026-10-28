@@ -2,7 +2,7 @@
 # docs/deployment.md.
 #
 #   nomad var put nomad/jobs/exemplar anon_key=$(openssl rand -hex 32)   # optional
-#   nomad job run -var image=registry.example.com/exemplar:1.0.0 exemplar.nomad
+#   nomad job run -var image=ghcr.io/martinsuchenak/exemplar:0.1.0 exemplar.nomad
 #
 # Needs a client with the Docker driver, CNI plugins (bridge networking) and a
 # host volume called exemplar-data, writable by UID 10001:
@@ -16,8 +16,8 @@
 
 variable "image" {
   type        = string
-  description = "The exemplar image, built from the Dockerfile and pushed where the clients can pull it"
-  default     = "exemplar:latest"
+  description = "The exemplar image: a release from ghcr.io (pin a version in production), or one built from the Dockerfile and pushed where the clients can pull it"
+  default     = "ghcr.io/martinsuchenak/exemplar:latest"
 }
 
 variable "presidio_image" {

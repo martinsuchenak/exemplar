@@ -3,12 +3,19 @@
 ## Commands
 
 ```bash
-task test          # go test ./... -v
+task build:local   # bin/exemplar, stamped with version, commit and date
+task build         # every release platform into bin/
+task test          # go test ./... -v, with a coverage profile
 task test:race     # with the race detector
-task lint          # golangci-lint
-task check         # vet + lint + race tests (the CI gate)
-go run . serve
+task lint          # golangci-lint over every package
+task check         # vet + lint + race tests (the local CI gate)
+task vuln          # govulncheck
+task docker        # the image, tagged with the version
+task dev           # go run . serve with debug logging
 ```
+
+Builds use Go 1.27.3: the Taskfile sets `GOTOOLCHAIN`, so an older local Go
+downloads it.
 
 Integration test against a real Mailpit (needs Docker; starts and stops a
 pinned `axllent/mailpit` container):
@@ -35,10 +42,14 @@ Coverage across packages:
 go test -coverpkg=./... -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 ```
 
-CI (`.github/workflows/ci.yml`) pins every action to a commit hash, with the
-version in a trailing comment, and `build/ci_test.go` fails on any action
-that is not pinned. Dependabot (`.github/dependabot.yml`) opens a weekly pull
-request moving the pins to the latest releases.
+CI (`.github/workflows/ci.yml`) runs on every pull request and push to main:
+formatting, a tidy `go.mod`, vet, lint, tests, `govulncheck`, the race
+detector, a cross-compile for every release platform, and the Docker image
+and `docker-compose.yml`. Tools are installed at the versions it names. It
+pins every action to a commit hash, with the version in a trailing comment,
+and `build/ci_test.go` fails on any action that is not pinned. Dependabot
+(`.github/dependabot.yml`) opens weekly pull requests moving the pins, Go
+modules and the Dockerfiles' base images to their latest releases.
 
 Scratch code (experiments, a security tool's proof-of-concept tests) goes
 in `tmp/`, which git ignores. Give it its own module (`tmp/go.mod` with
@@ -56,6 +67,47 @@ skip it.
   [`skills/exemplar-anonymise/SKILL.md`](../skills/exemplar-anonymise/SKILL.md)
   too: users install it, and agents follow it as written.
 - `task check` passes before committing.
+
+## Releasing
+
+1. Under `## [Unreleased]` in `CHANGELOG.md`, list what the release
+   changes; rename the heading to the version and date
+   (`## [0.2.0] - 2026-11-03`) and start a new empty `[Unreleased]` above it.
+2. Commit that and push it to main.
+3. `task release -- v0.2.0`. It refuses a version with no changelog section,
+   uncommitted changes, or a `HEAD` that is not `origin/main`; it waits for
+   CI's run on that commit (`scripts/wait-for-ci.sh`, which needs `gh`) and
+   tags only if it passed. CI has run the whole suite there, race detector
+   included, so the release does not run it again.
+
+The tag starts `.github/workflows/release.yml`, which runs GoReleaser
+(`.goreleaser.yml`):
+
+- archives for Linux, macOS and Windows on amd64 and arm64, each with the
+  licence, README, changelog, `exemplar-config.toml` and the `skills/` folder, plus `checksums.txt` and an
+  SPDX SBOM per archive;
+- keyless cosign signatures of the checksums and SBOMs, and a GitHub build
+  provenance attestation;
+- a multi-arch image (`linux/amd64`, `linux/arm64`) at
+  `ghcr.io/martinsuchenak/exemplar`, tagged with the version, the minor
+  version and `latest` (not for pre-releases), built from the release
+  binaries by `Dockerfile.release` and signed with cosign;
+- a Homebrew cask in `martinsuchenak/homebrew-tap`, which needs the
+  `TAP_GITHUB_TOKEN` secret (a token that can push to that repository);
+- the GitHub release, with its changelog section as the notes.
+
+Verify a download with `cosign verify-blob --bundle checksums.txt.sigstore.json
+checksums.txt` (with `--certificate-identity-regexp
+'https://github.com/martinsuchenak/exemplar/'` and
+`--certificate-oidc-issuer https://token.actions.githubusercontent.com`), or
+`gh attestation verify <archive> --repo martinsuchenak/exemplar`.
+
+To try the release configuration without publishing anything:
+
+```bash
+goreleaser check
+goreleaser release --snapshot --clean --skip=sign,sbom,docker
+```
 
 ## Writing tests
 

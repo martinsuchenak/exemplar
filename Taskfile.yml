@@ -1,14 +1,22 @@
 version: '3'
 
+env:
+  # The Go release CI, the Dockerfile and releases build with (go.mod).
+  GOTOOLCHAIN: go1.27.3
+
 vars:
   APP_NAME: exemplar
+  BUILD_DIR: ./bin
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
   DATE:
     sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
   GO_CACHE_DIR:
     sh: pwd
-  LDFLAGS: -s -w -X github.com/martinsuchenak/exemplar/build.Version={{.VERSION}} -X github.com/martinsuchenak/exemplar/build.Date={{.DATE}}
+  PKG: github.com/martinsuchenak/exemplar/build
+  LDFLAGS: -s -w -X {{.PKG}}.Version={{.VERSION}} -X {{.PKG}}.Commit={{.COMMIT}} -X {{.PKG}}.Date={{.DATE}}
 
 tasks:
   default:
@@ -16,27 +24,60 @@ tasks:
       - task --list
 
   build:
-    desc: Build the application
+    desc: Cross-compile all release platforms
     cmds:
-      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-linux-amd64 .
-      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-linux-arm64 .
-      - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-darwin-amd64 .
-      - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}}-darwin-arm64 .
+      - task: build:linux
+      - task: build:darwin
+      - task: build:windows
 
-  build-local:
+  build:local:
     desc: Build for local platform
+    aliases: [build-local]
     cmds:
-      - CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.APP_NAME}} .
+      - mkdir -p {{.BUILD_DIR}}
+      - CGO_ENABLED=0 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}} .
+
+  build:linux:
+    desc: Build for Linux (amd64, arm64)
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}}-linux-amd64 .
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}}-linux-arm64 .
+
+  build:darwin:
+    desc: Build for macOS (amd64, arm64)
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}}-darwin-amd64 .
+      - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}}-darwin-arm64 .
+
+  build:windows:
+    desc: Build for Windows (amd64, arm64)
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}}-windows-amd64.exe .
+      - CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}}-windows-arm64.exe .
 
   test:
-    desc: Run tests
+    desc: Run all tests with coverage profile
     cmds:
-      - go test ./... -v -count=1
+      - go test ./... -v -count=1 -coverprofile=coverage.out
+
+  test:short:
+    desc: Run short tests only
+    cmds:
+      - go test ./... -v -count=1 -short
 
   test:race:
     desc: Run tests with race detector
     cmds:
-      - go test ./... -v -count=1 -race
+      - go test ./... -v -count=1 -race -timeout 30m
+
+  test:cover:
+    desc: Run tests and show per-function coverage
+    cmds:
+      - task: test
+      - go tool cover -func=coverage.out
 
   test:mailpit:
     desc: Run the Mailpit integration test against a throwaway Mailpit container (needs Docker)
@@ -50,7 +91,7 @@ tasks:
 
   sample-data:
     desc: Fill a server (EXEMPLAR_SERVER, default localhost:8080) with sample emails, documents, records, quotes and tasks about 20 people
-    deps: [build-local]
+    deps: [build:local]
     interactive: true
     cmds:
       - zsh scripts/sample-data.zsh
@@ -66,21 +107,31 @@ tasks:
       - for i in $(seq 1 180); do curl -sf -o /dev/null http://127.0.0.1:15003/health && break; sleep 1; done
       - EXEMPLAR_TEST_PRESIDIO_URL=http://127.0.0.1:15003 go test ./internal/anonymise/ -run TestRealPresidio -count=1 -v
 
-  clean:
-    desc: Clean build artifacts
+  run:
+    desc: Build and run the server
     cmds:
-      - rm -rf bin/
-      - go clean
+      - task: build:local
+      - '{{.BUILD_DIR}}/{{.APP_NAME}} serve'
 
-  lint:
-    desc: Run linter
+  dev:
+    desc: Run the server from source with debug logging
     cmds:
-      - GOCACHE={{.GO_CACHE_DIR}}/.cache/go-build golangci-lint run .
+      - go run . serve --log-level debug
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
 
   vet:
     desc: Run go vet
     cmds:
       - go vet ./...
+
+  lint:
+    desc: Run linter
+    cmds:
+      - GOCACHE={{.GO_CACHE_DIR}}/.cache/go-build golangci-lint run ./...
 
   tidy:
     desc: Tidy and verify go modules
@@ -88,22 +139,55 @@ tasks:
       - go mod tidy
       - go mod verify
 
+  vuln:
+    desc: Check dependencies and the standard library for known vulnerabilities (govulncheck)
+    cmds:
+      - govulncheck ./...
+
+  security:
+    desc: Run security scanner (gosec)
+    cmds:
+      - gosec ./...
+
   check:
-    desc: Full CI gate — vet + lint + unit tests with race detector
+    desc: Full CI gate — vet + lint + tests with race detector
     cmds:
       - task: vet
       - task: lint
       - task: test:race
 
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}} dist
+      - rm -f coverage.out
+      - go clean
+
+  docker:
+    desc: Build the Docker image
+    cmds:
+      - docker build --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} -t {{.APP_NAME}}:{{.VERSION}} .
+
+  docker:run:
+    desc: Run the Docker image, data in ./data
+    cmds:
+      - docker run --rm -p 127.0.0.1:8080:8080 -v {{.USER_WORKING_DIR}}/data:/app/data {{.APP_NAME}}:{{.VERSION}}
+
   release:
-    desc: 'Create a version tag and push it (usage: task release -- v0.1.0)'
-    deps: [check, build]
+    # CI tests the exact commit, race detector included, so the release waits
+    # for that instead of running the suite again here.
+    desc: 'Tag a commit CI has passed and push the tag (usage: task release -- v0.1.0)'
     preconditions:
       - sh: 'test -n "{{.CLI_ARGS}}"'
         msg: 'version tag required (e.g. task release -- v0.1.0)'
       - sh: 'git diff --quiet'
         msg: 'working tree has uncommitted changes'
+      - sh: './scripts/changelog-section.sh {{.CLI_ARGS}} >/dev/null'
+        msg: 'CHANGELOG.md has no section for {{.CLI_ARGS}}: rename [Unreleased] to the version and date, then commit'
+      - sh: 'git fetch -q origin && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"'
+        msg: 'HEAD is not origin/main: push the release commit to main first'
     cmds:
+      - ./scripts/wait-for-ci.sh HEAD
       - git tag {{.CLI_ARGS}}
       - git push origin {{.CLI_ARGS}}
       - echo "Tagged and pushed {{.CLI_ARGS}}"
