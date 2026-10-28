@@ -92,6 +92,8 @@ The tag starts `.github/workflows/release.yml`, which runs GoReleaser
   `ghcr.io/martinsuchenak/exemplar`, tagged with the version, the minor
   version and `latest` (not for pre-releases), built from the release
   binaries by `Dockerfile.release` and signed with cosign;
+- the macOS binaries signed with a Developer ID certificate and notarized by
+  Apple, when the `MACOS_*` secrets are set (see below); unsigned otherwise;
 - a Homebrew cask in `martinsuchenak/homebrew-tap`, which needs the
   `TAP_GITHUB_TOKEN` secret (a token that can push to that repository);
 - the GitHub release, with its changelog section as the notes.
@@ -107,6 +109,55 @@ To try the release configuration without publishing anything:
 ```bash
 goreleaser check
 goreleaser release --snapshot --clean --skip=sign,sbom,docker
+```
+
+### macOS signing and notarization
+
+The release signs the macOS binaries with a Developer ID certificate and
+notarizes them with Apple, on the Linux runner. It needs an Apple Developer
+Program membership and these repository secrets; while `MACOS_SIGN_P12` is
+unset, the step is skipped and the binaries ship unsigned (the Homebrew cask
+still lifts the quarantine on install).
+
+| Secret | What it is |
+|--------|-----------|
+| `MACOS_SIGN_P12` | The Developer ID Application certificate and its private key, as a base64 `.p12` |
+| `MACOS_SIGN_PASSWORD` | The password the `.p12` was exported with |
+| `MACOS_NOTARY_ISSUER_ID` | The App Store Connect API issuer ID (a UUID) |
+| `MACOS_NOTARY_KEY_ID` | The API key's ID |
+| `MACOS_NOTARY_KEY` | The API key (`AuthKey_<id>.p8`), base64 |
+
+One certificate and key serve every project of the same Apple team, so the
+ones another project already uses work here; GitHub secrets are per
+repository, so set them again on this one. To create them:
+
+1. **Certificate.** In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/certificates/list),
+   add a **Developer ID Application** certificate (only the account holder
+   can). Install it, then in Keychain Access export the certificate together
+   with its private key as a `.p12`, with a password.
+2. **API key.** In [App Store Connect](https://appstoreconnect.apple.com/access/integrations/api),
+   under Users and Access → Integrations → App Store Connect API, create a
+   team key with the Developer role. Note the issuer ID and the key ID, and
+   download the `.p8` (it can only be downloaded once).
+3. **Secrets.** From the files:
+
+   ```bash
+   base64 -i DeveloperID.p12 | gh secret set MACOS_SIGN_P12 -R martinsuchenak/exemplar
+   gh secret set MACOS_SIGN_PASSWORD -R martinsuchenak/exemplar
+   gh secret set MACOS_NOTARY_ISSUER_ID -R martinsuchenak/exemplar
+   gh secret set MACOS_NOTARY_KEY_ID -R martinsuchenak/exemplar
+   base64 -i AuthKey_XXXXXXXXXX.p8 | gh secret set MACOS_NOTARY_KEY -R martinsuchenak/exemplar
+   ```
+
+   Then delete the local `.p12` and `.p8` copies you no longer need.
+
+The binaries are notarized but not stapled (a bare binary can't carry a
+ticket), so the first launch of a downloaded copy checks with Apple online.
+To check a downloaded binary:
+
+```bash
+codesign --verify --verbose=2 exemplar   # "valid on disk" and "satisfies its Designated Requirement"
+spctl --assess --type open --context context:primary-signature --verbose=2 exemplar   # "accepted", "source=Notarized Developer ID"
 ```
 
 ## Writing tests

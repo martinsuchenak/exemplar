@@ -29,6 +29,7 @@ version without one); see [docs/development.md](docs/development.md#releasing).
   restores, and pushing fixtures to Mailpit.
 - Deployment: a Docker image, Docker Compose and Nomad setups with Presidio.
 - Releases: binaries for Linux, macOS and Windows (amd64 and arm64) with
-  checksums, SBOMs, keyless cosign signatures and build provenance, a
+  checksums, SBOMs, keyless cosign signatures and build provenance, macOS
+  binaries signed with a Developer ID and notarized by Apple, a
   signed multi-arch image at `ghcr.io/martinsuchenak/exemplar`, and a
   Homebrew cask (`brew install --cask martinsuchenak/tap/exemplar`).

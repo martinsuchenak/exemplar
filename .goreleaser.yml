@@ -24,6 +24,25 @@ builds:
       - -X github.com/martinsuchenak/exemplar/build.Commit={{.ShortCommit}}
       - -X github.com/martinsuchenak/exemplar/build.Date={{.Date}}
 
+# Sign the macOS binaries with the Developer ID certificate and notarize them
+# with Apple, on the Linux runner (GoReleaser's cross-platform signer, quill),
+# before they are archived. Skipped unless the MACOS_* secrets are set, so a
+# fork or a local snapshot builds without them. Setup: docs/development.md,
+# "macOS signing and notarization".
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [exemplar]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
 archives:
   - id: default
     formats:
