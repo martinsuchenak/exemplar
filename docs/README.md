@@ -11,6 +11,7 @@
 | [cli.md](cli.md) | Commands and flags |
 | [mcp.md](mcp.md) | The read-only MCP server: connecting, tools, errors |
 | [api.md](api.md) | Authentication, error codes and endpoints |
+| [deployment.md](deployment.md) | Docker image, Docker Compose with Presidio, Nomad job; keys, volumes, backups |
 | [development.md](development.md) | Commands, testing conventions, expectations for changes |
 
 The product design and its decisions are tracked in the

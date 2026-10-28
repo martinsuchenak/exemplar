@@ -38,3 +38,6 @@ data/
 
 # Local scratch files, which may hold real data (emails to ingest).
 tmp/
+
+# Deployment settings (docker-compose.yml); .env.example is the template.
+.env

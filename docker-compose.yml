@@ -1,0 +1,51 @@
+# exemplar and the Presidio Analyzer it anonymises with. See
+# docs/deployment.md.
+#
+#   cp .env.example .env    # then fill it in
+#   docker compose up -d --build
+#   docker compose exec exemplar exemplar bootstrap
+#
+# Settings come from .env (git ignores it); every one has a default.
+name: exemplar
+
+services:
+  exemplar:
+    build:
+      context: .
+      args:
+        VERSION: ${EXEMPLAR_VERSION:-dev}
+    image: exemplar:${EXEMPLAR_VERSION:-dev}
+    restart: unless-stopped
+    ports:
+      # Only this machine by default; put a TLS proxy in front to share it.
+      - "${EXEMPLAR_BIND:-127.0.0.1}:${EXEMPLAR_PORT:-8080}:8080"
+    environment:
+      PRESIDIO_URL: http://presidio:3000
+      # Turns on ingest of real data and linked fakes; empty leaves them off
+      # (the anonymise tool works without it). Set it in .env only.
+      EXEMPLAR_ANON_KEY: ${EXEMPLAR_ANON_KEY:-}
+      MAX_INGEST_MB: ${EXEMPLAR_MAX_INGEST_MB:-200}
+    volumes:
+      - exemplar-data:/app/data
+    depends_on:
+      - presidio
+    # serve lets requests in flight finish for up to 30 seconds.
+    stop_grace_period: 35s
+
+  presidio:
+    image: ${PRESIDIO_IMAGE:-mcr.microsoft.com/presidio-analyzer:latest}
+    restart: unless-stopped
+    environment:
+      # The default 30s worker timeout kills the worker while the model loads.
+      GUNICORN_CMD_ARGS: --timeout 300
+    # Reachable from exemplar only; never published.
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-o", "/dev/null", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 180s
+
+volumes:
+  exemplar-data:

@@ -6,6 +6,7 @@ features:
     - mcp
     - db
     - docker
+    - nomad
     - ci
 db_type: sqlite
 use_xdal: true

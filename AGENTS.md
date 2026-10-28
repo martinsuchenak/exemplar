@@ -18,7 +18,7 @@
 | DB | enabled (sqlite, xdal) |
 | Cache | disabled |
 | Docker | enabled |
-| Nomad | disabled |
+| Nomad | enabled |
 
 ## Project Layout
 
@@ -39,6 +39,7 @@
 - `internal/ingest/`, `internal/anonymise/`, `internal/mimetree/`: real-email ingest into quarantine; the anonymiser touches no storage (registry and Presidio sit behind interfaces). Never log or store raw input or dry-run reports. See `docs/anonymisation.md`.
 - `skills/exemplar-anonymise/SKILL.md`: a skill users install so agents run `exemplar anonymise` without reading originals. Keep it in step with the `anonymise` command's flags and output.
 - `internal/archive/`, `internal/exchange/`, `internal/backup/`: one archive format; export/import of datasets (REST, normal access rules) and host-only backup/restore. See `docs/backup-and-exchange.md`.
+- `Dockerfile`, `docker-compose.yml` (with Presidio), `exemplar.nomad`: deployment; see `docs/deployment.md`. Keep them in step with the config, env vars and data paths. `.dockerignore` keeps `tmp/`, `data/` and keys out of builds.
 - `internal/db/`: SQLite connection and migrations.
   The DB package returns a `Connection` wrapper with:
   `SQL` for raw `*sql.DB`
