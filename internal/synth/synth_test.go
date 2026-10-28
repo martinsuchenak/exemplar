@@ -641,3 +641,22 @@ func TestRecordRotation(t *testing.T) {
 		t.Error("a company record about someone without a company")
 	}
 }
+
+// Tests of the anonymise tool check that a real name is gone from the
+// output. Its fakes come from a key made for each run, so if a test's real
+// name were also a fake name, a run could draw it as the fake and fail at
+// random. These are the real names those tests use (internal/scrub,
+// cmd/routes, internal/client, cmd): none may be in the pools.
+func TestPoolsLeaveTestNamesFree(t *testing.T) {
+	pools := map[string]bool{}
+	for _, list := range [][]string{firstNames, lastNames} {
+		for _, n := range list {
+			pools[strings.ToLower(n)] = true
+		}
+	}
+	for _, n := range []string{"Ottoline", "Shah", "Tom", "Reid", "Wendy", "Moss"} {
+		if pools[strings.ToLower(n)] {
+			t.Errorf("%s is a fake name too: pick another real name for the anonymise tests", n)
+		}
+	}
+}

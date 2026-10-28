@@ -24,24 +24,24 @@ import (
 var ctx = context.Background()
 
 // secrets are the real values in the test files; none may come back.
-var secrets = []string{"Priya", "Shah", "Tom", "Reid", "acmeplumbing", "0412 345 678"}
+var secrets = []string{"Ottoline", "Shah", "Tom", "Reid", "acmeplumbing", "0412 345 678"}
 
 func newApp(t *testing.T, withKey bool, maxBytes int64) *app.App {
 	return testutil.NewAppWith(t, func(c *app.Config) {
 		if withKey {
 			c.AnonKey = anonymisetest.Key
 		}
-		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya", "Tom"}}
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Ottoline", "Tom"}}
 		c.MaxIngestBytes = maxBytes
 	})
 }
 
 func files() []anonymise.File {
 	return []anonymise.File{
-		{Name: "one.eml", Data: anonymisetest.Email("Priya Shah", "Tom Reid", "acmeplumbing.com.au", "Leak", "Hi Tom, call me on 0412 345 678. Priya")},
-		{Name: "notes.md", Data: []byte("# Leak\n\nTom Reid met Priya Shah. 0412 345 678\n")},
+		{Name: "one.eml", Data: anonymisetest.Email("Ottoline Shah", "Tom Reid", "acmeplumbing.com.au", "Leak", "Hi Tom, call me on 0412 345 678. Ottoline")},
+		{Name: "notes.md", Data: []byte("# Leak\n\nTom Reid met Ottoline Shah. 0412 345 678\n")},
 		{Name: "report.pdf", Data: []byte("%PDF")},
-		{Name: "notes.md", Data: []byte("Priya again\n")},
+		{Name: "notes.md", Data: []byte("Ottoline again\n")},
 	}
 }
 
@@ -111,7 +111,7 @@ func TestAnyKeyAnonymisesAndNothingIsStored(t *testing.T) {
 		t.Errorf("audit formats = %v", d["formats"])
 	}
 	for _, v := range d {
-		if s, ok := v.(string); ok && strings.Contains(s, "Priya") {
+		if s, ok := v.(string); ok && strings.Contains(s, "Ottoline") {
 			t.Errorf("audit holds original data: %v", d)
 		}
 	}
@@ -143,12 +143,12 @@ func TestFakesAreUnlinkedByDefault(t *testing.T) {
 	}
 	libraryFake := ""
 	for _, l := range ingested.Files[0].Report {
-		if l.Original == "Priya Shah" {
+		if l.Original == "Ottoline Shah" {
 			libraryFake = l.Fake
 		}
 	}
 	if libraryFake == "" {
-		t.Fatal("ingest report has no fake for Priya Shah")
+		t.Fatal("ingest report has no fake for Ottoline Shah")
 	}
 	if string(first.Files[0].Data) == string(second.Files[0].Data) {
 		t.Error("two unlinked runs gave the same fakes")
@@ -366,7 +366,7 @@ func TestReserveClaimsTheRun(t *testing.T) {
 }
 
 func TestLocalMode(t *testing.T) {
-	local, err := app.LocalAnonymiser(app.LocalConfig{Detector: anonymisetest.Detector{Names: []string{"Priya", "Tom"}}})
+	local, err := app.LocalAnonymiser(app.LocalConfig{Detector: anonymisetest.Detector{Names: []string{"Ottoline", "Tom"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestLocalMode(t *testing.T) {
 	if string(again.Files[0].Data) == string(res.Files[1].Data) {
 		t.Error("two keyless local runs gave the same fakes")
 	}
-	keyed, err := app.LocalAnonymiser(app.LocalConfig{Key: anonymisetest.Key, Detector: anonymisetest.Detector{Names: []string{"Priya"}}})
+	keyed, err := app.LocalAnonymiser(app.LocalConfig{Key: anonymisetest.Key, Detector: anonymisetest.Detector{Names: []string{"Ottoline"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +415,7 @@ func TestLocalMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range out.Files {
-		for _, s := range []string{"acmeplumbing", "0412 345 678", "Priya Shah", "Tom Reid"} {
+		for _, s := range []string{"acmeplumbing", "0412 345 678", "Ottoline Shah", "Tom Reid"} {
 			if strings.Contains(string(f.Data), s) {
 				t.Errorf("patterns only kept %q in %s:\n%s", s, f.Name, f.Data)
 			}

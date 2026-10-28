@@ -392,13 +392,13 @@ func TestPersonsAndGenerate(t *testing.T) {
 func TestIngest(t *testing.T) {
 	admin, member, _, _ := server(t, func(c *app.Config) {
 		c.AnonKey = anonymisetest.Key
-		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Ottoline"}}
 	})
 	d, err := admin.CreateDataset(ctx, dataset.CreateInput{Name: "q", Scope: dataset.ScopeQuarantine})
 	if err != nil {
 		t.Fatal(err)
 	}
-	mail := anonymisetest.Email("Priya Shah", "Tom Reid", "acme.com.au", "Hi", "Hello Tom, Priya")
+	mail := anonymisetest.Email("Ottoline Shah", "Tom Reid", "acme.com.au", "Hi", "Hello Tom, Ottoline")
 	file := func(name string, data []byte) client.IngestFile {
 		return client.IngestFile{Name: name, Open: func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(string(data))), nil }}
 	}
@@ -482,11 +482,11 @@ func TestAnonymise(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, member, _, url := server(t, func(c *app.Config) {
-		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Ottoline"}}
 		c.AnonProfilesDir = dir
 	})
-	mail := "From: Priya Shah <priya@acme.com.au>\r\nTo: t@o.com.au\r\nSubject: x\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"B\"\r\n\r\n" +
-		"--B\r\nContent-Type: text/plain\r\n\r\nHi\r\n--B\r\nContent-Type: text/csv; name=\"l.csv\"\r\nContent-Disposition: attachment; filename=\"l.csv\"\r\n\r\nName\r\nPriya\r\n--B--\r\n"
+	mail := "From: Ottoline Shah <ottoline@acme.com.au>\r\nTo: t@o.com.au\r\nSubject: x\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"B\"\r\n\r\n" +
+		"--B\r\nContent-Type: text/plain\r\n\r\nHi\r\n--B\r\nContent-Type: text/csv; name=\"l.csv\"\r\nContent-Disposition: attachment; filename=\"l.csv\"\r\n\r\nName\r\nOttoline\r\n--B--\r\n"
 	if m, err := member.AnonymiseFile(ctx, scrub.Request{Profile: "keep"}, "a.eml", strings.NewReader(mail), io.Discard); err != nil || m.AttachmentsRewritten != 1 || m.Attachments != 0 {
 		t.Errorf("rewritten attachments = %+v, %v", m, err)
 	}
@@ -495,16 +495,16 @@ func TestAnonymise(t *testing.T) {
 	}
 
 	var out strings.Builder
-	f, err := member.AnonymiseFile(ctx, scrub.Request{Profile: "default"}, "notes.md", strings.NewReader("Priya on 0412 345 678\n"), &out)
+	f, err := member.AnonymiseFile(ctx, scrub.Request{Profile: "default"}, "notes.md", strings.NewReader("Ottoline on 0412 345 678\n"), &out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if f.Format != anonymise.FormatMarkdown || !strings.HasPrefix(f.Name, "document-") || !strings.HasSuffix(f.Name, ".md") ||
-		f.Replacements != 2 || strings.Contains(out.String(), "Priya") || strings.Contains(out.String(), "345 678") {
+		f.Replacements != 2 || strings.Contains(out.String(), "Ottoline") || strings.Contains(out.String(), "345 678") {
 		t.Errorf("file = %+v, %q", f, out.String())
 	}
 	var doc bytes.Buffer
-	d, err := member.AnonymiseFile(ctx, scrub.Request{}, "q.docx", bytes.NewReader(anonymisetest.DOCX("Priya")), &doc)
+	d, err := member.AnonymiseFile(ctx, scrub.Request{}, "q.docx", bytes.NewReader(anonymisetest.DOCX("Ottoline")), &doc)
 	if err != nil || d.Format != anonymise.FormatDOCX || strings.Join(d.DroppedParts, ",") != "word/vbaProject.bin" || !bytes.HasPrefix(doc.Bytes(), []byte("PK")) {
 		t.Errorf("docx = %+v, %v", d, err)
 	}
@@ -516,11 +516,11 @@ func TestAnonymise(t *testing.T) {
 		t.Errorf("link err = %v", err)
 	}
 
-	res, err := member.AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{file("a.md", "Priya\n"), file("b.json", `{"name": "Wendy Moss"}`), file("c.pdf", "%PDF")})
+	res, err := member.AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{file("a.md", "Ottoline\n"), file("b.json", `{"name": "Wendy Moss"}`), file("c.pdf", "%PDF")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Files) != 3 || res.Files[2].Error == "" || strings.Contains(string(res.Files[0].Data), "Priya") || strings.Contains(string(res.Files[1].Data), "Wendy") {
+	if len(res.Files) != 3 || res.Files[2].Error == "" || strings.Contains(string(res.Files[0].Data), "Ottoline") || strings.Contains(string(res.Files[1].Data), "Wendy") {
 		t.Errorf("files = %+v", res)
 	}
 	if _, err := member.AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{{Name: "x.md", Open: func() (io.ReadCloser, error) { return nil, errors.New("gone") }}}); err == nil {

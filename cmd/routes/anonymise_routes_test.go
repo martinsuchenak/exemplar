@@ -22,7 +22,7 @@ import (
 
 func TestAnonymiseRoute(t *testing.T) {
 	a := testutil.NewAppWith(t, func(c *app.Config) {
-		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Ottoline"}}
 		c.MaxIngestBytes = 4096
 	})
 	_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
@@ -52,33 +52,33 @@ func TestAnonymiseRoute(t *testing.T) {
 		mux.ServeHTTP(w, req)
 		return w
 	}
-	md := "# Notes\n\nPriya called on 0412 345 678.\n"
+	md := "# Notes\n\nOttoline called on 0412 345 678.\n"
 
 	// One file in, the same format out, with what it is in the headers.
-	w := post("/api/v1/anonymise?name=Priya%20notes.md", reader.Secret, "text/markdown", strings.NewReader(md))
+	w := post("/api/v1/anonymise?name=Ottoline%20notes.md", reader.Secret, "text/markdown", strings.NewReader(md))
 	h := w.Header()
 	if w.Code != http.StatusOK || h.Get("Content-Type") != "text/markdown" || h.Get("X-Exemplar-Format") != "md" ||
 		h.Get("X-Exemplar-Replacements") != "2" || h.Get("X-Exemplar-Unreviewed") != "true" || h.Get("Cache-Control") != "no-store" ||
 		h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Content-Security-Policy") != "sandbox" {
 		t.Fatalf("single = %d %v %s", w.Code, h, w.Body)
 	}
-	if !strings.HasPrefix(h.Get("Content-Disposition"), `attachment; filename=document-`) || strings.Contains(h.Get("Content-Disposition"), "Priya") {
+	if !strings.HasPrefix(h.Get("Content-Disposition"), `attachment; filename=document-`) || strings.Contains(h.Get("Content-Disposition"), "Ottoline") {
 		t.Errorf("disposition = %s", h.Get("Content-Disposition"))
 	}
-	if out := w.Body.String(); !strings.HasPrefix(out, "# Notes\n\n") || strings.Contains(out, "Priya") || strings.Contains(out, "345 678") {
+	if out := w.Body.String(); !strings.HasPrefix(out, "# Notes\n\n") || strings.Contains(out, "Ottoline") || strings.Contains(out, "345 678") {
 		t.Errorf("body = %q", out)
 	}
 
 	// A DOCX comes back as one, listing the parts it dropped.
-	w = post("/api/v1/anonymise?name=quote.docx", reader.Secret, "", bytes.NewReader(anonymisetest.DOCX("Quote for Priya")))
+	w = post("/api/v1/anonymise?name=quote.docx", reader.Secret, "", bytes.NewReader(anonymisetest.DOCX("Quote for Ottoline")))
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
 		w.Header().Get("X-Exemplar-Dropped-Parts") != "word/vbaProject.bin" || !bytes.HasPrefix(w.Body.Bytes(), []byte("PK")) {
 		t.Errorf("docx = %d %v", w.Code, w.Header())
 	}
 
 	// A format instead of a name.
-	w = post("/api/v1/anonymise?format=json", reader.Secret, "", strings.NewReader(`{"name": "Priya"}`))
-	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || strings.Contains(w.Body.String(), "Priya") {
+	w = post("/api/v1/anonymise?format=json", reader.Secret, "", strings.NewReader(`{"name": "Ottoline"}`))
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || strings.Contains(w.Body.String(), "Ottoline") {
 		t.Errorf("format = %d %s", w.Code, w.Body)
 	}
 
@@ -131,7 +131,7 @@ func TestAnonymiseRoute(t *testing.T) {
 			continue
 		}
 		stored++
-		if strings.Contains(string(f.Data), "Priya") || strings.Contains(string(f.Data), "Wendy") || !strings.HasPrefix(f.Name, "document-") {
+		if strings.Contains(string(f.Data), "Ottoline") || strings.Contains(string(f.Data), "Wendy") || !strings.HasPrefix(f.Name, "document-") {
 			t.Errorf("%s = %q", f.Name, f.Data)
 		}
 	}
@@ -196,7 +196,7 @@ func TestAnonymiseRouteReportsRewrittenAttachments(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := testutil.NewAppWith(t, func(c *app.Config) {
-		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Ottoline"}}
 		c.AnonProfilesDir = dir
 	})
 	_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
@@ -205,15 +205,15 @@ func TestAnonymiseRouteReportsRewrittenAttachments(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, a)
-	mail := "From: Priya Shah <priya.shah@acme.com.au>\r\nTo: tom@other.com.au\r\nSubject: x\r\nMIME-Version: 1.0\r\n" +
+	mail := "From: Ottoline Shah <ottoline.shah@acme.com.au>\r\nTo: tom@other.com.au\r\nSubject: x\r\nMIME-Version: 1.0\r\n" +
 		"Content-Type: multipart/mixed; boundary=\"B\"\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nHi\r\n" +
-		"--B\r\nContent-Type: text/csv; name=\"l.csv\"\r\nContent-Disposition: attachment; filename=\"l.csv\"\r\n\r\nName\r\nPriya Shah\r\n--B--\r\n"
+		"--B\r\nContent-Type: text/csv; name=\"l.csv\"\r\nContent-Disposition: attachment; filename=\"l.csv\"\r\n\r\nName\r\nOttoline Shah\r\n--B--\r\n"
 	req := httptest.NewRequest("POST", "/api/v1/anonymise?name=a.eml&profile=keep", strings.NewReader(mail))
 	req.Header.Set("X-API-Key", issued.Secret)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK || w.Header().Get("X-Exemplar-Attachments-Rewritten") != "1" || w.Header().Get("X-Exemplar-Attachments") != "0" ||
-		strings.Contains(w.Body.String(), "Priya") {
+		strings.Contains(w.Body.String(), "Ottoline") {
 		t.Errorf("= %d %v\n%s", w.Code, w.Header(), w.Body)
 	}
 }
@@ -247,13 +247,13 @@ func TestAnonymiseRouteHidesDetectorFailures(t *testing.T) {
 			}
 		}
 
-		w := post("/api/v1/anonymise?name=a.md", "text/markdown", strings.NewReader("Priya called.\n"))
+		w := post("/api/v1/anonymise?name=a.md", "text/markdown", strings.NewReader("Ottoline called.\n"))
 		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), anonymise.DetectorUnavailable) {
 			t.Errorf("%s, single = %d %s", name, w.Code, w.Body)
 		}
 		hidden("single", w.Body.String())
 
-		body, ctype := upload(t, nil, map[string][]byte{"a.md": []byte("Priya called.\n"), "b.csv": []byte("Name\nWendy Moss\n")})
+		body, ctype := upload(t, nil, map[string][]byte{"a.md": []byte("Ottoline called.\n"), "b.csv": []byte("Name\nWendy Moss\n")})
 		w = post("/api/v1/anonymise", ctype, body)
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s, multi = %d %s", name, w.Code, w.Body)
