@@ -123,6 +123,17 @@ tasks:
     cmds:
       - go fmt ./...
 
+  fmt:check:
+    desc: Fail on unformatted Go files, as CI does (tmp/ is not checked)
+    cmds:
+      - |
+        unformatted=$(gofmt -l build cmd internal main.go)
+        if [ -n "$unformatted" ]; then
+          echo "Files need gofmt:"
+          echo "$unformatted"
+          exit 1
+        fi
+
   vet:
     desc: Run go vet
     cmds:
@@ -150,8 +161,9 @@ tasks:
       - gosec ./...
 
   check:
-    desc: Full CI gate — vet + lint + tests with race detector
+    desc: Full CI gate — gofmt + vet + lint + tests with race detector
     cmds:
+      - task: fmt:check
       - task: vet
       - task: lint
       - task: test:race

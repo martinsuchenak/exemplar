@@ -8,7 +8,7 @@ task build         # every release platform into bin/
 task test          # go test ./... -v, with a coverage profile
 task test:race     # with the race detector
 task lint          # golangci-lint over every package
-task check         # vet + lint + race tests (the local CI gate)
+task check         # gofmt + vet + lint + race tests (the local CI gate)
 task vuln          # govulncheck
 task docker        # the image, tagged with the version
 task dev           # go run . serve with debug logging

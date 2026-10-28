@@ -72,7 +72,7 @@ task build:local   # bin/exemplar (alias: build-local)
 task build         # every release platform
 task test
 task lint          # golangci-lint over ./...
-task check         # full CI gate: vet + lint + test:race
+task check         # full CI gate: gofmt + vet + lint + test:race
 task release -- v0.2.0   # needs a CHANGELOG.md section; tags once CI passed
 ```
 

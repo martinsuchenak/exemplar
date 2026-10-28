@@ -19,9 +19,9 @@ func main() {
 	_ = env.Load()
 
 	app := &cli.Command{
-		Name:       "exemplar",
-		Usage:      "exemplar service",
-		Version:    build.String(),
+		Name:    "exemplar",
+		Usage:   "exemplar service",
+		Version: build.String(),
 		// The config file is read from the current directory, then the
 		// user's config directory (cmd.ConfigSearchPath).
 		ConfigFile: cli_toml.NewConfigFile(&configFile, cmd.ConfigSearchPath(&configFile)),
