@@ -9,6 +9,8 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-28
+
 ### Added
 
 - Licensed under the Apache License 2.0 (`LICENSE`, `NOTICE`).
@@ -33,3 +35,6 @@ version without one); see [docs/development.md](docs/development.md#releasing).
   binaries signed with a Developer ID and notarized by Apple, a
   signed multi-arch image at `ghcr.io/martinsuchenak/exemplar`, and a
   Homebrew cask (`brew install --cask martinsuchenak/tap/exemplar`).
+
+[Unreleased]: https://github.com/martinsuchenak/exemplar/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/martinsuchenak/exemplar/releases/tag/v0.1.0
