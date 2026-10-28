@@ -33,6 +33,7 @@ clients report something useful.
 | 409 | `ErrConflict` | Name taken, dataset frozen, already reviewed, last admin |
 | 413 | `ErrTooLarge` | Fixture content over the server's limit (`storage.max_fixture_mb`), a JSON body over 1 MiB, or an ingest, anonymise run or import over its limit |
 | 429 | `ErrBusy` | The key already has an anonymise run in progress |
+| 503 | none | A one-file anonymise request whose file failed because the anonymiser's detector (Presidio) did; try again later |
 | 500 | anything else | Internal error; details are logged, not returned |
 
 ## Endpoints
@@ -135,8 +136,9 @@ server with no anonymiser configured. See [anonymisation.md](anonymisation.md).
 
 The anonymise tool stores nothing and never returns original data.
 
-- **One file:** the response body is the file. `Content-Type` is the format's (`text/markdown`, `application/json`, …), and `Content-Disposition` carries the fake file name. `X-Exemplar-Format`, `X-Exemplar-Replacements`, `X-Exemplar-Attachments`, `X-Exemplar-Attachments-Rewritten` and `X-Exemplar-Dropped-Headers` describe it, and `X-Exemplar-Dropped-Parts` lists a document's dropped parts, comma-separated, when there are any. A file that cannot be read gets `400` with the usual JSON error.
+- **One file:** the response body is the file. `Content-Type` is the format's (`text/markdown`, `application/json`, …), and `Content-Disposition` carries the fake file name. `X-Exemplar-Format`, `X-Exemplar-Replacements`, `X-Exemplar-Attachments`, `X-Exemplar-Attachments-Rewritten` and `X-Exemplar-Dropped-Headers` describe it, and `X-Exemplar-Dropped-Parts` lists a document's dropped parts, comma-separated, when there are any. A file that cannot be read gets `400` with the usual JSON error; one that fails because the detector did gets `503` (see below).
 - **Several files** (multipart) are one batch sharing fakes. The zip holds each file under its fake name and `manifest.json`: `{"profile", "linked", "files": [{"name", "format", "replacements", "attachments", "attachments_rewritten", "dropped_headers", "dropped_parts", "error"}]}`, in the order sent (`dropped_parts` is a list of part names, left out when empty: Office's own parts by name, any other DOCX part by a keyed name, so none is the sender's text). A failed file has an `error` and no entry in the zip.
+- **Detector failures:** when Presidio cannot be reached, answers with an error status or sends something unreadable, the file's error is only `the anonymiser's detector is unavailable; try again later`. The detector's URL, host and network error stay on the server, unlogged. Ingest reports the same error per file.
 - **Every response** carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox` and `X-Exemplar-Unreviewed: true`.
 - **Fakes** come from a key made for the request alone, unless an admin sets `link_registry`. See [anonymisation.md](anonymisation.md#anonymise-without-ingesting).
 - **Limits:** a request over `storage.max_ingest_mb` gets `413`; more than 1000 files, an unknown format or profile, or a server without Presidio get `400`; a second run for the same key while one is going gets `429`, before its body is read.

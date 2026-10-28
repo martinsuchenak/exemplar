@@ -520,6 +520,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /api/v1/export:
     post:
       summary: Export datasets to an archive another instance can import

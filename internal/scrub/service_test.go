@@ -231,6 +231,51 @@ func TestAnonymiseRules(t *testing.T) {
 	}
 }
 
+// leaks are what a detector error's detail holds: the service's address and
+// what the transport made of it. None may reach a server's caller.
+var leaks = []string{"127.0.0.1", "http://", "/analyze", "Presidio", "dial tcp", "connection refused", "model", "decoding"}
+
+// When the detector fails, a server's caller learns only that it is
+// unavailable; the person running the tool locally sees why.
+func TestDetectorFailureIsGeneric(t *testing.T) {
+	for name, d := range anonymisetest.FailingPresidios(t) {
+		a := testutil.NewAppWith(t, func(c *app.Config) { c.AnonDetector = d })
+		reader := readOnly(t, a, testutil.Admin(t, a))
+		res, err := a.Scrub.Anonymise(ctx, reader, scrub.Request{}, files()[:2])
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, f := range res.Files {
+			if f.Error != anonymise.DetectorUnavailable || !f.Unavailable || f.Data != nil {
+				t.Errorf("%s: file = %+v", name, f)
+			}
+			for _, l := range leaks {
+				if strings.Contains(f.Error, l) {
+					t.Errorf("%s: the error shows %q: %s", name, l, f.Error)
+				}
+			}
+		}
+
+		local, err := app.LocalAnonymiser(app.LocalConfig{Detector: d})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err = local.Anonymise(ctx, principal.Principal{}, scrub.Request{}, files()[1:2])
+		if err != nil {
+			t.Fatalf("%s locally: %v", name, err)
+		}
+		if f := res.Files[0]; !f.Unavailable || !strings.Contains(f.Error, "http://127.0.0.1") && !strings.Contains(f.Error, "decoding Presidio") {
+			t.Errorf("%s locally: file = %+v", name, f)
+		}
+	}
+	// A file that fails for its own reason is not the detector's failure.
+	a := newApp(t, false, 0)
+	res, err := a.Scrub.Anonymise(ctx, readOnly(t, a, testutil.Admin(t, a)), scrub.Request{}, files()[2:3])
+	if err != nil || res.Files[0].Unavailable || !strings.Contains(res.Files[0].Error, ".pdf") {
+		t.Errorf("pdf = %+v, %v", res, err)
+	}
+}
+
 // blockingDetector holds every call until release is closed.
 type blockingDetector struct {
 	started chan struct{}

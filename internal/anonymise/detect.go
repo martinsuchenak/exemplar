@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -66,6 +67,24 @@ type Span struct {
 // from the headers, which should be found wherever they appear.
 type Detector interface {
 	Detect(ctx context.Context, text string, names []string, threshold float64) ([]Span, error)
+}
+
+// ErrDetector marks every error from the detector: Presidio unreachable, an
+// error status from it, or an answer that cannot be read. Its detail names
+// the service's URL, host and network, so a server shows its callers
+// DetectorUnavailable instead (see PublicError); locally it is shown whole.
+var ErrDetector = errors.New("the detector failed")
+
+// DetectorUnavailable is all a server's caller learns of a detector failure.
+const DetectorUnavailable = "the anonymiser's detector is unavailable; try again later"
+
+// PublicError is err's message for a server's caller: DetectorUnavailable
+// for a detector failure, err's own message otherwise.
+func PublicError(err error) string {
+	if errors.Is(err, ErrDetector) {
+		return DetectorUnavailable
+	}
+	return err.Error()
 }
 
 // Presidio is a Detector backed by a Presidio Analyzer service.

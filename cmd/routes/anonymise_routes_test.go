@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/martinsuchenak/exemplar/internal/account"
+	"github.com/martinsuchenak/exemplar/internal/anonymise"
 	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/principal"
@@ -214,5 +215,58 @@ func TestAnonymiseRouteReportsRewrittenAttachments(t *testing.T) {
 	if w.Code != http.StatusOK || w.Header().Get("X-Exemplar-Attachments-Rewritten") != "1" || w.Header().Get("X-Exemplar-Attachments") != "0" ||
 		strings.Contains(w.Body.String(), "Priya") {
 		t.Errorf("= %d %v\n%s", w.Code, w.Header(), w.Body)
+	}
+}
+
+// When the detector fails, a single file gets 503 and the zip's manifest a
+// generic error per file; neither shows the detector's address.
+func TestAnonymiseRouteHidesDetectorFailures(t *testing.T) {
+	for name, d := range anonymisetest.FailingPresidios(t) {
+		a := testutil.NewAppWith(t, func(c *app.Config) { c.AnonDetector = d })
+		_, issued, err := a.Accounts.Bootstrap(context.Background(), account.CreateAccountInput{Name: "root"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		RegisterRoutes(mux, a)
+		post := func(target, ctype string, body io.Reader) *httptest.ResponseRecorder {
+			req := httptest.NewRequest("POST", target, body)
+			req.Header.Set("X-API-Key", issued.Secret)
+			if ctype != "" {
+				req.Header.Set("Content-Type", ctype)
+			}
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			return w
+		}
+		hidden := func(where, msg string) {
+			for _, l := range []string{"127.0.0.1", "http://", "/analyze", "Presidio", "dial tcp", "refused", "model", "decoding"} {
+				if strings.Contains(msg, l) {
+					t.Errorf("%s, %s shows %q: %s", name, where, l, msg)
+				}
+			}
+		}
+
+		w := post("/api/v1/anonymise?name=a.md", "text/markdown", strings.NewReader("Priya called.\n"))
+		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), anonymise.DetectorUnavailable) {
+			t.Errorf("%s, single = %d %s", name, w.Code, w.Body)
+		}
+		hidden("single", w.Body.String())
+
+		body, ctype := upload(t, nil, map[string][]byte{"a.md": []byte("Priya called.\n"), "b.csv": []byte("Name\nWendy Moss\n")})
+		w = post("/api/v1/anonymise", ctype, body)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s, multi = %d %s", name, w.Code, w.Body)
+		}
+		res, err := scrub.ReadZip(w.Body.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range res.Files {
+			if f.Error != anonymise.DetectorUnavailable {
+				t.Errorf("%s, multi file = %+v", name, f)
+			}
+			hidden("the manifest", f.Error)
+		}
 	}
 }

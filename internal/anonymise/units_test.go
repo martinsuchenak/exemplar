@@ -133,6 +133,33 @@ func TestPresidioClient(t *testing.T) {
 	}
 }
 
+// A detector's failure comes back marked ErrDetector, wherever the text was,
+// with its detail kept for local use; PublicError hides that detail.
+func TestDetectorErrorsAreMarked(t *testing.T) {
+	down := httptest.NewServer(http.NotFoundHandler())
+	down.Close()
+	e, err := New(testKey(t), defaultProfile(t), NewPresidio(down.URL), newMemRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []File{
+		{Name: "notes.md", Data: []byte("Priya called.\n")},
+		{Name: "data.csv", Data: []byte("name\nPriya\n")},
+	} {
+		_, err := e.Anonymise(ctx, f)
+		if !errors.Is(err, ErrDetector) || !strings.Contains(err.Error(), down.URL) {
+			t.Errorf("%s: err = %v", f.Name, err)
+		}
+		if msg := PublicError(err); msg != DetectorUnavailable {
+			t.Errorf("%s: public error = %q", f.Name, msg)
+		}
+	}
+	other := errors.New("not a valid email")
+	if PublicError(other) != "not a valid email" || PublicError(fmt.Errorf("wrapped: %w", ErrDetector)) != DetectorUnavailable {
+		t.Error("PublicError changed an error that is not the detector's, or missed a wrapped one")
+	}
+}
+
 func TestPatterns(t *testing.T) {
 	text := "Call 0412 345 678 or (02) 9876 5432 or 1300 123 456. ABN: 51 824 753 556, ACN 004 085 616. " +
 		"Pay $1,234.56 or 99.50 AUD. Unit 3, 14 Smith Street. PO Box 123. Acme Plumbing Pty Ltd. " +

@@ -190,13 +190,18 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 		n++
 		fr := FileResult{Name: f.Name}
 		if err := prepared[i]; err != nil {
-			fr.Error = "reading the headers: " + err.Error()
+			fr.Error = anonymise.PublicError(err)
+			if !errors.Is(err, anonymise.ErrDetector) {
+				fr.Error = "reading the headers: " + fr.Error
+			}
 			res.Files = append(res.Files, fr)
 			continue
 		}
 		out, err := engine.Anonymise(ctx, f)
 		if err != nil {
-			fr.Error = err.Error()
+			// A detector failure's detail (its URL, host and network)
+			// stays on the server, unlogged.
+			fr.Error = anonymise.PublicError(err)
 			res.Files = append(res.Files, fr)
 			continue
 		}

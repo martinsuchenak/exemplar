@@ -50,7 +50,9 @@ or found in one document, is therefore found in all the others, and gets the
 same fake everywhere. One file failing (a `.msg`, an unsupported charset, a
 malformed message or document, one over the nesting or part limits) does not
 stop the rest, whether it fails while the batch is read or while it is
-rewritten; its row in the result carries the error.
+rewritten; its row in the result carries the error. A file that fails because
+Presidio did carries only `the anonymiser's detector is unavailable; try again
+later` (see [Presidio](#presidio)).
 
 ## What is replaced
 
@@ -416,6 +418,17 @@ docker run -d --name presidio -e GUNICORN_CMD_ARGS="--timeout 300" \
 exemplar sends each text part with the batch's header names as an ad-hoc deny
 list, so Presidio tags those names even where its model would not. Presidio
 reports offsets in characters; the client converts them to byte offsets.
+
+**When Presidio fails.** A file fails if Presidio cannot be reached, answers
+with an error status, or sends something that is not its JSON. The error
+behind it names Presidio's URL, host and resolver (`dial tcp: lookup presidio
+on 127.0.0.11:53: no such host`), so the server never passes it on: ingest and
+the anonymise tool report only `the anonymiser's detector is unavailable; try
+again later` for that file, and a one-file anonymise request gets `503`.
+Nothing logs the detail either, since the server does not log anonymiser
+errors; check Presidio itself (`docker logs presidio`, or `curl` its `/health`
+from the server's host). `exemplar anonymise --local` shows the whole error,
+since the person running it owns the setup.
 
 ## Profiles
 

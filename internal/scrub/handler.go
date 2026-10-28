@@ -102,7 +102,11 @@ func (h *Handler) Anonymise(w http.ResponseWriter, r *http.Request) {
 	}
 	f := res.Files[0]
 	if f.Error != "" {
-		rest.RespondError(w, http.StatusBadRequest, f.Error)
+		status := http.StatusBadRequest
+		if f.Unavailable {
+			status = http.StatusServiceUnavailable
+		}
+		rest.RespondError(w, status, f.Error)
 		return
 	}
 	hd := w.Header()

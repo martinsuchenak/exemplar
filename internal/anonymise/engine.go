@@ -469,7 +469,8 @@ func (e *Engine) addDomainCompany(domain string, f *found) {
 	}
 }
 
-// detect runs the Go patterns and the detector over text.
+// detect runs the Go patterns and the detector over text. A detector error
+// comes back marked ErrDetector.
 func (e *Engine) detect(ctx context.Context, text string, f *found) error {
 	if strings.TrimSpace(text) == "" {
 		return nil
@@ -482,7 +483,7 @@ func (e *Engine) detect(ctx context.Context, text string, f *found) error {
 	sort.Strings(names)
 	more, err := e.detector.Detect(ctx, text, names, e.profile.ScoreThreshold)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrDetector, err)
 	}
 	for _, s := range append(spans, more...) {
 		if s.Start < 0 || s.End > len(text) || s.Start >= s.End {

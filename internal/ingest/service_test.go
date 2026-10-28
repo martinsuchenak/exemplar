@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/martinsuchenak/exemplar/internal/anonymise"
 	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/apperr"
@@ -330,6 +331,41 @@ func TestIngestRules(t *testing.T) {
 	}
 	if plain.Ingest.Profiles() != nil {
 		t.Error("unconfigured server lists profiles")
+	}
+}
+
+// When the detector fails, the admin learns only that it is unavailable: the
+// error's detail (the detector's address and what the transport made of it)
+// stays on the server, and nothing is stored.
+func TestDetectorFailureIsGeneric(t *testing.T) {
+	leaks := []string{"127.0.0.1", "http://", "/analyze", "Presidio", "dial tcp", "connection refused", "model", "decoding", "reading the headers"}
+	for name, d := range anonymisetest.FailingPresidios(t) {
+		a := testutil.NewAppWith(t, func(c *app.Config) {
+			c.AnonKey = anonymisetest.Key
+			c.AnonDetector = d
+		})
+		admin := testutil.Admin(t, a)
+		dsID := quarantine(t, a, admin)
+		files := []ingest.File{emails()[0], {Name: "notes.md", Data: []byte("Priya called.\n")}}
+		for _, dry := range []bool{false, true} {
+			res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{DryRun: dry}, files)
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			for _, f := range res.Files {
+				if f.Error != anonymise.DetectorUnavailable || f.FixtureID != "" || f.Report != nil {
+					t.Errorf("%s (dry run %v): file = %+v", name, dry, f)
+				}
+				for _, l := range leaks {
+					if strings.Contains(f.Error, l) {
+						t.Errorf("%s: the error shows %q: %s", name, l, f.Error)
+					}
+				}
+			}
+		}
+		if fx, _ := a.Fixtures.List(ctx, admin, dsID, fixture.ListFilter{}); len(fx) != 0 {
+			t.Errorf("%s: %d fixtures stored", name, len(fx))
+		}
 	}
 }
 

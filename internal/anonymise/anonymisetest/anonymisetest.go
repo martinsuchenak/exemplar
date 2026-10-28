@@ -1,5 +1,5 @@
 // Package anonymisetest gives tests outside the anonymiser a stand-in for
-// Presidio and a few small real-looking emails.
+// Presidio, Presidio clients that fail, and a few small real-looking emails.
 package anonymisetest
 
 import (
@@ -7,13 +7,40 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"testing"
 
 	"github.com/martinsuchenak/exemplar/internal/anonymise"
 )
 
 // Key is a valid anonymisation secret for tests.
 var Key = []byte("exemplar-test-anonymisation-key")
+
+// FailingPresidios returns real Presidio clients that fail the ways a
+// deployment can: nothing listening, an error status whose body echoes the
+// request's URL, and an answer that is not JSON. Every error's detail names
+// the service's address, which is what callers of a server must not see.
+// Their servers stop when t ends.
+func FailingPresidios(t testing.TB) map[string]anonymise.Detector {
+	t.Helper()
+	down := httptest.NewServer(http.NotFoundHandler())
+	down.Close()
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no model loaded for http://"+r.Host+r.URL.Path, http.StatusInternalServerError)
+	}))
+	t.Cleanup(failing.Close)
+	garbage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("{"))
+	}))
+	t.Cleanup(garbage.Close)
+	return map[string]anonymise.Detector{
+		"unreachable":  anonymise.NewPresidio(down.URL),
+		"error status": anonymise.NewPresidio(failing.URL),
+		"bad answer":   anonymise.NewPresidio(garbage.URL),
+	}
+}
 
 // Detector finds the given names (and the names the engine passes) as PERSON,
 // the way Presidio's NER would.

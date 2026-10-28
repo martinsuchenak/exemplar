@@ -100,6 +100,9 @@ them.
   `this key already has an anonymise run in progress`). Runs are one at a
   time per key: wait for one to finish before starting the next, rather
   than running several in parallel.
+- `the anonymiser's detector is unavailable; try again later` means the
+  server's Presidio is down. Retry later or tell the user; do not switch to
+  `--local --patterns-only` without asking, since it misses names in prose.
 
 ## What not to do
 

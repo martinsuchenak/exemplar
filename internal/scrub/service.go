@@ -62,8 +62,12 @@ type FileResult struct {
 	DroppedHeaders       int `json:"dropped_headers"`
 	// DroppedParts are a document's parts removed rather than rewritten.
 	DroppedParts []string `json:"dropped_parts,omitempty"`
-	// Error is set for a file that failed while the others went ahead.
+	// Error is set for a file that failed while the others went ahead. On
+	// the server a detector failure is only anonymise.DetectorUnavailable.
 	Error string `json:"error,omitempty"`
+	// Unavailable says the file failed because the detector did, so trying
+	// again later may work.
+	Unavailable bool `json:"-"`
 	// Report is original data (local only).
 	Report []anonymise.ReportLine `json:"-"`
 }
@@ -212,12 +216,14 @@ func (r *Run) Anonymise(ctx context.Context, req Request, files []anonymise.File
 	for i, f := range files {
 		fr := &res.Files[i]
 		if err := prepared[i]; err != nil {
-			fr.Error, failed = err.Error(), failed+1
+			s.fail(fr, err)
+			failed++
 			continue
 		}
 		out, err := engine.Anonymise(ctx, f)
 		if err != nil {
-			fr.Error, failed = err.Error(), failed+1
+			s.fail(fr, err)
+			failed++
 			continue
 		}
 		fr.Name, fr.Format, fr.Data = unique(names, out.Name), out.Format, out.Data
@@ -246,6 +252,19 @@ func (r *Run) Anonymise(ctx context.Context, req Request, files []anonymise.File
 		return nil, err
 	}
 	return res, nil
+}
+
+// fail records why a file failed. A detector error's detail names the
+// detector's URL, host and network: the server's callers get only
+// anonymise.DetectorUnavailable, while locally the person running the tool
+// sees it whole. Neither is logged.
+func (s *Service) fail(fr *FileResult, err error) {
+	fr.Unavailable = errors.Is(err, anonymise.ErrDetector)
+	if s.local {
+		fr.Error = err.Error()
+	} else {
+		fr.Error = anonymise.PublicError(err)
+	}
 }
 
 // engine builds the run's engine. Linked fakes use the server's key and
