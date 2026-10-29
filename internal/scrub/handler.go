@@ -53,7 +53,7 @@ func (h *Handler) Anonymise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer run.Close()
-	rest.AllowLongUpload(w)
+	rest.AllowLongUpload(w, r)
 	if limit := h.service.MaxBytes(); limit > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20)
 	}

@@ -227,6 +227,29 @@ func (s *Storage) FindActiveKey(ctx context.Context, exec xdal.DBExecutor, hash 
 	return &k, &a, nil
 }
 
+// KeyActive reports whether the key is still active on an enabled account:
+// the same conditions FindActiveKey applies, by key id instead of hash.
+func (s *Storage) KeyActive(ctx context.Context, exec xdal.DBExecutor, keyID string) (bool, error) {
+	query, args, err := s.qb.Select("k.id").From("api_keys k").
+		Join("JOIN accounts a ON a.id = k.account_id").
+		Where("k.id = ?", keyID).
+		Where("k.revoked_at IS NULL").
+		Where("a.disabled_at IS NULL").
+		Build()
+	if err != nil {
+		return false, err
+	}
+	var id string
+	err = exec.QueryRow(ctx, query, args...).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // TouchKey sets a key's last_used_at.
 func (s *Storage) TouchKey(ctx context.Context, exec xdal.DBExecutor, id string, at time.Time) error {
 	query, args, err := s.qb.Update("api_keys").

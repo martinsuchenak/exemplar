@@ -56,6 +56,11 @@ var attrRe = regexp.MustCompile(`([^\s=<>/"']+)\s*=\s*("[^"]*"|'[^']*')`)
 // xmlNamespace is the namespace of the xml: prefix, which needs no declaring.
 const xmlNamespace = "http://www.w3.org/XML/1998/namespace"
 
+// xmlMaxNodes caps how many tokens one XML part may hold. Every node is
+// materialised with its names, attributes and text while scanning, so a part
+// of nothing but tiny tags must not multiply into many times its size.
+const xmlMaxNodes = 2 << 20
+
 // scanXML tokenises a whole part. It fails on anything that is not
 // well-formed, so a part that cannot be read is never passed through.
 func scanXML(data []byte) ([]xmlNode, error) {
@@ -83,9 +88,18 @@ func scanXML(data []byte) ([]xmlNode, error) {
 			break
 		}
 		if err != nil {
-			return nil, err
+			// The decoder's message quotes element and entity names from
+			// the document; keep only where it went wrong.
+			var se *xml.SyntaxError
+			if errors.As(err, &se) {
+				return nil, fmt.Errorf("not well-formed XML at line %d", se.Line)
+			}
+			return nil, errors.New("not well-formed XML")
 		}
 		end := int(d.InputOffset())
+		if len(nodes) >= xmlMaxNodes {
+			return nil, fmt.Errorf("the XML holds more than %d tokens", xmlMaxNodes)
+		}
 		switch t := tok.(type) {
 		case xml.StartElement:
 			scope := map[string]string{}
@@ -121,7 +135,7 @@ func scanXML(data []byte) ([]xmlNode, error) {
 			}
 			s := open[len(open)-1]
 			if openNames[len(openNames)-1] != qualified(t.Name) {
-				return nil, fmt.Errorf("</%s> closes <%s> at byte %d", qualified(t.Name), openNames[len(openNames)-1], start)
+				return nil, fmt.Errorf("an end tag closes a different element at byte %d", start)
 			}
 			open, openNames = open[:len(open)-1], openNames[:len(openNames)-1]
 			nodes[s].match = len(nodes)

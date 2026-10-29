@@ -62,8 +62,11 @@ const (
 	docxMaxParts = 2000
 	// A DOCX may expand to docxRatio times its size, and to at least
 	// docxMinExpand bytes: XML compresses well, a zip bomb far better.
+	// However well it compresses, it may never expand past docxMaxExpand
+	// bytes in total.
 	docxRatio     = 100
 	docxMinExpand = 16 << 20
+	docxMaxExpand = 256 << 20
 )
 
 type docxRule int
@@ -209,7 +212,8 @@ func readDOCX(data []byte) ([]*docxPart, error) {
 	if len(zr.File) > docxMaxParts {
 		return nil, fmt.Errorf("the DOCX has over %d parts", docxMaxParts)
 	}
-	budget := int64(max(len(data)*docxRatio, docxMinExpand))
+	expandable := int64(max(len(data)*docxRatio, docxMinExpand))
+	budget := min(expandable, int64(docxMaxExpand))
 	var parts []*docxPart
 	seen := map[string]bool{}
 	for _, f := range zr.File {
@@ -220,19 +224,22 @@ func readDOCX(data []byte) ([]*docxPart, error) {
 			return nil, fmt.Errorf("the DOCX has a part with an unsafe name")
 		}
 		if seen[strings.ToLower(f.Name)] {
-			return nil, fmt.Errorf("the DOCX holds %s twice", f.Name)
+			return nil, fmt.Errorf("the DOCX holds %s twice", partLabel(f.Name))
 		}
 		seen[strings.ToLower(f.Name)] = true
 		rc, err := f.Open()
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", f.Name, err)
+			return nil, fmt.Errorf("reading %s: %w", partLabel(f.Name), err)
 		}
 		b, err := io.ReadAll(io.LimitReader(rc, budget+1))
 		_ = rc.Close()
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", f.Name, err)
+			return nil, fmt.Errorf("reading %s: %w", partLabel(f.Name), err)
 		}
 		if budget -= int64(len(b)); budget < 0 {
+			if expandable > int64(docxMaxExpand) {
+				return nil, fmt.Errorf("the DOCX expands to more than %d MiB in total", docxMaxExpand>>20)
+			}
 			return nil, fmt.Errorf("the DOCX expands to more than %d times its size", docxRatio)
 		}
 		parts = append(parts, &docxPart{name: f.Name, data: b, rule: ruleFor(f.Name)})
@@ -250,6 +257,7 @@ func openDOCX(data []byte) (*docxPackage, error) {
 		return nil, err
 	}
 	pkg := &docxPackage{parts: parts, byName: map[string]*docxPart{}}
+	nodes := 0
 	for _, p := range parts {
 		pkg.byName[p.name] = p
 		switch p.rule {
@@ -257,7 +265,10 @@ func openDOCX(data []byte) (*docxPackage, error) {
 			continue
 		}
 		if p.nodes, err = scanXML(p.data); err != nil {
-			return nil, fmt.Errorf("%s: %w", p.name, err)
+			return nil, fmt.Errorf("%s: %w", partLabel(p.name), err)
+		}
+		if nodes += len(p.nodes); nodes > xmlMaxNodes {
+			return nil, fmt.Errorf("the DOCX holds more than %d XML tokens in total", xmlMaxNodes)
 		}
 		pkg.collect(p)
 	}
@@ -735,7 +746,7 @@ func (pkg *docxPackage) rewrite(ctx context.Context, e *Engine, rep *replacer, o
 		if len(edits[p]) > 0 {
 			var err error
 			if data, err = splice(p.data, edits[p]); err != nil {
-				return fmt.Errorf("%s: %w", p.name, err)
+				return fmt.Errorf("%s: %w", partLabel(p.name), err)
 			}
 		}
 		name := p.name
@@ -779,6 +790,27 @@ var docxMediaName = regexp.MustCompile(`^(image\d*|thumbnail)$`)
 // other dropped part is listed by a keyed name: the sender chose it, and it
 // can say anything.
 var docxKnownDrops = regexp.MustCompile(`^(word/(vbaproject\.bin|vbadata\.xml|customizations\.xml|attachedtoolbars\.bin|keymapcustomizations\.xml|activex/activex\d+\.(xml|bin)|ink/ink\d+\.xml|printersettings/printersettings\d+\.bin|webextensions/(webextension\d+|taskpanes)\.xml|_rels/(vbaproject\.bin|customizations\.xml|attachedtoolbars\.bin)\.rels|activex/_rels/activex\d+\.xml\.rels|webextensions/_rels/taskpanes\.xml\.rels)|docprops/meta\.xml|customui/customui(14)?\.xml|customui/_rels/customui(14)?\.xml\.rels)$`)
+
+// docxOfficePart matches the names Office gives the parts it writes. Errors
+// name a part only when it has one of these, is the relationships of one, or
+// is a known drop: any other name the sender chose, and it can say anything.
+var docxOfficePart = regexp.MustCompile(`^(\[content_types\]\.xml|docprops/(app|core|custom)\.xml|docprops/thumbnail\.[a-z0-9]+|word/(glossary/)?(document|header\d*|footer\d*|footnotes|endnotes|comments|settings|styles|styleswitheffects|numbering|fonttable|websettings|commentsextended|commentsids|commentsextensible)\.xml|word/people\.xml|word/theme/theme\d*\.xml|word/charts/(chart|colors|style)\d*\.xml|word/diagrams/(data|drawing|layout|quickstyle|colors)\d*\.xml|word/media/(image\d*|thumbnail)\.[a-z0-9]+|customxml/(item|itemprops)\d*\.xml)$`)
+
+// partLabel is how an error names a part: by its name when Office chose it,
+// otherwise without it.
+func partLabel(name string) string {
+	l := strings.ToLower(name)
+	if l == "_rels/.rels" || docxKnownDrops.MatchString(l) {
+		return name
+	}
+	if path.Base(path.Dir(l)) == "_rels" && strings.HasSuffix(l, ".rels") {
+		l = relsSource(l)
+	}
+	if docxOfficePart.MatchString(l) {
+		return name
+	}
+	return "a part named by the sender"
+}
 
 // droppedPartName is how a dropped part is listed.
 func (e *Engine) droppedPartName(name string) string {
@@ -925,11 +957,15 @@ func checkDOCX(data []byte) error {
 		return err
 	}
 	byName := map[string]*docxPart{}
+	nodes := 0
 	for _, p := range parts {
 		byName[p.name] = p
 		if strings.HasSuffix(strings.ToLower(p.name), ".xml") || strings.HasSuffix(strings.ToLower(p.name), ".rels") {
 			if p.nodes, err = scanXML(p.data); err != nil {
-				return fmt.Errorf("%s: %w", p.name, err)
+				return fmt.Errorf("%s: %w", partLabel(p.name), err)
+			}
+			if nodes += len(p.nodes); nodes > xmlMaxNodes {
+				return fmt.Errorf("the DOCX holds more than %d XML tokens in total", xmlMaxNodes)
 			}
 		}
 	}
@@ -952,7 +988,7 @@ func checkDOCX(data []byte) error {
 			}
 			target, _ := n.attr(xmlName{local: "Target"})
 			if _, ok := byName[resolveTarget(source, target)]; !ok {
-				return fmt.Errorf("%s points to %s, which is not there", p.name, resolveTarget(source, target))
+				return fmt.Errorf("%s points to a part that is not there", partLabel(p.name))
 			}
 		}
 	}
@@ -964,7 +1000,7 @@ func checkDOCX(data []byte) error {
 			}
 			for _, a := range n.attrs {
 				if nsR[a.name.space] && !ids[p.name][a.value] {
-					return fmt.Errorf("%s uses relationship %s, which is not there", p.name, a.value)
+					return fmt.Errorf("%s uses a relationship that is not there", partLabel(p.name))
 				}
 			}
 		}
@@ -988,7 +1024,7 @@ func checkDOCX(data []byte) error {
 	for _, p := range parts {
 		ext := strings.TrimPrefix(strings.ToLower(path.Ext(p.name)), ".")
 		if p.rule != ruleContentTypes && !defaults[ext] && !overrides[strings.ToLower(p.name)] {
-			return fmt.Errorf("%s has no content type", p.name)
+			return fmt.Errorf("%s has no content type", partLabel(p.name))
 		}
 	}
 	return nil

@@ -12,6 +12,16 @@ import (
 
 func hexOf(s string) string { return hex.EncodeToString([]byte(s)) }
 
+// A file of nothing but escapes must fail on its token budget instead of
+// multiplying into many times its size in memory.
+func TestRTFTokenBudget(t *testing.T) {
+	data := append([]byte(`{\rtf1 `), bytes.Repeat([]byte(`\\`), rtfMaxTokens+1)...)
+	data = append(data, '}')
+	if _, err := tokenizeRTF(data); err == nil || !strings.Contains(err.Error(), "splits into more than") {
+		t.Errorf("err = %v, want a token budget error", err)
+	}
+}
+
 // wordRTF is shaped like a file Word saves, with the same secrets in every
 // place RTF can hide them.
 var wordRTF = `{\rtf1\ansi\ansicpg1252\deff0\uc1` + "\r\n" +

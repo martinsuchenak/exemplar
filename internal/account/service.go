@@ -283,6 +283,11 @@ func (s *Service) CreateKey(ctx context.Context, actor principal.Principal, in C
 	if in.Name == "" {
 		return nil, fmt.Errorf("%w: key name is required", apperr.ErrInvalid)
 	}
+	// Key names follow the account name rules, so what lists, the CLI and
+	// the audit log show is never control characters or a wall of text.
+	if !nameRe.MatchString(in.Name) {
+		return nil, fmt.Errorf("%w: key name must be 1-64 letters, digits, '.', '_' or '-'", apperr.ErrInvalid)
+	}
 	if len(in.Scopes) == 0 {
 		in.Scopes = defaultScopes
 	}
@@ -389,6 +394,17 @@ func (s *Service) Authenticate(ctx context.Context, secret string) (principal.Pr
 		KeyID:       k.ID,
 		Scopes:      k.Scopes,
 	}, nil
+}
+
+// KeyActive reports whether a key resolved earlier is still active on an
+// enabled account: the same conditions Authenticate applies, for a key
+// already resolved. Streaming transfers re-check it while they run, so
+// revoking a key or disabling an account also stops them.
+func (s *Service) KeyActive(ctx context.Context, keyID string) (bool, error) {
+	if keyID == "" {
+		return false, nil
+	}
+	return s.storage.KeyActive(ctx, s.db, keyID)
 }
 
 func (s *Service) newAccount(in CreateAccountInput) *Account {

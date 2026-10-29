@@ -25,6 +25,7 @@ services:
       # (the anonymise tool works without it). Set it in .env only.
       EXEMPLAR_ANON_KEY: ${EXEMPLAR_ANON_KEY:-}
       MAX_INGEST_MB: ${EXEMPLAR_MAX_INGEST_MB:-200}
+      MAX_CONCURRENT_RUNS: ${EXEMPLAR_MAX_CONCURRENT_RUNS:-2}
     volumes:
       - exemplar-data:/app/data
     depends_on:

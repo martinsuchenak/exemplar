@@ -31,6 +31,14 @@ environment variables in [cli.md](cli.md) (`SERVER_PORT`, `PRESIDIO_URL`,
 `MAX_INGEST_MB`…). The key comes from `EXEMPLAR_ANON_KEY` or a key file
 (`ANON_KEY_FILE`, mode 600).
 
+Size the server's memory for its uploads. An ingest or anonymise run holds
+its whole upload in memory while it works, and parsing a document takes
+several times more, so a large upload can need hundreds of MiB. At most
+`storage.max_concurrent_runs` runs (`MAX_CONCURRENT_RUNS`, default 2) are
+held at once; the rest get `429` before their upload is read. Keep
+`max_ingest_mb` and `max_concurrent_runs` small enough for the memory you
+give exemplar, or give it more.
+
 ## Working with a deployed server
 
 Everything an admin does, reviewing included, goes through the API: the
@@ -81,7 +89,8 @@ Which proxy fronts exemplar is up to you; whatever it is, it has to:
 - **terminate TLS**, since an admin key and real data in quarantine travel
   on the connection, and exemplar itself speaks plain HTTP;
 - **allow long, large uploads**: a body up to `storage.max_ingest_mb`
-  (default 200 MiB), and up to an hour per request;
+  (default 200 MiB), and up to an hour per request (exemplar ends one that
+  moves no bytes for two minutes);
 - **not cache**: responses include quarantined fixtures.
 
 It finds the server at `EXEMPLAR_BIND:EXEMPLAR_PORT` with Docker Compose
@@ -144,6 +153,7 @@ with their defaults:
 | `EXEMPLAR_PORT` | `8080` | Port the API is published on |
 | `EXEMPLAR_ANON_KEY` | empty | The anonymisation key; empty leaves ingest off |
 | `EXEMPLAR_MAX_INGEST_MB` | `200` | Largest upload one ingest or anonymise run accepts |
+| `EXEMPLAR_MAX_CONCURRENT_RUNS` | `2` | Most ingest and anonymise runs held at once, together |
 | `PRESIDIO_IMAGE` | `presidio-analyzer:latest` | Pin a version you have tested |
 
 Presidio takes a minute or two to load its model after it starts; until it
@@ -191,7 +201,9 @@ See [backup-and-exchange.md](backup-and-exchange.md).
 `exemplar.nomad` runs one group: Presidio as a sidecar that starts first,
 and exemplar, sharing a bridge network so exemplar reaches Presidio on
 `localhost:3000`. exemplar registers the `exemplar` service with Nomad's
-service discovery, with a `/health` check.
+service discovery, with a `/health` check. It gives exemplar 1 GiB of
+memory and takes uploads of up to 100 MiB, one run at a time
+(`MAX_INGEST_MB`, `MAX_CONCURRENT_RUNS`); raise them together.
 
 The cluster needs:
 

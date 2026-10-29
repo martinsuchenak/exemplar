@@ -36,6 +36,65 @@ func newApp(t *testing.T, maxBytes int64) *app.App {
 	})
 }
 
+// Ingest draws on the same run budget as the anonymise tool, and the cap
+// is checked before the upload is read.
+func TestBeginSharesTheRunBudget(t *testing.T) {
+	a := testutil.NewAppWith(t, func(c *app.Config) {
+		c.AnonKey = anonymisetest.Key
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.MaxConcurrentRuns = 1
+	})
+	admin := testutil.Admin(t, a)
+	release, err := a.Ingest.Begin(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Ingest.Begin(admin); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("second begin err = %v", err)
+	}
+	// The anonymise tool holds the same budget, so it is busy too.
+	if _, err := a.Scrub.Reserve(admin); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("scrub reserve while ingest holds the budget err = %v", err)
+	}
+	release()
+	release2, err := a.Ingest.Begin(admin)
+	if err != nil {
+		t.Fatalf("begin after release: %v", err)
+	}
+	release2()
+}
+
+// A caller that could never ingest is refused before it takes a slot, so a
+// member key cannot hold the shared budget with uploads it may not make.
+func TestBeginChecksBeforeTakingASlot(t *testing.T) {
+	a := testutil.NewAppWith(t, func(c *app.Config) {
+		c.AnonKey = anonymisetest.Key
+		c.AnonDetector = anonymisetest.Detector{Names: []string{"Priya"}}
+		c.MaxConcurrentRuns = 1
+	})
+	admin := testutil.Admin(t, a)
+	member := testutil.Member(t, a, admin, "alice")
+	for range 2 {
+		if _, err := a.Ingest.Begin(member); !errors.Is(err, apperr.ErrForbidden) {
+			t.Fatalf("member begin err = %v", err)
+		}
+	}
+	release, err := a.Ingest.Begin(admin)
+	if err != nil {
+		t.Fatalf("admin begin after refused members: %v", err)
+	}
+	release()
+
+	// A server without the anonymiser takes no slot either.
+	bare := testutil.NewAppWith(t, func(c *app.Config) { c.MaxConcurrentRuns = 1 })
+	bareAdmin := testutil.Admin(t, bare)
+	for range 2 {
+		if _, err := bare.Ingest.Begin(bareAdmin); !errors.Is(err, apperr.ErrInvalid) {
+			t.Fatalf("unconfigured begin err = %v", err)
+		}
+	}
+}
+
 func quarantine(t *testing.T, a *app.App, admin principal.Principal) string {
 	t.Helper()
 	d, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "inbox-sample", Scope: dataset.ScopeQuarantine})

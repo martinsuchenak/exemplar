@@ -219,8 +219,12 @@ relationship a part uses still there and pointing at a part that is, every
 part with a content type. A dropped part that the document refers to fails
 this check, and the file fails rather than coming back broken. A DOCX may
 hold at most 2,000 parts and expand to at most 100 times its size (at least
-16 MiB), so a zip bomb fails. Password-protected documents and old `.doc`
-files are not zip archives and are refused with a hint. The output's entries
+16 MiB) and, however well it compresses, to at most 256 MiB in total; its
+XML parts may hold at most 2,097,152 tokens between them. So a zip bomb
+fails, and so does a document of nothing but tiny tags. Password-protected
+documents and old `.doc` files are not zip archives and are refused with a
+hint. An error names a part only by the name Office gives it; it never
+repeats a part name, element name or relationship id the sender chose. The output's entries
 keep their order, with `[Content_Types].xml` first and fixed timestamps, so
 the same file and key give the same bytes.
 
@@ -229,7 +233,8 @@ the same file and key give the same bytes.
 An `.rtf` file is one stream of groups, control words and text. It is
 tokenised, the text of each destination that holds text is decoded, and only
 text that changes is written again; every other byte, unchanged text
-included, stays as it was.
+included, stays as it was. A file may split into at most 2,097,152 tokens,
+so a file of nothing but escapes fails instead of multiplying in memory.
 
 - **Read as text:** the body, footnotes, headers and footers, field results
   and instructions (`HYPERLINK "mailto:…"`), comments (`\annotation`), shape
@@ -294,7 +299,7 @@ It runs either way:
 | Key | A random key per request, never stored | `--anon-key-file` (or `EXEMPLAR_ANON_KEY`) if given, otherwise a random key per run |
 | Registry | In memory for the request, unless an admin links (below) | In memory |
 | Profiles | The server's | Built-in, plus `--anon-profiles-dir` |
-| Limits | `storage.max_ingest_mb` and 1000 files per run; one run at a time per key (`429` otherwise, before the upload is read) | 1000 files |
+| Limits | `storage.max_ingest_mb` and 1000 files per run; one run at a time per key, and at most `storage.max_concurrent_runs` runs at once across all keys, shared with ingest (`429` otherwise, before the upload is read) | 1000 files |
 | Audit | One `file.anonymise` event, counts only | None |
 
 **Unlinked fakes.** If the tool used the server's key and registry, anyone
@@ -497,4 +502,4 @@ ingest with the same key will produce.
 - Attachment contents are replaced, not anonymised, unless the profile rewrites attachments in a format the anonymiser reads; a PDF's text never survives.
 - Dates are kept, so a timeline can be recognised by someone who knows it.
 - Detection is not perfect. Names Presidio misses and that never appear in a header, or identifiers with no pattern (customer numbers, for example), can survive. This is why every fixture is reviewed before it leaves quarantine.
-- One request is capped at `storage.max_ingest_mb` (default 200 MiB) and 1000 files.
+- One request is capped at `storage.max_ingest_mb` (default 200 MiB) and 1000 files. At most `storage.max_concurrent_runs` ingest and anonymise runs (default 2) are held at once; the rest get `429` before their upload is read.

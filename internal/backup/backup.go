@@ -119,7 +119,9 @@ func (s *Service) Backup(ctx context.Context, w io.Writer) (*Summary, error) {
 }
 
 // snapshot writes a consistent copy of the database next to it (same disk,
-// same permissions) and returns its path.
+// same permissions) and returns its path. The file is created empty with
+// mode 600 first and VACUUM INTO fills it (it accepts an empty file), so the
+// copy is never readable by anyone else, not even while it is written.
 func (s *Service) snapshot(ctx context.Context) (string, error) {
 	f, err := os.CreateTemp(filepath.Dir(s.dbPath), ".backup-*.db")
 	if err != nil {
@@ -127,17 +129,9 @@ func (s *Service) snapshot(ctx context.Context) (string, error) {
 	}
 	path := f.Name()
 	_ = f.Close()
-	// VACUUM INTO needs a path that does not exist yet.
-	if err := os.Remove(path); err != nil {
-		return "", err
-	}
 	if _, err := s.conn.SQL.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
 		_ = os.Remove(path)
 		return "", fmt.Errorf("snapshotting the database: %w", err)
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		_ = os.Remove(path)
-		return "", err
 	}
 	return path, nil
 }

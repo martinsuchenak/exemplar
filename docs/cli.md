@@ -54,6 +54,7 @@ flag, a bad value) a second line names the command's help, for example
 | `--max-fixture-mb` | `MAX_FIXTURE_MB` | `storage.max_fixture_mb` | `100` (0 for no limit) |
 | `--max-ingest-mb` | `MAX_INGEST_MB` | `storage.max_ingest_mb` | `200` (0 for no limit); `serve` only |
 | `--max-import-mb` | `MAX_IMPORT_MB` | `storage.max_import_mb` | `2048` (0 for no limit); `serve` only |
+| `--max-concurrent-runs` | `MAX_CONCURRENT_RUNS` | `storage.max_concurrent_runs` | `2` (0 for no limit); `serve` only |
 
 ### `serve`
 
@@ -166,7 +167,7 @@ ignore case. A query is up to 200 characters and 8 words.
 | Command | Description |
 |---------|-------------|
 | `keys list [--account ID]` | Your keys; another account's with an admin key |
-| `keys create --name N [--scopes read,write] [--account ID]` | Prints the secret once |
+| `keys create --name N [--scopes read,write] [--account ID]` | Prints the secret once. Names follow the account name rules: 1-64 letters, digits, `.`, `_` or `-` |
 | `keys revoke <key-id>` | Your own keys; any key with an admin key |
 
 ### `datasets`

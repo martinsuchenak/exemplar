@@ -324,6 +324,49 @@ func TestOneRunAtATimePerKey(t *testing.T) {
 	}
 }
 
+// The server holds at most max_concurrent_runs anonymise runs at once,
+// across all keys: a write key can mint more keys, but not more slots.
+func TestGlobalRunCap(t *testing.T) {
+	d := &blockingDetector{started: make(chan struct{}), release: make(chan struct{})}
+	a := testutil.NewAppWith(t, func(c *app.Config) {
+		c.AnonDetector = d
+		c.MaxConcurrentRuns = 1
+	})
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	doc := []anonymise.File{{Name: "a.txt", Data: []byte("text")}}
+
+	done := make(chan error)
+	go func() {
+		_, err := a.Scrub.Anonymise(ctx, alice, scrub.Request{}, doc)
+		done <- err
+	}()
+	<-d.started
+	// The same key is told about its own run first.
+	if _, err := a.Scrub.Reserve(alice); !errors.Is(err, apperr.ErrBusy) || !strings.Contains(err.Error(), "this key") {
+		t.Errorf("same key over both limits err = %v", err)
+	}
+	// A different key, while the one allowed run is going: busy, like a
+	// second run for the same key would be. Being refused leaves the key
+	// free, which the last run below shows.
+	if _, err := a.Scrub.Anonymise(ctx, admin, scrub.Request{}, doc); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("run over the global cap err = %v", err)
+	}
+	// Reserve is what the HTTP handler calls before reading an upload, so
+	// the cap holds before any byte of the body is read too.
+	if _, err := a.Scrub.Reserve(admin); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("reserve over the global cap err = %v", err)
+	}
+	close(d.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	// The slot is back, so another key may run.
+	if _, err := a.Scrub.Anonymise(ctx, admin, scrub.Request{}, doc); err != nil {
+		t.Errorf("after the run: %v", err)
+	}
+}
+
 // A run can be claimed before its files are read (the handler does, before
 // reading the upload), and only one at a time per key.
 func TestReserveClaimsTheRun(t *testing.T) {

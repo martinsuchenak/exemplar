@@ -102,7 +102,8 @@ people it mentions, as `{"person_id", "role"}`.
 
 Fixture names are 1–255 characters without slashes or control characters, and
 not `.` or `..`. Uploads, ingests, imports and content downloads may take up
-to an hour; other requests time out after five minutes.
+to an hour, as long as they never go two minutes without moving a byte;
+other requests time out after five minutes.
 
 Uploads stream to disk; kind, format and MIME type are inferred from the name
 when not given; `record_schema` makes the upload a record. `tags` may be comma-separated or repeated. Uploading declares
@@ -149,7 +150,7 @@ The anonymise tool stores nothing and never returns original data.
 - **Detector failures:** when Presidio cannot be reached, answers with an error status or sends something unreadable, the file's error is only `the anonymiser's detector is unavailable; try again later`. The detector's URL, host and network error stay on the server, unlogged. Ingest reports the same error per file.
 - **Every response** carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox` and `X-Exemplar-Unreviewed: true`.
 - **Fakes** come from a key made for the request alone, unless an admin sets `link_registry`. See [anonymisation.md](anonymisation.md#anonymise-without-ingesting).
-- **Limits:** a request over `storage.max_ingest_mb` gets `413`; more than 1000 files, an unknown format or profile, or a server without Presidio get `400`; a second run for the same key while one is going gets `429`, before its body is read.
+- **Limits:** a request over `storage.max_ingest_mb` gets `413`; more than 1000 files, an unknown format or profile, or a server without Presidio get `400`; a second run for the same key while one is going, or any run past `storage.max_concurrent_runs` (shared with ingest), gets `429`, before its body is read.
 
 ### Export and import
 

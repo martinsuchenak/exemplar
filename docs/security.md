@@ -78,7 +78,7 @@ Only fixtures with source `anonymised` are derived from real data.
 - Unapproved real-derived content is served only to admins, so they can review it.
 - Every read of real-derived content is audit-logged (`fixture.download`).
 - Uploads through the API or CLI are declared as containing no real data; real data must come through ingest.
-- Ingest (admin key, quarantine datasets only) keeps raw input in memory for the request and stores only anonymised output. Dry-run reports hold original data: they are returned with `Cache-Control: no-store` and never stored or logged; the audit event records counts only.
+- Ingest (admin key, quarantine datasets only) keeps raw input in memory for the request and stores only anonymised output. Dry-run reports hold original data: they are returned with `Cache-Control: no-store` and never stored or logged; the audit event records counts only. Ingest and the anonymise tool share a cap on how many runs the server holds at once (`storage.max_concurrent_runs`, default 2; `429` beyond it, before any upload is read), so concurrent uploads cannot exhaust the server's memory together.
 - The anonymisation key is read from a file that group and others cannot read (the server refuses otherwise) or from `EXEMPLAR_ANON_KEY`, never from the config file. The registry keeps real identities only as HMACs under that key (`identity_keys`, `name_tokens`).
 - Email attachments are replaced by generated files by default, so their content never survives. A profile with `attachments = "anonymise"` rewrites the ones in a format the anonymiser reads in place instead; they then keep their content, and are reviewed with the email in quarantine. Choosing that profile is a deliberate, per-ingest decision.
 - The anonymise tool (`POST /api/v1/anonymise`, `exemplar anonymise`) is open to any key that can read, and stores nothing. Its fakes come from a key made for each request and thrown away, so they match nothing in the library: a caller cannot test whether a real name is there by comparing fakes. Linked fakes, from the server's key and registry, need an admin key. The response never holds original data (`--report` exists only in `--local` mode, where the user owns the files; dropped document parts are listed by Office's names or keyed ones, never the sender's), each key runs one at a time, claimed before its upload is read so one key cannot hold several uploads in memory, and the audit event records counts only. Its output skips review, so the CLI warns that it is unreviewed.
@@ -127,6 +127,10 @@ Only admin keys can read the log.
 - Key creation responses carry `Cache-Control: no-store`.
 - The CLI reads the API key from `--api-key` or `EXEMPLAR_API_KEY`, never from the config file, so keys are not committed with config.
 - Keys are accepted as `X-API-Key` or `Authorization: Bearer exm_…`; bearer tokens without the `exm_` prefix are not treated as keys.
+- A key revoked (or an account disabled) while a large upload or download is
+  still streaming stops that transfer: the authentication middleware re-checks
+  the key roughly every 10 seconds for the duration of the transfer. A check
+  that cannot run never interrupts a transfer on its own.
 
 ## MCP
 

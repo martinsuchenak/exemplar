@@ -68,7 +68,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rest.AllowLongUpload(w)
+	rest.AllowLongUpload(w, r)
 	q := r.URL.Query()
 	f, err := h.service.Create(r.Context(), p, CreateInput{
 		DatasetID:    r.PathValue("id"),
@@ -110,7 +110,7 @@ func (h *Handler) Content(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rest.AllowLongDownload(w)
+	w = rest.AllowLongDownload(w)
 	body, f, err := h.service.Open(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		rest.RespondServiceError(w, err)

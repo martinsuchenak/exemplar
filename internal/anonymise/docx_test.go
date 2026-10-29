@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/rand"
 	"regexp"
 	"strings"
 	"testing"
@@ -355,13 +356,7 @@ func TestGeneratedDOCXRoundTrip(t *testing.T) {
 }
 
 func TestDOCXErrors(t *testing.T) {
-	minimal := func(doc string, extra ...[2]string) []byte {
-		return buildDOCX(t, append([][2]string{
-			{"[Content_Types].xml", xmlH + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`},
-			{"_rels/.rels", xmlH + `<Relationships ` + relNS + `><Relationship Id="rId1" Type="x" Target="word/document.xml"/></Relationships>`},
-			{"word/document.xml", doc},
-		}, extra...))
-	}
+	minimal := func(doc string, extra ...[2]string) []byte { return minimalDOCX(t, doc, extra...) }
 	many := make([][2]string, docxMaxParts)
 	for i := range many {
 		many[i] = [2]string{fmt.Sprintf("word/media/image%d.png", i), "x"}
@@ -380,13 +375,115 @@ func TestDOCXErrors(t *testing.T) {
 		"broken xml":     {minimal("<w:document " + wNS + "><w:body>"), "word/document.xml"},
 		"mismatched":     {minimal("<w:document " + wNS + "><w:body></w:document></w:body>"), "closes"},
 		"dangling":       {minimal("<w:document " + wNS + " " + rNS + `><w:body><w:p r:id="rId9"/></w:body></w:document>`), "not a valid DOCX"},
-		"dropped in use": {minimal("<w:document "+wNS+" "+rNS+`><w:body><w:p r:id="rId9"/></w:body></w:document>`, [2]string{"word/_rels/document.xml.rels", xmlH + `<Relationships ` + relNS + `><Relationship Id="rId9" Type="x" Target="activeX/activeX1.bin"/></Relationships>`}, [2]string{"word/activeX/activeX1.bin", "x"}), "uses relationship rId9, which is not there"},
+		"dropped in use": {minimal("<w:document "+wNS+" "+rNS+`><w:body><w:p r:id="rId9"/></w:body></w:document>`, [2]string{"word/_rels/document.xml.rels", xmlH + `<Relationships ` + relNS + `><Relationship Id="rId9" Type="x" Target="activeX/activeX1.bin"/></Relationships>`}, [2]string{"word/activeX/activeX1.bin", "x"}), "uses a relationship that is not there"},
 	} {
 		f := File{Name: "a.docx", Data: c.data}
 		_, err := newEngine(t, newMemRegistry()).Anonymise(ctx, f)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want %q", name, err, c.want)
 		}
+	}
+}
+
+// minimalDOCX is the smallest DOCX around doc, plus any extra parts.
+func minimalDOCX(t *testing.T, doc string, extra ...[2]string) []byte {
+	return buildDOCX(t, append([][2]string{
+		{"[Content_Types].xml", xmlH + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`},
+		{"_rels/.rels", xmlH + `<Relationships ` + relNS + `><Relationship Id="rId1" Type="x" Target="word/document.xml"/></Relationships>`},
+		{"word/document.xml", doc},
+	}, extra...))
+}
+
+// Errors never repeat what the sender wrote: part names Office did not
+// choose, element names and relationship ids are left out.
+func TestDOCXErrorsKeepSenderTextOut(t *testing.T) {
+	const secret = "PriyaShah"
+	for name, data := range map[string][]byte{
+		"part twice":      minimalDOCX(t, "<w:document "+wNS+"/>", [2]string{"word/" + secret + ".xml", "x"}, [2]string{"WORD/" + secret + ".xml", "x"}),
+		"broken part":     minimalDOCX(t, "<w:document "+wNS+"/>", [2]string{"word/_rels/" + secret + ".xml.rels", "<a>"}),
+		"element names":   minimalDOCX(t, "<w:document "+wNS+"><"+secret+"></w:document></"+secret+">"),
+		"decoder message": minimalDOCX(t, "<w:document "+wNS+"><w:t>&"+secret+";</w:t></w:document>"),
+		"relationship id": minimalDOCX(t, "<w:document "+wNS+" "+rNS+`><w:body><w:p r:id="`+secret+`"/></w:body></w:document>`, [2]string{"word/_rels/document.xml.rels", xmlH + `<Relationships ` + relNS + `><Relationship Id="` + secret + `" Type="x" Target="activeX/activeX1.bin"/></Relationships>`}, [2]string{"word/activeX/activeX1.bin", "x"}),
+	} {
+		_, err := newEngine(t, newMemRegistry()).Anonymise(ctx, File{Name: "a.docx", Data: data})
+		if err == nil {
+			t.Errorf("%s: no error", name)
+			continue
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("%s: err %q repeats the sender's text", name, err)
+		}
+	}
+	for name, want := range map[string]string{
+		"word/header2.xml":                   "word/header2.xml",
+		"word/_rels/document.xml.rels":       "word/_rels/document.xml.rels",
+		"_rels/.rels":                        "_rels/.rels",
+		"word/vbaProject.bin":                "word/vbaProject.bin",
+		"word/" + secret + ".xml":            "a part named by the sender",
+		"word/_rels/" + secret + ".xml.rels": "a part named by the sender",
+		"word/media/" + secret + ".png":      "a part named by the sender",
+	} {
+		if got := partLabel(name); got != want {
+			t.Errorf("partLabel(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// A part of nothing but tiny tags must fail on its node budget instead of
+// multiplying into many times its size in memory.
+func TestScanXMLNodeBudget(t *testing.T) {
+	dense := strings.Repeat(`<t>a</t>`, xmlMaxNodes/3+1)
+	if _, err := scanXML([]byte(dense)); err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Errorf("err = %v, want a node budget error", err)
+	}
+}
+
+// Parts that each fit the per-part budget must still fail together: the
+// budget counts the whole document, not each part.
+func TestDOCXNodeBudgetTotal(t *testing.T) {
+	tag := `<w:document ` + wNS + `>` + strings.Repeat(`<w:t>a</w:t>`, xmlMaxNodes/3-100000) + `</w:document>`
+	data := buildDOCX(t, [][2]string{
+		{"[Content_Types].xml", xmlH + `<Types/>`},
+		{"word/document.xml", tag},
+		{"word/header1.xml", tag},
+	})
+	if _, err := openDOCX(data); err == nil || !strings.Contains(err.Error(), "XML tokens in total") {
+		t.Errorf("err = %v, want a document node budget error", err)
+	}
+}
+
+// A DOCX whose expansion stays under the ratio budget must still fail on the
+// absolute ceiling, however well it compresses.
+func TestDOCXAbsoluteExpandBudget(t *testing.T) {
+	var b bytes.Buffer
+	zw := zip.NewWriter(&b)
+	pad := make([]byte, 3<<20) // incompressible, so the ratio budget alone would allow ~300 MB
+	rand.New(rand.NewSource(1)).Read(pad)
+	w, err := zw.Create("[Content_Types].xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte(xmlH + `<Types/>`))
+	w, err = zw.Create("word/media/pad.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write(pad)
+	w, err = zw.Create("word/document.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := strings.Repeat(`<w:t>a</w:t>`, 1024)
+	for written := 0; written <= docxMaxExpand; written += len(chunk) {
+		if _, err := w.Write([]byte(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readDOCX(b.Bytes()); err == nil || !strings.Contains(err.Error(), "MiB in total") {
+		t.Errorf("err = %v, want an absolute expansion budget error", err)
 	}
 }
 

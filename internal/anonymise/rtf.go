@@ -46,6 +46,12 @@ type rtfTok struct {
 // rtfMaxDepth caps group nesting.
 const rtfMaxDepth = 2000
 
+// rtfMaxTokens caps how many tokens a file may split into. A token costs a
+// hundred-odd bytes in memory and the rewrite allocates more per token, so a
+// file of nothing but escapes must not multiply into many times its size;
+// real documents split into a small fraction of this.
+const rtfMaxTokens = 2 << 20
+
 // tokenizeRTF splits an RTF file into tokens. It refuses anything that does
 // not start as RTF, unbalanced groups and broken escapes.
 func tokenizeRTF(data []byte) ([]rtfTok, error) {
@@ -55,6 +61,9 @@ func tokenizeRTF(data []byte) ([]rtfTok, error) {
 	var toks []rtfTok
 	depth := 0
 	for i := 0; i < len(data); {
+		if len(toks) >= rtfMaxTokens {
+			return nil, fmt.Errorf("the file splits into more than %d tokens", rtfMaxTokens)
+		}
 		start := i
 		switch c := data[i]; c {
 		case '{':

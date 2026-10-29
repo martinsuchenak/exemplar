@@ -25,6 +25,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/runlimit"
 )
 
 // Config is the anonymiser setup. A nil Config means ingest is not configured.
@@ -98,12 +99,42 @@ type Service struct {
 	cfg      *Config
 	maxBytes int64
 	now      func() time.Time
+	// runs caps concurrent ingests; nil means no cap.
+	runs *runlimit.Limiter
 }
 
 // NewService returns an ingest service; cfg nil leaves ingest unconfigured.
-// maxBytes caps one request's total input; 0 means no limit.
-func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64) *Service {
-	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, cfg: cfg, maxBytes: maxBytes, now: time.Now}
+// maxBytes caps one request's total input; 0 means no limit. runs caps
+// concurrent runs (shared with the anonymise tool); nil means no cap.
+func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64, runs *runlimit.Limiter) *Service {
+	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, cfg: cfg, maxBytes: maxBytes, now: time.Now, runs: runs}
+}
+
+// Begin claims an ingest slot before the upload is read, so concurrent
+// ingests cannot hold the server's memory together over its budget; a
+// caller gets apperr.ErrBusy when the server already has its fill (the
+// anonymise tool holds the same budget). It first checks what can be checked
+// without the files, so a caller that could never ingest takes no slot.
+// Release with the returned func.
+func (s *Service) Begin(actor principal.Principal) (release func(), err error) {
+	if err := s.ready(actor); err != nil {
+		return nil, err
+	}
+	if !s.runs.Acquire() {
+		return nil, fmt.Errorf("%w: the server already has enough ingest or anonymise runs in progress; try again later", apperr.ErrBusy)
+	}
+	return s.runs.Release, nil
+}
+
+// ready checks the caller may ingest and the server is set up for it.
+func (s *Service) ready(actor principal.Principal) error {
+	if !actor.IsAdmin() {
+		return fmt.Errorf("%w: ingesting real data needs an admin key", apperr.ErrForbidden)
+	}
+	if s.cfg == nil || !s.cfg.Key.Valid() || s.cfg.Detector == nil {
+		return fmt.Errorf("%w: the anonymiser is not configured on this server (anonymiser.key_file and anonymiser.presidio_url)", apperr.ErrInvalid)
+	}
+	return nil
 }
 
 // MaxBytes is the most input one ingest accepts; 0 means no limit.
@@ -123,11 +154,8 @@ func (s *Service) Profiles() []string {
 // quarantine dataset as unreviewed fixtures. Admin only. One file failing does
 // not stop the others; its result carries the error.
 func (s *Service) Ingest(ctx context.Context, actor principal.Principal, datasetID string, req Request, files []File) (*Result, error) {
-	if !actor.IsAdmin() {
-		return nil, fmt.Errorf("%w: ingesting real data needs an admin key", apperr.ErrForbidden)
-	}
-	if s.cfg == nil || !s.cfg.Key.Valid() || s.cfg.Detector == nil {
-		return nil, fmt.Errorf("%w: the anonymiser is not configured on this server (anonymiser.key_file and anonymiser.presidio_url)", apperr.ErrInvalid)
+	if err := s.ready(actor); err != nil {
+		return nil, err
 	}
 	if req.Profile == "" {
 		req.Profile = DefaultProfile

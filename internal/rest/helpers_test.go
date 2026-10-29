@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 )
@@ -96,5 +98,118 @@ func TestDecodeJSON(t *testing.T) {
 		if w.Code != want {
 			t.Errorf("RespondBodyError(%v) = %d", err, w.Code)
 		}
+	}
+}
+
+func shortIdle(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := transferIdle
+	transferIdle = d
+	t.Cleanup(func() { transferIdle = old })
+}
+
+// rawRequest sends a request's headers and the first part of a body that
+// declares more, then lets the caller decide when to send the rest.
+func rawRequest(t *testing.T, srv *httptest.Server, length int, first string) net.Conn {
+	t.Helper()
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	_, _ = fmt.Fprintf(conn, "POST / HTTP/1.1\r\nHost: x\r\nContent-Length: %d\r\n\r\n%s", length, first)
+	return conn
+}
+
+// An upload that stops sending is cut off after the idle interval, long
+// before LongTransfer.
+func TestLongUploadStallEnds(t *testing.T) {
+	shortIdle(t, 100*time.Millisecond)
+	got := make(chan error, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		AllowLongUpload(w, r)
+		_, err := io.ReadAll(r.Body)
+		got <- err
+	}))
+	defer srv.Close()
+	rawRequest(t, srv, 100, "only ten b")
+	select {
+	case err := <-got:
+		if err == nil {
+			t.Error("a stalled upload was read to the end")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a stalled upload was not cut off")
+	}
+}
+
+// An upload that keeps moving may take far longer than one idle interval.
+func TestLongUploadThatKeepsMovingSucceeds(t *testing.T) {
+	shortIdle(t, 100*time.Millisecond)
+	got := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		AllowLongUpload(w, r)
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			got <- "error: " + err.Error()
+			return
+		}
+		got <- string(b)
+	}))
+	defer srv.Close()
+	conn := rawRequest(t, srv, 10, "")
+	for range 10 { // 10 × 50ms: five idle intervals in all, never one stalled
+		time.Sleep(50 * time.Millisecond)
+		if _, err := conn.Write([]byte("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b := <-got; b != strings.Repeat("x", 10) {
+		t.Errorf("body = %q", b)
+	}
+}
+
+// A download whose client stops reading is cut off after the idle interval.
+func TestLongDownloadStallEnds(t *testing.T) {
+	shortIdle(t, 100*time.Millisecond)
+	got := make(chan error, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w = AllowLongDownload(w)
+		chunk := make([]byte, 64<<10)
+		var err error
+		for range 4096 { // 256 MiB, far more than socket buffers hold
+			if _, err = w.Write(chunk); err != nil {
+				break
+			}
+		}
+		got <- err
+	}))
+	defer srv.Close()
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	_, _ = fmt.Fprint(conn, "GET / HTTP/1.1\r\nHost: x\r\n\r\n") // and never read
+	select {
+	case err := <-got:
+		if err == nil {
+			t.Error("a download nobody read was written to the end")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a stalled download was not cut off")
+	}
+}
+
+// The download writer keeps Flush working, directly and through
+// http.ResponseController.
+func TestLongDownloadKeepsFlush(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := AllowLongDownload(rec)
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if !rec.Flushed {
+		t.Error("flush did not reach the real writer")
 	}
 }

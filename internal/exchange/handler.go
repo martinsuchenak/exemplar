@@ -60,7 +60,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Archives can take longer than the server's usual write timeout.
-	rest.AllowLongDownload(w)
+	w = rest.AllowLongDownload(w)
 	name := fmt.Sprintf("exemplar-export-%s.tar.gz", time.Now().UTC().Format("20060102-150405"))
 	hdr := w.Header()
 	hdr.Set("Content-Type", "application/gzip")
@@ -84,7 +84,7 @@ func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rest.AllowLongUpload(w)
+	rest.AllowLongUpload(w, r)
 	body := io.Reader(r.Body)
 	if limit := h.service.MaxImportBytes(); limit > 0 {
 		body = capped{r: http.MaxBytesReader(w, r.Body, limit), limit: limit}

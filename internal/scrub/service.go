@@ -19,6 +19,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/audit"
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/runlimit"
 )
 
 // MaxFiles caps how many files one run takes.
@@ -89,6 +90,9 @@ type Service struct {
 	persons  *person.Service
 	audit    *audit.Service
 	maxBytes int64
+	// runs caps concurrent anonymise runs across all keys; nil means no
+	// cap. The per-key rule below still applies within it.
+	runs *runlimit.Limiter
 
 	mu      sync.Mutex
 	running map[string]bool // key IDs with a run in progress
@@ -96,9 +100,10 @@ type Service struct {
 
 // NewService returns the server's anonymise tool. cfg nil, or without a
 // detector, leaves it unconfigured. maxBytes caps one run's total input; 0
-// means no limit.
-func NewService(db xdal.DBInterface, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64) *Service {
-	return &Service{cfg: cfg, db: db, persons: persons, audit: auditService, maxBytes: maxBytes, running: map[string]bool{}}
+// means no limit. runs caps concurrent runs across all keys (shared with
+// ingest); nil means no cap.
+func NewService(db xdal.DBInterface, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64, runs *runlimit.Limiter) *Service {
+	return &Service{cfg: cfg, db: db, persons: persons, audit: auditService, maxBytes: maxBytes, runs: runs, running: map[string]bool{}}
 }
 
 // NewLocal returns the tool for the CLI's local mode: no server, database,
@@ -130,13 +135,15 @@ func (s *Service) Anonymise(ctx context.Context, actor principal.Principal, req 
 type Run struct {
 	s      *Service
 	actor  principal.Principal
+	held   bool // the run holds a global slot as well as its key's
 	closed bool
 }
 
 // Reserve claims the caller's run before its upload is read, so that one
 // key cannot hold several uploads in memory at once: a key with a run in
-// progress gets apperr.ErrBusy. It checks what can be checked without the
-// files. Close the run when done.
+// progress gets apperr.ErrBusy, and so does any caller when the server
+// already holds its fill of runs (max_concurrent_runs). It checks what can
+// be checked without the files. Close the run when done.
 func (s *Service) Reserve(actor principal.Principal) (*Run, error) {
 	if !s.local && !actor.CanRead() {
 		return nil, fmt.Errorf("%w: anonymising needs a key that can read", apperr.ErrForbidden)
@@ -147,10 +154,16 @@ func (s *Service) Reserve(actor principal.Principal) (*Run, error) {
 		}
 		return nil, fmt.Errorf("%w: the anonymiser is not configured on this server (anonymiser.presidio_url)", apperr.ErrInvalid)
 	}
-	if !s.local && !s.start(actor.KeyID) {
-		return nil, fmt.Errorf("%w: this key already has an anonymise run in progress", apperr.ErrBusy)
+	if !s.local {
+		if !s.start(actor.KeyID) {
+			return nil, fmt.Errorf("%w: this key already has an anonymise run in progress", apperr.ErrBusy)
+		}
+		if !s.runs.Acquire() {
+			s.done(actor.KeyID)
+			return nil, fmt.Errorf("%w: the server already has enough ingest or anonymise runs in progress; try again later", apperr.ErrBusy)
+		}
 	}
-	return &Run{s: s, actor: actor}, nil
+	return &Run{s: s, actor: actor, held: !s.local}, nil
 }
 
 // Close ends the run, letting the key start another. It may be called more
@@ -160,8 +173,9 @@ func (r *Run) Close() {
 		return
 	}
 	r.closed = true
-	if !r.s.local {
+	if r.held {
 		r.s.done(r.actor.KeyID)
+		r.s.runs.Release()
 	}
 }
 

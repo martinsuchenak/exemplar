@@ -266,6 +266,16 @@ func TestKeyInputValidation(t *testing.T) {
 	if _, err := a.Accounts.CreateKey(ctx, admin, account.CreateKeyInput{}); !errors.Is(err, apperr.ErrInvalid) {
 		t.Errorf("key without name err = %v, want ErrInvalid", err)
 	}
+	for _, name := range []string{"has space", "-leading", "tab\there", "esc\x1b[31m", "über", strings.Repeat("k", 65)} {
+		if _, err := a.Accounts.CreateKey(ctx, admin, account.CreateKeyInput{Name: name}); !errors.Is(err, apperr.ErrInvalid) {
+			t.Errorf("key name %q err = %v, want ErrInvalid", name, err)
+		}
+	}
+	for _, name := range []string{"mcp-read", "laptop.2026", "ci_bot", strings.Repeat("k", 64)} {
+		if _, err := a.Accounts.CreateKey(ctx, admin, account.CreateKeyInput{Name: name}); err != nil {
+			t.Errorf("key name %q: %v", name, err)
+		}
+	}
 	if _, err := a.Accounts.CreateKey(ctx, admin, account.CreateKeyInput{Name: "k", Scopes: []principal.Scope{"delete"}}); !errors.Is(err, apperr.ErrInvalid) {
 		t.Errorf("unknown scope err = %v, want ErrInvalid", err)
 	}

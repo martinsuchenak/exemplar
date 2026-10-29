@@ -22,6 +22,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
+	"github.com/martinsuchenak/exemplar/internal/runlimit"
 	"github.com/martinsuchenak/exemplar/internal/scrub"
 	"github.com/martinsuchenak/exemplar/internal/synth"
 )
@@ -38,6 +39,9 @@ type Config struct {
 	MaxIngestBytes int64
 	// MaxImportBytes caps one import archive; 0 means no limit.
 	MaxImportBytes int64
+	// MaxConcurrentRuns caps how many ingest and anonymise runs the
+	// server holds at once, together; 0 means no limit.
+	MaxConcurrentRuns int
 	// AnonKey is the anonymisation secret; with PresidioURL (or
 	// AnonDetector) it enables ingest of real data, and linked fakes in the
 	// anonymise tool.
@@ -115,6 +119,7 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 		_ = conn.Close()
 		return nil, err
 	}
+	runs := runlimit.New(cfg.MaxConcurrentRuns)
 	return &App{
 		conn:     conn,
 		Audit:    auditService,
@@ -123,8 +128,8 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 		Fixtures: fixtures,
 		Persons:  persons,
 		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService, schemas),
-		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes),
-		Scrub:    scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes),
+		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes, runs),
+		Scrub:    scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes, runs),
 		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version, cfg.MaxImportBytes),
 		Backup:   backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),
 	}, nil

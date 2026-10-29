@@ -33,7 +33,13 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rest.AllowLongUpload(w)
+	release, err := h.service.Begin(p)
+	if err != nil {
+		rest.RespondServiceError(w, err)
+		return
+	}
+	defer release()
+	rest.AllowLongUpload(w, r)
 	if limit := h.service.MaxBytes(); limit > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20)
 	}

@@ -130,13 +130,70 @@ func QueryList(r *http.Request, name string) []string {
 // archives extend their connection's deadline to this instead.
 const LongTransfer = time.Hour
 
-// AllowLongUpload lets the request body take up to LongTransfer to arrive.
-// Size limits still apply separately.
-func AllowLongUpload(w http.ResponseWriter) {
-	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(LongTransfer))
+// transferIdle is how long a long transfer may go without moving a byte. A
+// client that stops sending or reading is cut off then rather than at the
+// end of LongTransfer, so an abandoned upload does not hold its memory, or
+// an ingest or anonymise run slot, for an hour.
+var transferIdle = 2 * time.Minute
+
+// AllowLongUpload lets the request body take up to LongTransfer to arrive,
+// as long as it never stalls for longer than transferIdle. It replaces
+// r.Body, so call it before wrapping the body in size limits, which still
+// apply separately.
+func AllowLongUpload(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	end := time.Now().Add(LongTransfer)
+	_ = rc.SetReadDeadline(idleDeadline(end))
+	r.Body = &idleBody{ReadCloser: r.Body, rc: rc, end: end}
 }
 
-// AllowLongDownload lets the response take up to LongTransfer to send.
-func AllowLongDownload(w http.ResponseWriter) {
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(LongTransfer))
+// AllowLongDownload lets the response take up to LongTransfer to send, as
+// long as the client never stops reading for longer than transferIdle.
+// Write the response to the writer it returns.
+func AllowLongDownload(w http.ResponseWriter) http.ResponseWriter {
+	rc := http.NewResponseController(w)
+	end := time.Now().Add(LongTransfer)
+	_ = rc.SetWriteDeadline(idleDeadline(end))
+	return &idleWriter{ResponseWriter: w, rc: rc, end: end}
 }
+
+// idleDeadline is when the next read or write must have finished: one idle
+// interval from now, but never past the transfer's end.
+func idleDeadline(end time.Time) time.Time {
+	if d := time.Now().Add(transferIdle); d.Before(end) {
+		return d
+	}
+	return end
+}
+
+// idleBody moves the read deadline on before every read, so each read has
+// transferIdle to make progress.
+type idleBody struct {
+	io.ReadCloser
+	rc  *http.ResponseController
+	end time.Time
+}
+
+func (b *idleBody) Read(p []byte) (int, error) {
+	_ = b.rc.SetReadDeadline(idleDeadline(b.end))
+	return b.ReadCloser.Read(p)
+}
+
+// idleWriter moves the write deadline on before every write. Flush is
+// forwarded and Unwrap lets http.ResponseController reach the connection.
+type idleWriter struct {
+	http.ResponseWriter
+	rc  *http.ResponseController
+	end time.Time
+}
+
+func (w *idleWriter) Write(p []byte) (int, error) {
+	_ = w.rc.SetWriteDeadline(idleDeadline(w.end))
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *idleWriter) Flush() {
+	_ = w.rc.Flush()
+}
+
+func (w *idleWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

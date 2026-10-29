@@ -46,6 +46,7 @@ blob_dir = "data/blobs"
 max_fixture_mb = 100
 max_ingest_mb = 200
 max_import_mb = 2048
+max_concurrent_runs = 2
 
 [anonymiser]
 # key_file = "/etc/exemplar/anon.key"   # or set EXEMPLAR_ANON_KEY

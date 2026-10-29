@@ -26,11 +26,42 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 - The config file is also read from `~/.config/exemplar/` (or
   `$XDG_CONFIG_HOME/exemplar/`, `%AppData%\exemplar\` on Windows) when the
   current directory has none, so the CLI can keep `client.server` there.
+- Server: `storage.max_concurrent_runs` (default 2) caps how many ingest and
+  anonymise runs are held at once, together; a run past the cap gets `429`
+  before its upload is read, where before any number of concurrent runs (one
+  per key, and a write key can mint more keys) buffered their uploads in
+  memory together.
 
 ### Changed
 
 - MCP: `search_fixtures` takes `dataset`, a dataset's id or name, instead of
   `dataset_id`, and returns the dataset it searched.
+
+### Security
+
+- Anonymise: RTF and DOCX files that split into millions of tokens (a file
+  of nothing but escapes, or of nothing but tiny tags) are refused on a
+  token budget, and a DOCX may no longer expand past 256 MiB however well it
+  compresses, where before one such file multiplied into many times its size
+  in memory while it parsed.
+- Revoking a key or disabling an account now also stops transfers already in
+  flight (large fixture downloads, exports, imports, ingests and anonymise
+  runs): the authentication middleware re-checks the key about every 10
+  seconds while a transfer streams, where before a revoked key could finish a
+  transfer it had started.
+- A long upload or download that moves no bytes for two minutes is ended,
+  where before a client that stopped sending or reading held the request,
+  and an ingest or anonymise run slot with its memory, for up to an hour.
+- Ingest checks for an admin key and a configured anonymiser before it takes
+  a run slot, so other keys cannot hold the shared slots.
+- `backup` creates its database snapshot with mode 600 from the start,
+  where before it was briefly readable by others while it was written.
+- DOCX errors name a part only by the name Office gives it, never a part
+  name, element name or relationship id the sender chose.
+- Key names follow the account name rules (1-64 letters, digits, `.`, `_`
+  or `-`); keys already issued keep their names.
+- `golang.org/x/net` 0.62.0 (GO-2026-6860, GO-2026-6866; exemplar did not
+  use the affected package).
 
 ## [0.1.0] - 2026-10-28
 

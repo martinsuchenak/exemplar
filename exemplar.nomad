@@ -106,6 +106,11 @@ job "exemplar" {
 
       env {
         PRESIDIO_URL = "http://localhost:3000"
+        # An ingest or anonymise run holds its upload in memory and parsing
+        # takes several times more, so these and the memory below go
+        # together: one run of up to 100 MiB at a time fits in 1 GiB.
+        MAX_INGEST_MB       = "100"
+        MAX_CONCURRENT_RUNS = "1"
       }
 
       # The anonymisation key, from the Nomad variable nomad/jobs/exemplar
@@ -127,7 +132,7 @@ job "exemplar" {
 
       resources {
         cpu    = 256
-        memory = 256
+        memory = 1024
       }
     }
   }

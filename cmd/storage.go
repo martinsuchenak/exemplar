@@ -87,6 +87,13 @@ func serverFlags() []cli.Flag {
 			ConfigPath:   []string{"storage.max_import_mb"},
 			EnvVars:      []string{"MAX_IMPORT_MB"},
 		},
+		&cli.IntFlag{
+			Name:         "max-concurrent-runs",
+			DefaultValue: 2,
+			Usage:        "Most ingest and anonymise runs held at once, together (0 for no limit)",
+			ConfigPath:   []string{"storage.max_concurrent_runs"},
+			EnvVars:      []string{"MAX_CONCURRENT_RUNS"},
+		},
 	}...)
 }
 
@@ -106,15 +113,16 @@ func openServerApp(ctx context.Context, cmd *cli.Command, log logger.Logger) (*a
 		return nil, err
 	}
 	return app.Open(ctx, log, app.Config{
-		DBPath:           cmd.GetString("db-path"),
-		BlobDir:          cmd.GetString("blob-dir"),
-		MaxFixtureBytes:  int64(cmd.GetInt("max-fixture-mb")) << 20,
-		MaxIngestBytes:   int64(cmd.GetInt("max-ingest-mb")) << 20,
-		MaxImportBytes:   int64(cmd.GetInt("max-import-mb")) << 20,
-		AnonKey:          key,
-		PresidioURL:      cmd.GetString("presidio-url"),
-		AnonProfilesDir:  cmd.GetString("anon-profiles-dir"),
-		RecordSchemasDir: cmd.GetString("record-schemas-dir"),
+		DBPath:            cmd.GetString("db-path"),
+		BlobDir:           cmd.GetString("blob-dir"),
+		MaxFixtureBytes:   int64(cmd.GetInt("max-fixture-mb")) << 20,
+		MaxIngestBytes:    int64(cmd.GetInt("max-ingest-mb")) << 20,
+		MaxImportBytes:    int64(cmd.GetInt("max-import-mb")) << 20,
+		MaxConcurrentRuns: cmd.GetInt("max-concurrent-runs"),
+		AnonKey:           key,
+		PresidioURL:       cmd.GetString("presidio-url"),
+		AnonProfilesDir:   cmd.GetString("anon-profiles-dir"),
+		RecordSchemasDir:  cmd.GetString("record-schemas-dir"),
 	})
 }
 

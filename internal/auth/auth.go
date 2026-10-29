@@ -5,8 +5,10 @@ package auth
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/martinsuchenak/exemplar/internal/apperr"
 	"github.com/martinsuchenak/exemplar/internal/principal"
@@ -41,9 +43,99 @@ func APIKeyMiddleware(authn Authenticator) func(http.Handler) http.Handler {
 				rest.RespondError(w, http.StatusInternalServerError, "authentication failed")
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(principal.WithContext(r.Context(), p)))
+			ctx := principal.WithContext(r.Context(), p)
+			if rv, ok := authn.(Revalidator); ok && p.KeyID != "" {
+				// Long transfers re-check the key while they stream, so a
+				// key revoked (or an account disabled) after the request
+				// started also stops it.
+				rw := &revalidatingWriter{ResponseWriter: w, rv: rv, keyID: p.KeyID, last: time.Now(), ctx: ctx}
+				r.Body = &revalidatingBody{ReadCloser: r.Body, rv: rv, keyID: p.KeyID, last: time.Now(), ctx: ctx}
+				w = rw
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// Revalidator reports whether a key resolved earlier is still active.
+// account.Service implements it alongside Authenticator; when the
+// authenticator also implements Revalidator, streaming transfers re-check
+// their key, so revoking a key or disabling an account also stops requests
+// that are already in flight.
+type Revalidator interface {
+	KeyActive(ctx context.Context, keyID string) (bool, error)
+}
+
+// revalidateInterval is how often a streaming transfer re-checks its key.
+// Ordinary requests finish far faster and are never checked.
+var revalidateInterval = 10 * time.Second
+
+// errKeyRevoked ends a transfer whose key stopped being valid after the
+// transfer started. The response has usually begun, so the caller sees the
+// stream cut short rather than a status code.
+var errKeyRevoked = errors.New("api key revoked or account disabled during transfer")
+
+// revalidate reports whether the transfer may continue. A check that cannot
+// run (database unavailable, client gone) never interrupts the transfer: the
+// check is hardening, and the next interval tries again.
+func revalidate(ctx context.Context, rv Revalidator, keyID string, last *time.Time) error {
+	now := time.Now()
+	if now.Sub(*last) < revalidateInterval {
+		return nil
+	}
+	*last = now
+	active, err := rv.KeyActive(context.WithoutCancel(ctx), keyID)
+	if err != nil {
+		return nil
+	}
+	if !active {
+		return errKeyRevoked
+	}
+	return nil
+}
+
+// revalidatingWriter wraps the ResponseWriter so writes of response bytes
+// re-check the key. Flush is forwarded, and Unwrap lets
+// http.ResponseController reach the real connection, so handlers keep their
+// deadline control behind the wrapper.
+type revalidatingWriter struct {
+	http.ResponseWriter
+	rv    Revalidator
+	keyID string
+	last  time.Time
+	ctx   context.Context
+}
+
+func (w *revalidatingWriter) Write(p []byte) (int, error) {
+	if err := revalidate(w.ctx, w.rv, w.keyID, &w.last); err != nil {
+		return 0, err
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *revalidatingWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *revalidatingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// revalidatingBody wraps the request body so long uploads re-check the key
+// as their bytes arrive.
+type revalidatingBody struct {
+	io.ReadCloser
+	rv    Revalidator
+	keyID string
+	last  time.Time
+	ctx   context.Context
+}
+
+func (b *revalidatingBody) Read(p []byte) (int, error) {
+	if err := revalidate(b.ctx, b.rv, b.keyID, &b.last); err != nil {
+		return 0, err
+	}
+	return b.ReadCloser.Read(p)
 }
 
 // NoKeyMessage tells a caller without a usable key how to authenticate.
