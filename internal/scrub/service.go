@@ -20,6 +20,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
 	"github.com/martinsuchenak/exemplar/internal/runlimit"
+	"github.com/paularlott/logger"
 )
 
 // MaxFiles caps how many files one run takes.
@@ -93,6 +94,8 @@ type Service struct {
 	// runs caps concurrent anonymise runs across all keys; nil means no
 	// cap. The per-key rule below still applies within it.
 	runs *runlimit.Limiter
+	// log gets why the detector failed, on the server; nil logs nothing.
+	log logger.Logger
 
 	mu      sync.Mutex
 	running map[string]bool // key IDs with a run in progress
@@ -101,9 +104,10 @@ type Service struct {
 // NewService returns the server's anonymise tool. cfg nil, or without a
 // detector, leaves it unconfigured. maxBytes caps one run's total input; 0
 // means no limit. runs caps concurrent runs across all keys (shared with
-// ingest); nil means no cap.
-func NewService(db xdal.DBInterface, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64, runs *runlimit.Limiter) *Service {
-	return &Service{cfg: cfg, db: db, persons: persons, audit: auditService, maxBytes: maxBytes, runs: runs, running: map[string]bool{}}
+// ingest); nil means no cap. log gets why the detector failed; nil logs
+// nothing.
+func NewService(db xdal.DBInterface, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64, runs *runlimit.Limiter, log logger.Logger) *Service {
+	return &Service{cfg: cfg, db: db, persons: persons, audit: auditService, maxBytes: maxBytes, runs: runs, log: log, running: map[string]bool{}}
 }
 
 // NewLocal returns the tool for the CLI's local mode: no server, database,
@@ -270,14 +274,18 @@ func (r *Run) Anonymise(ctx context.Context, req Request, files []anonymise.File
 
 // fail records why a file failed. A detector error's detail names the
 // detector's URL, host and network: the server's callers get only
-// anonymise.DetectorUnavailable, while locally the person running the tool
-// sees it whole. Neither is logged.
+// anonymise.DetectorUnavailable, and the server logs what failed (never
+// the file, its name or what Presidio said back), while locally the person
+// running the tool sees it whole.
 func (s *Service) fail(fr *FileResult, err error) {
 	fr.Unavailable = errors.Is(err, anonymise.ErrDetector)
 	if s.local {
 		fr.Error = err.Error()
-	} else {
-		fr.Error = anonymise.PublicError(err)
+		return
+	}
+	fr.Error = anonymise.PublicError(err)
+	if fr.Unavailable && s.log != nil {
+		s.log.Warn("anonymise: the detector failed", "error", anonymise.DetectorFailure(err))
 	}
 }
 

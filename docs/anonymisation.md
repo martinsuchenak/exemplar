@@ -561,7 +561,7 @@ the server and keep it private: emails are sent to it in plain text.
 
 ```bash
 docker run -d --name presidio -e GUNICORN_CMD_ARGS="--timeout 300" \
-  -p 127.0.0.1:3000:3000 mcr.microsoft.com/presidio-analyzer:latest
+  -p 127.0.0.1:3000:3000 mcr.microsoft.com/presidio-analyzer:2.2.362
 ```
 
 - `GUNICORN_CMD_ARGS="--timeout 300"` is needed: the first request loads the model, which takes longer than Gunicorn's default 30-second worker timeout, so the worker is killed and the request hangs.
@@ -594,10 +594,13 @@ behind it names Presidio's URL, host and resolver (`dial tcp: lookup presidio
 on 127.0.0.11:53: no such host`), so the server never passes it on: ingest and
 the anonymise tool report only `the anonymiser's detector is unavailable; try
 again later` for that file, and a one-file anonymise request gets `503`.
-Nothing logs the detail either, since the server does not log anonymiser
-errors; check Presidio itself (`docker logs presidio`, or `curl` its `/health`
-from the server's host). `exemplar anonymise --local` shows the whole error,
-since the person running it owns the setup.
+The server logs what failed, once per file: `WARN anonymise: the detector
+failed` (or `ingest:`) with the status Presidio returned, the network error
+or the timeout. It never logs the file, its name, or what Presidio said
+back, which could quote the text it was sent. Check Presidio itself too
+(`docker logs presidio`, or `curl` its `/health` from the server's host).
+`exemplar anonymise --local` shows the whole error, since the person
+running it owns the setup.
 
 ## Profiles
 

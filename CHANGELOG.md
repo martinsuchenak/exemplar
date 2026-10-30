@@ -30,6 +30,17 @@ version without one); see [docs/development.md](docs/development.md#releasing).
   `Account No. 1234 5678`) and by column or key labels (`BSB`, `Account
   Number`), in every format, and replaced digit by digit.
 
+### Changed
+
+- The server logs why a detector call failed: the status Presidio
+  returned, the network error or the timeout, never a file, its name or
+  what Presidio said back. Callers still learn only that the detector is
+  unavailable.
+- `exemplar.nomad`, `docker-compose.yml`, `.env.example` and
+  `task test:presidio` use Presidio 2.2.362, the version exemplar is tested
+  against, instead of `latest`. docs/deployment.md says Presidio needs a CPU
+  that exposes AVX (on a virtual machine, CPU type `host`).
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

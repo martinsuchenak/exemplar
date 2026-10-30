@@ -22,8 +22,8 @@ variable "image" {
 
 variable "presidio_image" {
   type        = string
-  description = "The Presidio Analyzer image; pin a version you have tested"
-  default     = "mcr.microsoft.com/presidio-analyzer:latest"
+  description = "The Presidio Analyzer image: the version exemplar is tested against, or another you have tested"
+  default     = "mcr.microsoft.com/presidio-analyzer:2.2.362"
 }
 
 variable "datacenters" {

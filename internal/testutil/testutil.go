@@ -4,8 +4,13 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+
+	"github.com/paularlott/logger"
 
 	"github.com/martinsuchenak/exemplar/internal/account"
 	"github.com/martinsuchenak/exemplar/internal/app"
@@ -20,6 +25,12 @@ func NewApp(t *testing.T) *app.App {
 // NewAppWith is NewApp with a chance to change the config (paths are set).
 func NewAppWith(t *testing.T, configure func(*app.Config)) *app.App {
 	t.Helper()
+	return NewAppLogged(t, nil, configure)
+}
+
+// NewAppLogged is NewAppWith with a logger.
+func NewAppLogged(t *testing.T, log logger.Logger, configure func(*app.Config)) *app.App {
+	t.Helper()
 	dir := t.TempDir()
 	cfg := app.Config{
 		DBPath:  filepath.Join(dir, "exemplar.db"),
@@ -28,7 +39,7 @@ func NewAppWith(t *testing.T, configure func(*app.Config)) *app.App {
 	if configure != nil {
 		configure(&cfg)
 	}
-	a, err := app.Open(context.Background(), nil, cfg)
+	a, err := app.Open(context.Background(), log, cfg)
 	if err != nil {
 		t.Fatalf("opening app: %v", err)
 	}
@@ -70,3 +81,44 @@ func Authenticate(t *testing.T, a *app.App, secret string) principal.Principal {
 	}
 	return p
 }
+
+// Logs is a logger that keeps what it is given, one line per call: the
+// level, the message and the keys and values.
+type Logs struct {
+	mu    sync.Mutex
+	lines *[]string
+	with  []any
+}
+
+// NewLogs returns an empty Logs.
+func NewLogs() *Logs { return &Logs{lines: &[]string{}} }
+
+// Lines returns what was logged so far.
+func (l *Logs) Lines() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), *l.lines...)
+}
+
+func (l *Logs) add(level, msg string, kv []any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	parts := []string{level, msg}
+	for _, v := range append(append([]any{}, l.with...), kv...) {
+		parts = append(parts, fmt.Sprint(v))
+	}
+	*l.lines = append(*l.lines, strings.Join(parts, " "))
+}
+
+func (l *Logs) Trace(msg string, kv ...any) { l.add("TRACE", msg, kv) }
+func (l *Logs) Debug(msg string, kv ...any) { l.add("DEBUG", msg, kv) }
+func (l *Logs) Info(msg string, kv ...any)  { l.add("INFO", msg, kv) }
+func (l *Logs) Warn(msg string, kv ...any)  { l.add("WARN", msg, kv) }
+func (l *Logs) Error(msg string, kv ...any) { l.add("ERROR", msg, kv) }
+func (l *Logs) Fatal(msg string, kv ...any) { l.add("FATAL", msg, kv) }
+
+func (l *Logs) With(key string, value any) logger.Logger {
+	return &Logs{lines: l.lines, with: append(append([]any{}, l.with...), key, value)}
+}
+func (l *Logs) WithError(err error) logger.Logger    { return l.With("error", err) }
+func (l *Logs) WithGroup(group string) logger.Logger { return l.With("group", group) }

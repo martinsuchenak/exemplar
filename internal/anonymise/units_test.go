@@ -785,3 +785,23 @@ func TestHostileNestingIsRefused(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// A server logs what failed when Presidio answers with an error, not what
+// it said, which could quote the text it was sent; locally both are shown.
+func TestDetectorFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "cannot parse: Sarah Lane called", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	_, err := NewPresidio(srv.URL).Detect(ctx, "Sarah Lane called", nil, 0.5)
+	if err == nil || !strings.Contains(err.Error(), "Sarah Lane") {
+		t.Fatalf("err = %v", err)
+	}
+	if got := DetectorFailure(err); got != "presidio returned 500 Internal Server Error" {
+		t.Errorf("DetectorFailure = %q", got)
+	}
+	other := errors.New("calling Presidio: dial tcp: connection refused")
+	if got := DetectorFailure(other); got != other.Error() {
+		t.Errorf("DetectorFailure = %q", got)
+	}
+}

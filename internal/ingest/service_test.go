@@ -422,11 +422,13 @@ func TestIngestRules(t *testing.T) {
 
 // When the detector fails, the admin learns only that it is unavailable: the
 // error's detail (the detector's address and what the transport made of it)
-// stays on the server, and nothing is stored.
+// stays on the server, in its log (never a file, its name or what Presidio
+// said back), and nothing is stored.
 func TestDetectorFailureIsGeneric(t *testing.T) {
 	leaks := []string{"127.0.0.1", "http://", "/analyze", "Presidio", "dial tcp", "connection refused", "model", "decoding", "reading the headers"}
 	for name, d := range anonymisetest.FailingPresidios(t) {
-		a := testutil.NewAppWith(t, func(c *app.Config) {
+		logs := testutil.NewLogs()
+		a := testutil.NewAppLogged(t, logs, func(c *app.Config) {
 			c.AnonKey = anonymisetest.Key
 			c.AnonDetector = d
 		})
@@ -451,6 +453,20 @@ func TestDetectorFailureIsGeneric(t *testing.T) {
 		}
 		if fx, _ := a.Fixtures.List(ctx, admin, dsID, fixture.ListFilter{}); len(fx) != 0 {
 			t.Errorf("%s: %d fixtures stored", name, len(fx))
+		}
+		failed := 0
+		for _, l := range logs.Lines() {
+			if strings.HasPrefix(l, "WARN ingest: the detector failed") {
+				failed++
+			}
+			for _, s := range []string{"notes.md", "Priya", "no model loaded", ".eml"} {
+				if strings.Contains(l, s) {
+					t.Errorf("%s: the log shows %q: %s", name, s, l)
+				}
+			}
+		}
+		if failed == 0 {
+			t.Errorf("%s: no failure logged", name)
 		}
 	}
 }

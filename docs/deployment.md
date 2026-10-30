@@ -155,12 +155,23 @@ with their defaults:
 | `EXEMPLAR_ANON_KEY` | empty | The anonymisation key; empty leaves ingest off |
 | `EXEMPLAR_MAX_INGEST_MB` | `200` | Largest upload one ingest or anonymise run accepts |
 | `EXEMPLAR_MAX_CONCURRENT_RUNS` | `2` | Most ingest and anonymise runs held at once, together |
-| `PRESIDIO_IMAGE` | `presidio-analyzer:latest` | Pin a version you have tested |
+| `PRESIDIO_IMAGE` | `presidio-analyzer:2.2.362` | The version exemplar is tested against; change it only to one you have tested |
 
 Presidio takes a minute or two to load its model after it starts; until it
 is up, anonymising answers "the anonymiser's detector is unavailable; try
 again later" and everything else works.
-It needs about 2 GiB of memory.
+It needs about 2 GiB of memory, and a CPU that exposes AVX: without it,
+Presidio's numpy fails to load (`import numpy`, in `_multiarray_umath`),
+its worker restarts in a loop, and every file is "detector unavailable". A
+virtual machine must pass the host's CPU features through: in Proxmox, set
+the VM's CPU type to `host` (`kvm64` and `x86-64-v2-AES` hide them). The
+server logs why each detector call failed (`WARN anonymise: the detector
+failed error=…`), so a failing Presidio shows in exemplar's log as well as
+its own.
+
+`latest` is not used: a new Presidio image can need more of the CPU, or
+behave differently, without warning. Moving to a new version is a test
+like any other (`task test:presidio` with `PRESIDIO_IMAGE` set).
 
 The key reaches the container as an environment variable, so anyone who can
 run `docker inspect` on this machine can read it. On a shared host, use a

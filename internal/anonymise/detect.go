@@ -81,6 +81,27 @@ var ErrDetector = errors.New("the detector failed")
 // DetectorUnavailable is all a server's caller learns of a detector failure.
 const DetectorUnavailable = "the anonymiser's detector is unavailable; try again later"
 
+// DetectorFailure describes a detector failure for a server's log: what
+// failed (the status Presidio returned, the network error, the timeout),
+// without what Presidio said back, which could quote the text it was sent.
+func DetectorFailure(err error) string {
+	var st *presidioStatus
+	if errors.As(err, &st) {
+		return "presidio returned " + st.status
+	}
+	return err.Error()
+}
+
+// presidioStatus is an error status from Presidio, with what it said; the
+// person running the tool locally sees both.
+type presidioStatus struct {
+	status, body string
+}
+
+func (e *presidioStatus) Error() string {
+	return fmt.Sprintf("presidio returned %s: %s", e.status, e.body)
+}
+
 // PublicError is err's message for a server's caller: DetectorUnavailable
 // for a detector failure, err's own message otherwise.
 func PublicError(err error) string {
@@ -173,7 +194,7 @@ func (p *Presidio) analyze(ctx context.Context, text string, names []string, thr
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("presidio returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		return nil, &presidioStatus{status: resp.Status, body: strings.TrimSpace(string(msg))}
 	}
 	var out []presidioResult
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

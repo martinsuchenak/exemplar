@@ -236,15 +236,18 @@ func TestAnonymiseRules(t *testing.T) {
 var leaks = []string{"127.0.0.1", "http://", "/analyze", "Presidio", "dial tcp", "connection refused", "model", "decoding"}
 
 // When the detector fails, a server's caller learns only that it is
-// unavailable; the person running the tool locally sees why.
+// unavailable, and the server logs what failed (never a file, its name or
+// what Presidio said back); the person running the tool locally sees why.
 func TestDetectorFailureIsGeneric(t *testing.T) {
 	for name, d := range anonymisetest.FailingPresidios(t) {
-		a := testutil.NewAppWith(t, func(c *app.Config) { c.AnonDetector = d })
+		logs := testutil.NewLogs()
+		a := testutil.NewAppLogged(t, logs, func(c *app.Config) { c.AnonDetector = d })
 		reader := readOnly(t, a, testutil.Admin(t, a))
 		res, err := a.Scrub.Anonymise(ctx, reader, scrub.Request{}, files()[:2])
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+		checkDetectorLogs(t, name, logs.Lines(), len(res.Files))
 		for _, f := range res.Files {
 			if f.Error != anonymise.DetectorUnavailable || !f.Unavailable || f.Data != nil {
 				t.Errorf("%s: file = %+v", name, f)
@@ -474,5 +477,29 @@ func TestPlainName(t *testing.T) {
 		if scrub.PlainName(name) != want {
 			t.Errorf("PlainName(%q) = %v", name, !want)
 		}
+	}
+}
+
+// checkDetectorLogs checks that each failed file logged what failed, and
+// nothing of the files or of what Presidio said back.
+func checkDetectorLogs(t *testing.T, name string, lines []string, files int) {
+	t.Helper()
+	want := map[string]string{"unreachable": "connection refused", "error status": "presidio returned 500", "bad answer": "decoding Presidio response"}[name]
+	failed := 0
+	for _, l := range lines {
+		if strings.HasPrefix(l, "WARN anonymise: the detector failed") {
+			failed++
+			if !strings.Contains(l, want) {
+				t.Errorf("%s: logged %q, want %q", name, l, want)
+			}
+		}
+		for _, s := range []string{"one.eml", "notes.md", "Ottoline", "0412 345 678", "no model loaded"} {
+			if strings.Contains(l, s) {
+				t.Errorf("%s: the log shows %q: %s", name, s, l)
+			}
+		}
+	}
+	if failed != files {
+		t.Errorf("%s: %d failures logged for %d files", name, failed, files)
 	}
 }

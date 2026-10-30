@@ -26,6 +26,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
 	"github.com/martinsuchenak/exemplar/internal/runlimit"
+	"github.com/paularlott/logger"
 )
 
 // Config is the anonymiser setup. A nil Config means ingest is not configured.
@@ -101,13 +102,24 @@ type Service struct {
 	now      func() time.Time
 	// runs caps concurrent ingests; nil means no cap.
 	runs *runlimit.Limiter
+	// log gets why the detector failed; nil logs nothing.
+	log logger.Logger
 }
 
 // NewService returns an ingest service; cfg nil leaves ingest unconfigured.
 // maxBytes caps one request's total input; 0 means no limit. runs caps
-// concurrent runs (shared with the anonymise tool); nil means no cap.
-func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64, runs *runlimit.Limiter) *Service {
-	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, cfg: cfg, maxBytes: maxBytes, now: time.Now, runs: runs}
+// concurrent runs (shared with the anonymise tool); nil means no cap. log
+// gets why the detector failed; nil logs nothing.
+func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, cfg *Config, maxBytes int64, runs *runlimit.Limiter, log logger.Logger) *Service {
+	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, cfg: cfg, maxBytes: maxBytes, now: time.Now, runs: runs, log: log}
+}
+
+// detectorFailed logs why the detector failed, never the file, its name or
+// what Presidio said back.
+func (s *Service) detectorFailed(err error) {
+	if s.log != nil && errors.Is(err, anonymise.ErrDetector) {
+		s.log.Warn("ingest: the detector failed", "error", anonymise.DetectorFailure(err))
+	}
 }
 
 // Begin claims an ingest slot before the upload is read, so concurrent
@@ -218,6 +230,7 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 		n++
 		fr := FileResult{Name: f.Name}
 		if err := prepared[i]; err != nil {
+			s.detectorFailed(err)
 			fr.Error = anonymise.PublicError(err)
 			if !errors.Is(err, anonymise.ErrDetector) {
 				fr.Error = "reading the headers: " + fr.Error
@@ -228,7 +241,8 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 		out, err := engine.Anonymise(ctx, f)
 		if err != nil {
 			// A detector failure's detail (its URL, host and network)
-			// stays on the server, unlogged.
+			// stays on the server, in its log.
+			s.detectorFailed(err)
 			fr.Error = anonymise.PublicError(err)
 			res.Files = append(res.Files, fr)
 			continue

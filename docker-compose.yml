@@ -34,7 +34,7 @@ services:
     stop_grace_period: 35s
 
   presidio:
-    image: ${PRESIDIO_IMAGE:-mcr.microsoft.com/presidio-analyzer:latest}
+    image: ${PRESIDIO_IMAGE:-mcr.microsoft.com/presidio-analyzer:2.2.362}
     restart: unless-stopped
     environment:
       # The default 30s worker timeout kills the worker while the model loads.

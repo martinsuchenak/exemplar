@@ -128,8 +128,8 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 		Fixtures: fixtures,
 		Persons:  persons,
 		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService, schemas),
-		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes, runs),
-		Scrub:    scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes, runs),
+		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes, runs, log),
+		Scrub:    scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes, runs, log),
 		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version, cfg.MaxImportBytes),
 		Backup:   backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),
 	}, nil

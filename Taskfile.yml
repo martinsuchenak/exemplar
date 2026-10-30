@@ -99,7 +99,7 @@ tasks:
   test:presidio:
     desc: Run the anonymiser against a throwaway Presidio Analyzer container (needs Docker; the model takes a minute to load)
     vars:
-      PRESIDIO_IMAGE: mcr.microsoft.com/presidio-analyzer:latest
+      PRESIDIO_IMAGE: mcr.microsoft.com/presidio-analyzer:2.2.362
     cmds:
       # Gunicorn's default 30s worker timeout kills the worker while the model loads.
       - docker run -d --rm --name exemplar-test-presidio -e GUNICORN_CMD_ARGS="--timeout 300" -p 127.0.0.1:15003:3000 {{.PRESIDIO_IMAGE}}
