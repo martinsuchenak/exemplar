@@ -304,7 +304,7 @@ exemplar ingest <dataset> <file-or-directory>... [--profile P] [--batch B] [--dr
 ```
 
 Admin key. Sends real emails and documents (`.eml`, `.txt`, `.md`, `.csv`,
-`.json`, `.html`, `.twig`, `.docx`, `.rtf` and the rest listed in
+`.json`, `.html`, `.twig`, `.docx`, `.rtf`, `.xlsx` and the rest listed in
 [anonymisation.md](anonymisation.md#documents)) to the server, which
 anonymises them and stores them in the quarantine dataset as unreviewed
 fixtures named `<batch>-001.eml`, `<batch>-002.csv`, …, keeping each file's

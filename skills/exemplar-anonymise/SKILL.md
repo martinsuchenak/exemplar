@@ -1,6 +1,6 @@
 ---
 name: exemplar-anonymise
-description: Anonymise real files (emails, text, Markdown, CSV, TSV, JSON, HTML, Twig and Jinja templates, DOCX, RTF) with the exemplar CLI, without reading the originals. Use when asked to anonymise, scrub, de-identify or redact personal data in files, to make real data safe to share or use as test data, or to put exemplar anonymise in a script or pipeline.
+description: Anonymise real files (emails, text, Markdown, CSV, TSV, JSON, HTML, Twig and Jinja templates, DOCX, RTF, XLSX) with the exemplar CLI, without reading the originals. Use when asked to anonymise, scrub, de-identify or redact personal data in files, to make real data safe to share or use as test data, or to put exemplar anonymise in a script or pipeline.
 ---
 
 # Anonymising files with exemplar
@@ -65,9 +65,9 @@ set -o pipefail; exemplar anonymise data.jsonl 2>/dev/null | jq -c '.name'
 
 Formats are picked by extension: `.eml`, `.txt`/`.text`/`.log`,
 `.md`/`.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`/`.ndjson`,
-`.html`/`.htm`, `.twig`, `.j2`/`.jinja`/`.jinja2`, `.docx`, `.rtf`. For
+`.html`/`.htm`, `.twig`, `.j2`/`.jinja`/`.jinja2`, `.docx`, `.rtf`, `.xlsx`. For
 stdin, `--format` takes the same names without the dot (`md`, `csv`, `json`,
-`eml`, `docx`…). PDF, XLSX, `.doc` and `.msg` are not supported; say so
+`eml`, `docx`, `xlsx`…). PDF, `.xls`, `.xlsm`, `.doc` and `.msg` are not supported; say so
 rather than converting them yourself, since converting means reading them.
 
 ## Choosing where it runs
@@ -93,7 +93,7 @@ them.
   failed, the error (`exemplar: 1 of 3 files failed`).
 - **Exit status** is non-zero when any file failed. A failed file writes
   nothing to stdout; with `--out-dir` the other files are still written.
-- **Dropped parts** (a DOCX's macros, an RTF's embedded objects) are listed
+- **Dropped parts** (a DOCX's or XLSX's macros, an RTF's embedded objects) are listed
   in the summary. They are removed, not anonymised; mention them to the
   user.
 - Errors name the problem (`not UTF-8 text`, `cannot anonymise .pdf`,

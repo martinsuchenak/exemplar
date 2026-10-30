@@ -208,9 +208,14 @@ spctl --assess --type open --context context:primary-signature --verbose=2 exemp
   format adds one, plus the structure it must keep and its parse errors.
   DOCX has a Word-shaped fixture in `docx_test.go` (split runs, tracked
   changes, comments, reviewers, properties, images, an embedded workbook,
-  macros); a new part rule adds its secrets there. RTF has one in
+  macros); a new part rule adds its secrets there. XLSX has one in
+  `xlsx_test.go` (a sheet named for a person, shared strings, column
+  labels, formulas, comments, a table, a pivot cache, a chart, external
+  links); a new Excel rule adds its secrets there. RTF has one in
   `rtf_test.go` (split runs, escapes, fields, comments, `\info`, shapes,
-  pictures, object data).
+  pictures, object data). The parsers also have fuzz tests in
+  `fuzz_test.go`, which `go test` runs on their seeds; to fuzz one, run
+  `go test ./internal/anonymise -run '^$' -fuzz '^FuzzXLSX$' -fuzztime 1m`.
 
 - **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
   that records envelopes and data, can require AUTH PLAIN and can reject a

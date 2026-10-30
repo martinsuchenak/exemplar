@@ -59,7 +59,7 @@ later` (see [Presidio](#presidio)).
 | Data | Found by | Replaced with |
 |------|----------|---------------|
 | People in headers | Address headers | A registry person; the same real address always maps to the same person |
-| Names in text | Presidio (`PERSON`), plus every name from the batch's headers | Fake first and last names, case kept, each real name token mapped once |
+| Names in text | Presidio (`PERSON`), plus every name from the batch's headers | Fake first and last names, case kept, each real name token mapped once; also in a mention (`@Sarah Lane`), but not after the `@` of an address |
 | Email addresses | Pattern | The person's fake address, or a fake local part at a fake domain |
 | Domains and companies | Addresses, URLs, `Pty Ltd`-style suffixes | A fake company; its domain is the company name on `.example`. A company name learned from a domain (`acme` from `acme.com.au`) is also replaced inside identifiers: `acme-prod`, `logo_acme.png`. Every domain in the address headers is also replaced where it appears alone, as in a DMARC subject |
 | Subdomains | Domains anywhere | Generic labels (`mail`, `www`, `api`, `reply`, `mx1`…) kept; any other label (a client, product or system name) replaced with a fake, the same every time |
@@ -165,13 +165,35 @@ back broken.
 | HTML | `.html`, `.htm` | Visible text, `<title>`, `<meta>` content, comments, and the `alt`, `title`, `href`, `src`, `placeholder`, `aria-label` and `value` attributes, character references decoded | Markup, scripts and styles (a value found elsewhere is still replaced in them), and references outside replaced text |
 | DOCX | `.docx` | See [DOCX](#docx) | See [DOCX](#docx) |
 | RTF | `.rtf` | See [RTF](#rtf) | See [RTF](#rtf) |
+| XLSX | `.xlsx` | See [XLSX](#xlsx) | See [XLSX](#xlsx) |
 | Twig, Jinja | `.twig`, `.j2`, `.jinja`, `.jinja2` | Literal text (as HTML for `page.html.twig`), comments, and quoted strings inside tags | Every tag as written outside its strings: variables, filters and keywords are code, so `{{ customer.name }}` is untouched while `{% set signer = "Jane Doe" %}` is not. `{% verbatim %}` and `{% raw %}` bodies are literal text |
 
 A CSV column or JSON key named for an entity marks its values as that entity,
 even where the detector would not find them: `name`, `full_name`,
 `first_name`, `last_name`, `surname`; `email`, `e-mail`, `email_address`;
-`phone`, `mobile`, `tel`; `company`, `organisation`, `employer`. Only letters
-and digits of the label count, in any case.
+`phone`, `mobile`, `tel`; `company`, `organisation`, `employer`. A longer
+label ending in a phone or email one counts too: `Mobile Phone`,
+`homePhone`, `Contact Phone Number`, `Work Email`. Only letters and digits
+of the label count, in any case. A placeholder under such a label
+(`N/A`, `TBD`, `Total`, `unknown`…) is not taken for one, nor is a value
+under a phone label with fewer than 6 digits (an extension, a year): a fake
+replaces its value everywhere in the file, so taking `Total` for a name
+would turn every "Total" into a person. Detection still reads them.
+
+**Columns of people.** A column whose label says nothing (`Account
+Manager`, `Configurator`) can still be a column of people: the detector
+finds some of the names in it and misses others. Once detection has run,
+a column counts as one of people when known people are at least half of
+it, by distinct values (at least two) or by cells (at least three, as when
+one detected name fills most rows). Its other values that look like names,
+two to five words with letters and no digits or symbols, are then taken
+for people, and their fakes replace them everywhere in the file. A single
+word (`Vacant`, `Admin`) and a placeholder are not. A name learned in one
+column counts in the others, so the rule repeats until nothing changes. A
+column is a CSV column below its header row, a sheet's column below its
+label row (the header row, or else the sheet's first row with text), or
+the values of one JSON key across objects. Its label is never one of its
+values, so it stays.
 
 Text must be UTF-8, with or without a byte-order mark, or UTF-16 with one;
 the output keeps the input's encoding. Other encodings, and files holding NUL
@@ -227,6 +249,66 @@ hint. An error names a part only by the name Office gives it; it never
 repeats a part name, element name or relationship id the sender chose. The output's entries
 keep their order, with `[Content_Types].xml` first and fixed timestamps, so
 the same file and key give the same bytes.
+
+### XLSX
+
+An `.xlsx` is the same kind of package as a DOCX, and is read the same way:
+each part by a rule that knows what it can hold, text rewritten in place,
+images and embedded files replaced, unknown parts dropped, with the same
+limits, checks and error naming.
+
+| Part | What is personal there | Treatment |
+|------|------------------------|-----------|
+| `xl/sharedStrings.xml` | Most cell text: Excel keeps each distinct string once and cells point to it | Rewritten, runs joined as in DOCX. Phonetic readings (`rPh`) are searched too, and dropped when their string changes, since they spell it out |
+| `xl/worksheets/sheet*.xml`, `xl/chartsheets/sheet*.xml` | Inline strings and formula results, formulas, links' text and tooltips, printed headers and footers, data validation prompts and lists, filter values, scenarios' users and comments, a protected range's account | Rewritten; formulas as described below; the account replaced whole; numbers, dates and styles kept |
+| `xl/workbook.xml` | Sheet names, defined names' formulas and comments, who reserved the file (`fileSharing`), where it was last saved (`C:\Users\jdoe\…`) | Sheet names rewritten as described below; the save path replaced like a DOCX's file paths |
+| `xl/comments*.xml` | Comments and their authors | Rewritten |
+| `xl/threadedComments/*`, `xl/persons/*` | Threaded comments, and the people who wrote them with their account ids | Rewritten; a comment's mentions are dropped when its text changes, since they give offsets into it; account ids faked as in DOCX |
+| `xl/tables/*`, `xl/queryTables/*` | Column names, totals labels, filter values | Rewritten; a column name stays equal to its header cell |
+| `xl/pivotCache/*`, `xl/pivotTables/*` | A full copy of the pivot's source data; field and item captions | Rewritten like the cells, so a value gets the same fake as its cell |
+| `xl/externalLinks/*` | Another workbook's path, sheet names and cached values | Rewritten; the path replaced like a DOCX's linked files |
+| `xl/connections.xml` | Connection strings and queries, with database paths and user names | Replaced whole, like a mail merge's sources |
+| `xl/drawings/*`, `xl/charts/*`, slicers, timelines | Text boxes, shape and picture descriptions, chart titles and categories, captions | Rewritten as in DOCX |
+| `xl/drawings/vmlDrawing*.vml` | The older drawings Excel keeps comment boxes, form controls and pictures in printed headers in: their text, a picture's title (often its file's name), alt text, a control's linked cell | Rewritten; a linked cell follows its sheet |
+| `docProps/*`, `customXml/*`, relationships, `xl/media/*`, `xl/embeddings/*` | As in DOCX | As in DOCX |
+| Styles, theme, calculation chain, cell metadata, form controls, chart styles | Nothing personal | Kept byte for byte |
+| Anything else (macros, ActiveX, printer settings, add-ins, a Power Pivot data model, macro sheets, shared-workbook revisions…) | Unknown | Dropped and listed (`dropped_parts`). A sheet's link to its printer settings goes with them; a workbook that cannot do without a dropped part (a macro sheet, a data model) fails rather than coming back broken |
+
+**Column labels.** As in a CSV, a column whose label names an entity
+(`Name`, `Email`, `Phone`, `Company`…) marks the cells below it, even where
+the detector would not find them. On each sheet the label row is the first
+row with such a label in it, so a title above the table does no harm. A
+label marks only its own block: the cells below it, down to the first blank
+row or another label. An empty or missing cell inside the block is a value
+not given, so a sparse `Phone` column is still read whole. A second table
+further down, after a blank row, is not read as
+more of the first, and a form with its labels down a column ("Name",
+"Email", "Phone", each beside its value) does not mark its own labels. A
+phone number typed as a number in a `Phone` column, with at least 6 digits,
+has its digits faked and stays a number of the same length; the pivot
+caches that copy it get the same fake. A column with no such label can still
+be found to hold people; see [Columns of people](#documents).
+
+**Formulas.** Only a formula's strings (`"Dear "&A1`) are searched and
+rewritten; functions, cells and names stay as written. A sheet named inside
+a string (`INDIRECT("'Sales'!A1")`) follows the sheet's new name, as a
+reference outside one does. A formula's cached result is rewritten like any
+other text, so it matches.
+
+**Sheet names.** A sheet named for a person is renamed, and every
+reference to it follows: formulas, defined names, links, data validations,
+charts, pivot caches and shapes linked to a cell. The new name keeps to
+Excel's rules: at most 31 characters, none of `[]:*?/\`, no apostrophe at
+either end, and unique in the workbook (`Ann Lee (2)`). A reference to a
+table column (`Customers[Full name]`) follows the column's header cell.
+
+**Not covered.** Defined names and table names are identifiers and are
+kept as written. A cell's number is never changed outside a `Phone`
+column, so a phone number typed as a number in a column labelled otherwise
+survives. Newer chart types (waterfall, histogram, funnel and the like) are
+not read: they are dropped, and since the sheet cannot do without them,
+the workbook fails. Workbooks with macros
+(`.xlsm`), binary workbooks (`.xlsb`) and old `.xls` files are refused.
 
 ### RTF
 
@@ -417,12 +499,27 @@ docker run -d --name presidio -e GUNICORN_CMD_ARGS="--timeout 300" \
 
 - `GUNICORN_CMD_ARGS="--timeout 300"` is needed: the first request loads the model, which takes longer than Gunicorn's default 30-second worker timeout, so the worker is killed and the request hangs.
 - The image is about 1 GB.
-- Default Presidio does not tag organisations, ABNs or Australian mobile numbers. exemplar's own patterns cover those, and companies are also learned from addresses.
+- Default Presidio does not tag organisations, ABNs, Australian mobile numbers or many other countries' numbers. exemplar's own patterns cover those (other countries' numbers when written with their calling code), and companies are also learned from addresses.
 - To tune recognisers, mount a configuration file and point `ANALYZER_CONF_FILE` at it (see the Presidio documentation).
 
 exemplar sends each text part with the batch's header names as an ad-hoc deny
 list, so Presidio tags those names even where its model would not. Presidio
 reports offsets in characters; the client converts them to byte offsets.
+A name Presidio runs into the number beside it ("Sarah Lane 0412" out of
+"Sarah Lane 0412 345 678") loses its words with no letter, so the phone
+number is still found and replaced whole.
+
+**What it misses.** Presidio's model is trained mostly on English text, so
+in free text it misses many names from other languages and names written in
+capitals (`SARAH LANE`); a column of them is caught by the column rule
+(see [Columns of people](#documents)), a sentence is not. Its phone
+recogniser knows only some countries' formats. exemplar's patterns add
+Australia's, and any number written with its calling code (`+234 801 234
+5678`, 8 to 15 digits); a number written the way another country writes it
+without one (`0801 234 5678`) can be left as written when nothing labels
+it, since it looks like any other number. A column labelled `Phone` or
+`Name` is safe either way; a free-text column holding contact details needs
+checking by hand.
 
 **When Presidio fails.** A file fails if Presidio cannot be reached, answers
 with an error status, or sends something that is not its JSON. The error
@@ -466,11 +563,11 @@ By default every attachment is replaced by a generated file of the same
 type, so nothing of the original survives. A profile with
 `attachments = "anonymise"` rewrites instead the attachments the anonymiser
 reads, in place, through the same handler a document of that format goes
-through: text, Markdown, CSV, TSV, JSON, JSON Lines, HTML, DOCX and RTF. The
+through: text, Markdown, CSV, TSV, JSON, JSON Lines, HTML, DOCX, RTF and XLSX. The
 format comes from the attachment's file name, or its media type when the
 name gives none (`text/csv`, `application/json`…); text is converted from
-its charset to UTF-8 first. Everything else (images, PDFs, spreadsheets, an
-`.eml` sent as a file) is still replaced, and so is an attachment its
+its charset to UTF-8 first. Everything else (images, PDFs, `.xls` and
+other spreadsheets, an `.eml` sent as a file) is still replaced, and so is an attachment its
 handler cannot read: a broken file is never passed through.
 
 A rewritten attachment is read with the email's people already known, and
@@ -496,7 +593,7 @@ ingest with the same key will produce.
 
 ## Limits
 
-- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, XLSX, images, `.doc`, `.dotx`, `.docm`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
+- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, images, `.doc`, `.dotx`, `.docm`, `.xls`, `.xlsm`, `.xlsb`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
 - In JSON, keys and numbers are never changed: a phone number stored as a number, or a name used as a key, survives. In templates, nothing is matched across a tag.
 - Charsets other than UTF-8, US-ASCII, ISO-8859-1 and Windows-1252 are rejected per file.
 - Attachment contents are replaced, not anonymised, unless the profile rewrites attachments in a format the anonymiser reads; a PDF's text never survives.

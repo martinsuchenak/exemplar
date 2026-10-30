@@ -78,6 +78,34 @@ func Email(from, to, domain, subject, body string) []byte {
 		">\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n")
 }
 
+// XLSX builds a minimal workbook whose sheet holds text in one cell, below
+// a Notes label, plus a part no anonymiser rule knows (xl/vbaProject.bin),
+// which is dropped.
+func XLSX(text string) []byte {
+	var b bytes.Buffer
+	zw := zip.NewWriter(&b)
+	x := `xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"`
+	for _, p := range [][2]string{
+		{"[Content_Types].xml", `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+			`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+			`<Default Extension="xml" ContentType="application/xml"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`},
+		{"_rels/.rels", `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+			`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`},
+		{"xl/workbook.xml", `<workbook ` + x + ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+			`<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>`},
+		{"xl/_rels/workbook.xml.rels", `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+			`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`},
+		{"xl/worksheets/sheet1.xml", `<worksheet ` + x + `><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Notes</t></is></c></row>` +
+			`<row r="2"><c r="A2" t="inlineStr"><is><t>` + strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text) + `</t></is></c></row></sheetData></worksheet>`},
+		{"xl/vbaProject.bin", "macros"},
+	} {
+		w, _ := zw.Create(p[0])
+		_, _ = w.Write([]byte(p[1]))
+	}
+	_ = zw.Close()
+	return b.Bytes()
+}
+
 // DOCX builds a minimal Word document whose body is one paragraph of text,
 // plus a part no anonymiser rule knows (word/vbaProject.bin), which is
 // dropped.

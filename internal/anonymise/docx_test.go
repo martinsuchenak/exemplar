@@ -22,7 +22,7 @@ const (
 )
 
 // buildDOCX zips parts in order.
-func buildDOCX(t *testing.T, parts [][2]string) []byte {
+func buildDOCX(t testing.TB, parts [][2]string) []byte {
 	t.Helper()
 	var b bytes.Buffer
 	zw := zip.NewWriter(&b)
@@ -357,7 +357,7 @@ func TestGeneratedDOCXRoundTrip(t *testing.T) {
 
 func TestDOCXErrors(t *testing.T) {
 	minimal := func(doc string, extra ...[2]string) []byte { return minimalDOCX(t, doc, extra...) }
-	many := make([][2]string, docxMaxParts)
+	many := make([][2]string, ooxmlMaxParts)
 	for i := range many {
 		many[i] = [2]string{fmt.Sprintf("word/media/image%d.png", i), "x"}
 	}
@@ -369,7 +369,7 @@ func TestDOCXErrors(t *testing.T) {
 		"old .doc":       {[]byte("\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"), "password-protected or old .doc"},
 		"no document":    {buildDOCX(t, [][2]string{{"[Content_Types].xml", "<Types/>"}}), "no word/document.xml"},
 		"too many":       {minimal("<w:document "+wNS+"/>", many...), "over 2000 parts"},
-		"bomb":           {minimal("<w:document "+wNS+"/>", [2]string{"word/media/big.png", strings.Repeat("\x00", docxMinExpand+1)}), "expands to more than"},
+		"bomb":           {minimal("<w:document "+wNS+"/>", [2]string{"word/media/big.png", strings.Repeat("\x00", ooxmlMinExpand+1)}), "expands to more than"},
 		"unsafe name":    {minimal("<w:document "+wNS+"/>", [2]string{"word/../../etc/x.xml", "x"}), "unsafe name"},
 		"twice":          {minimal("<w:document "+wNS+"/>", [2]string{"WORD/document.xml", "x"}), "twice"},
 		"broken xml":     {minimal("<w:document " + wNS + "><w:body>"), "word/document.xml"},
@@ -423,7 +423,7 @@ func TestDOCXErrorsKeepSenderTextOut(t *testing.T) {
 		"word/_rels/" + secret + ".xml.rels": "a part named by the sender",
 		"word/media/" + secret + ".png":      "a part named by the sender",
 	} {
-		if got := partLabel(name); got != want {
+		if got := docxFormat.partLabel(name); got != want {
 			t.Errorf("partLabel(%q) = %q, want %q", name, got, want)
 		}
 	}
@@ -447,7 +447,7 @@ func TestDOCXNodeBudgetTotal(t *testing.T) {
 		{"word/document.xml", tag},
 		{"word/header1.xml", tag},
 	})
-	if _, err := openDOCX(data); err == nil || !strings.Contains(err.Error(), "XML tokens in total") {
+	if _, err := docxFormat.open(data); err == nil || !strings.Contains(err.Error(), "XML tokens in total") {
 		t.Errorf("err = %v, want a document node budget error", err)
 	}
 }
@@ -474,7 +474,7 @@ func TestDOCXAbsoluteExpandBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	chunk := strings.Repeat(`<w:t>a</w:t>`, 1024)
-	for written := 0; written <= docxMaxExpand; written += len(chunk) {
+	for written := 0; written <= ooxmlMaxExpand; written += len(chunk) {
 		if _, err := w.Write([]byte(chunk)); err != nil {
 			t.Fatal(err)
 		}
@@ -482,7 +482,7 @@ func TestDOCXAbsoluteExpandBudget(t *testing.T) {
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readDOCX(b.Bytes()); err == nil || !strings.Contains(err.Error(), "MiB in total") {
+	if _, err := docxFormat.read(b.Bytes()); err == nil || !strings.Contains(err.Error(), "MiB in total") {
 		t.Errorf("err = %v, want an absolute expansion budget error", err)
 	}
 }
@@ -492,7 +492,7 @@ func TestDOCXAbsoluteExpandBudget(t *testing.T) {
 func TestDOCXRunsAreSplitAtBreaks(t *testing.T) {
 	doc := `<w:document ` + wNS + `><w:body><w:p><w:r><w:t>Sarah</w:t><w:tab/><w:t>Lane</w:t><w:br/><w:t>A</w:t></w:r>` +
 		`<w:del><w:r><w:delText>B</w:delText></w:r></w:del><w:r><w:t>C</w:t><w:t>D</w:t></w:r></w:p></w:body></w:document>`
-	pkg, err := openDOCX(buildDOCX(t, [][2]string{{"[Content_Types].xml", "<Types/>"}, {"word/document.xml", doc}}))
+	pkg, err := docxFormat.open(buildDOCX(t, [][2]string{{"[Content_Types].xml", "<Types/>"}, {"word/document.xml", doc}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -604,14 +604,14 @@ func TestDirectFakes(t *testing.T) {
 		"Sarah Lane/notes, 2025.bin":     regexp.MustCompile(`^part-[0-9a-f]{6}\.bin$`),
 		"word/vbaProject.bin.old":        regexp.MustCompile(`^part-[0-9a-f]{6}\.old$`),
 	} {
-		if got := e.droppedPartName(in); !want.MatchString(got) {
+		if got := docxFormat.droppedPartName(e, in); !want.MatchString(got) {
 			t.Errorf("droppedPartName(%q) = %q", in, got)
 		}
 	}
 }
 
 func TestPartRulesAndPaths(t *testing.T) {
-	for name, want := range map[string]docxRule{
+	for name, want := range map[string]ooxmlRule{
 		"[Content_Types].xml": ruleContentTypes, "_rels/.rels": ruleRels, "word/_rels/document.xml.rels": ruleRels,
 		"word/document.xml": ruleBody, "word/header2.xml": ruleBody, "word/glossary/document.xml": ruleBody,
 		"word/settings.xml": ruleSettings, "docProps/core.xml": ruleCore, "word/styles.xml": ruleKeep,
@@ -619,7 +619,7 @@ func TestPartRulesAndPaths(t *testing.T) {
 		"word/charts/chart1.xml": ruleChart, "word/diagrams/data1.xml": ruleDrawing, "customXml/item2.xml": ruleAllText,
 		"word/vbaProject.bin": ruleDrop, "word/ink/ink1.xml": ruleDrop,
 	} {
-		if got := ruleFor(name); got != want {
+		if got := docxFormat.ruleFor(name); got != want {
 			t.Errorf("ruleFor(%s) = %d, want %d", name, got, want)
 		}
 	}

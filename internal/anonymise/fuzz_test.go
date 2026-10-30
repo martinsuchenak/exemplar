@@ -1,6 +1,10 @@
 package anonymise
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/martinsuchenak/exemplar/internal/textswap"
+)
 
 // The parsers read files from anyone with a key: whatever the bytes, they
 // return an error or a result, never panic.
@@ -45,6 +49,61 @@ func FuzzScanXML(f *testing.F) {
 					t.Fatalf("attribute outside its tag: %+v", a)
 				}
 			}
+		}
+	})
+}
+
+// Formulas and headers are parsed by hand. Whatever the text, they never
+// panic, and with nothing to replace they come back as they were.
+func FuzzXLSXFormula(f *testing.F) {
+	for _, s := range []string{`SUM('Sarah Lane'!A1:B2)&"x ""y"""`, `[1]Acme!A1+'[2]x''y'!B1`, `T[[#This Row],[a'#b]]+[@[c]]`, `IF(#REF!,"",Jo:Summary!$A$1)`, `'`, `"`, `[`, `[1]`, `x:`} {
+		f.Add(s)
+	}
+	none, err := textswap.New(nil)
+	if err != nil {
+		f.Fatal(err)
+	}
+	some, err := textswap.New(map[string]string{"Sarah Lane": "Ann O'Hara", "x": "y"})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		x := &xlsxBook{sheets: []string{"Sarah Lane", "Jo", "x"}}
+		if got := x.formula(none, s); got != s {
+			t.Fatalf("formula(%q) = %q with nothing to replace", s, got)
+		}
+		if got := rewriteHeaderFooter(none, s); got != s {
+			t.Fatalf("rewriteHeaderFooter(%q) = %q with nothing to replace", s, got)
+		}
+		_ = (&xlsxBook{sheets: []string{"Sarah Lane", "x"}}).formula(some, s)
+		_ = rewriteHeaderFooter(some, s)
+		_ = formulaStrings(s)
+		_ = headerFooterText(s)
+		_, _, _ = parseCellRef(s)
+	})
+}
+
+// FuzzXLSX fuzzes a workbook's sheet and shared strings inside a valid
+// package. Fuzzing the zip itself mostly exercises decompression, and a
+// mutated stream can expand to the 16 MiB a part may hold, which is slow
+// under the fuzzer's instrumentation.
+func FuzzXLSX(f *testing.F) {
+	f.Add(`<worksheet `+xNS+`><sheetData><row><c t="inlineStr"><is><t>Name</t></is></c><c t="s"><v>1</v></c></row>`+
+		`<row r="2"><c r="A2" t="s"><v>0</v></c><c><f>'Sarah Lane'!A1&amp;"Sarah Lane"</f><v>3</v></c><c t="str"><v>Sarah Lane</v></c></row></sheetData>`+
+		`<headerFooter><oddHeader>&amp;LSarah Lane</oddHeader></headerFooter></worksheet>`,
+		`<sst `+xNS+`><si><r><t>Sa</t></r><r><t>rah Lane</t></r><rPh><t>x</t></rPh></si><si><t>Phone</t></si></sst>`)
+	// One engine for every input: building one per input is too slow to
+	// fuzz, and what it learns from earlier inputs does no harm.
+	e, err := New(testKey(f), defaultProfile(f), wordDetector{names: []string{"Sarah Lane"}}, newMemRegistry())
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Fuzz(func(t *testing.T, sheet, shared string) {
+		data := minimalXLSX(t, `<workbook `+xNS+` `+rNS+`><sheets><sheet name="Sarah Lane" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+			sheet, [2]string{"xl/sharedStrings.xml", shared})
+		out, err := e.Anonymise(ctx, File{Name: "f.xlsx", Data: data})
+		if err == nil && out == nil {
+			t.Fatal("no output and no error")
 		}
 	})
 }

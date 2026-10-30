@@ -75,7 +75,7 @@ func (d wordDetector) Detect(_ context.Context, text string, extra []string, _ f
 	return spans, nil
 }
 
-func testKey(t *testing.T) Key {
+func testKey(t testing.TB) Key {
 	t.Helper()
 	k, err := NewKey([]byte("0123456789abcdef-test-key"))
 	if err != nil {
@@ -84,7 +84,7 @@ func testKey(t *testing.T) Key {
 	return k
 }
 
-func defaultProfile(t *testing.T) *Profile {
+func defaultProfile(t testing.TB) *Profile {
 	t.Helper()
 	ps, err := LoadProfiles("")
 	if err != nil {
@@ -397,6 +397,24 @@ func TestRealPresidio(t *testing.T) {
 			if strings.Contains(strings.ToLower(text), strings.ToLower(s)) {
 				t.Errorf("email %d still contains %q", i, s)
 			}
+		}
+	}
+}
+
+// A detector can run a name into the number beside it. The name is trimmed
+// to its words, so the phone number it ran into is still replaced whole.
+func TestNameRunIntoPhone(t *testing.T) {
+	e, err := New(testKey(t), defaultProfile(t), wordDetector{names: []string{"Sarah Lane 0412"}}, newMemRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.Anonymise(context.Background(), File{Name: "contact.txt", Data: []byte("Sarah Lane 0412 345 678, 0498 765 432\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"Sarah", "Lane", "345 678", "0412", "765 432"} {
+		if strings.Contains(string(out.Data), secret) {
+			t.Errorf("%q kept: %s", secret, out.Data)
 		}
 	}
 }

@@ -72,10 +72,12 @@ handler shares the engine's detection, fakes and registry, so a person gets
 the same fake in every format. Email has its own handler; every text
 document format (text, Markdown, CSV, JSON, HTML, Twig and Jinja) shares
 `docHandler` in `document.go`, and only says where its text is, how to write
-it back and what structure must survive. DOCX has its own handler
-(`docx.go`): a rule per part, and text rewritten by splicing bytes at the
-offsets `xmlscan.go` finds, since re-encoding XML would rename namespace
-prefixes Word depends on. RTF has its own too (`rtf.go`): a tokeniser, a
+it back and what structure must survive. DOCX and XLSX share a handler for
+Office packages (`ooxml.go`): a rule per part, and text rewritten by
+splicing bytes at the offsets `xmlscan.go` finds, since re-encoding XML
+would rename namespace prefixes Office depends on. `docx.go` and `xlsx.go`
+say which rule reads each part; `xlsx.go` also reads formulas, so sheet
+names and the references to them change together. RTF has its own too (`rtf.go`): a tokeniser, a
 reader that knows which destinations hold text, and the same splicing, so
 only changed text is written again.
 `app.Open` builds the anonymiser from the key, Presidio URL and profiles; with

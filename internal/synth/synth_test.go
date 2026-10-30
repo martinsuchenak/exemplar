@@ -260,8 +260,22 @@ func TestSpreadsheetHelpers(t *testing.T) {
 			t.Errorf("columnName(%d) = %s, want %s", i, got, want)
 		}
 	}
-	if got := sheetName("Policy [Schedule]: a/b? very long title text"); len(got) > 31 || strings.ContainsAny(got, "[]:/?") {
-		t.Errorf("sheetName = %q", got)
+	if got := FitSheetName("Policy [Schedule]: a/b? very long title text", MaxSheetName); len(got) > 31 || strings.ContainsAny(got, "[]:/?") {
+		t.Errorf("FitSheetName = %q", got)
+	}
+	for in, want := range map[string]string{
+		"😀" + strings.Repeat("y", 30): "😀" + strings.Repeat("y", 29), // 31 UTF-16 units, not 31 bytes
+		"ab😀c":                        "ab😀c",
+		"'quoted' ":                   "quoted",
+		"/'":                          "Sheet",
+		"tab\there":                   "tab here",
+	} {
+		if got := FitSheetName(in, MaxSheetName); got != want {
+			t.Errorf("FitSheetName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := FitSheetName("ab😀c", 3); got != "ab" {
+		t.Errorf("FitSheetName split a character: %q", got)
 	}
 	if rtfEscape(`a{b}\ü`) != `a\{b\}\\\u252?` {
 		t.Errorf("rtfEscape = %q", rtfEscape(`a{b}\ü`))

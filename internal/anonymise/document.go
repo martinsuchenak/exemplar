@@ -24,6 +24,11 @@ type docText struct {
 	// entity, when set, says what the whole value is, as a CSV column or
 	// a JSON key named "email" does. It is added whatever detection finds.
 	entity string
+	// column, when set, names the table column the value is a cell of,
+	// below the column's label: a CSV column, a sheet's column, a JSON key.
+	// Such a text is only counted (see addColumnNames), not searched, since
+	// the same value is also in a text that is.
+	column string
 }
 
 // doc is one parsed document.
@@ -143,7 +148,10 @@ func (e *Engine) detectTexts(ctx context.Context, texts []docText, f *found) err
 		return err
 	}
 	for _, t := range texts {
-		if t.entity != "" && strings.TrimSpace(t.value) != "" {
+		if t.column != "" {
+			continue
+		}
+		if labelled(t) {
 			f.add(t.value, t.entity)
 		}
 		if chunk.Len() > 0 && chunk.Len()+len(t.value) > detectChunk {
@@ -156,7 +164,69 @@ func (e *Engine) detectTexts(ctx context.Context, texts []docText, f *found) err
 		}
 		chunk.WriteString(t.value)
 	}
-	return flush()
+	if err := flush(); err != nil {
+		return err
+	}
+	f.addColumnNames(texts)
+	return nil
+}
+
+// addColumnNames takes a column whose values are mostly people for a column
+// of people, as a "Name" label would, though its label is "Account
+// Manager" or nothing a hint knows. Detection finds some of the names in it
+// and misses others, often the same few staff names on every row; each of
+// those that looks like a name (see columnName) is then a person too. A
+// column counts when known people are at least half of it, counted either
+// way: by distinct values (at least two), or by cells (at least three), as
+// when one detected name fills most rows and the few others are missed.
+// A name learned in one column counts in the others,
+// so the rule runs until nothing changes: it only ever adds people, so the
+// result does not depend on the order columns are read in.
+func (f *found) addColumnNames(texts []docText) {
+	columns := map[string]map[string]int{} // value -> cells, by column
+	for _, t := range texts {
+		v := cleanValue(t.value)
+		if t.column == "" || v == "" || placeholders[strings.ToLower(v)] {
+			continue
+		}
+		if columns[t.column] == nil {
+			columns[t.column] = map[string]int{}
+		}
+		columns[t.column][v]++
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, values := range columns {
+			people, peopleCells, cells := 0, 0, 0
+			for v, n := range values {
+				cells += n
+				if f.entities[v] == EntityPerson {
+					people, peopleCells = people+1, peopleCells+n
+				}
+			}
+			byValues := people >= 2 && 2*people >= len(values)
+			byCells := peopleCells >= 3 && 2*peopleCells >= cells
+			if !byValues && !byCells {
+				continue
+			}
+			for v := range values {
+				if _, known := f.entities[v]; !known && columnName(v) {
+					f.add(v, EntityPerson)
+					changed = changed || f.entities[v] == EntityPerson
+				}
+			}
+		}
+	}
+}
+
+// columnName reports whether a value in a column of people looks like a
+// name: two to five words with letters, no digits and nothing an address or
+// a path has. A single word ("Vacant", "Admin") is too often not a person,
+// and its fake would replace it everywhere in the file.
+func columnName(v string) bool {
+	words := strings.Fields(v)
+	return len(words) >= 2 && len(words) <= 5 && plausibleName(v) &&
+		!strings.ContainsAny(v, "0123456789@#&/\\=+_|<>{}[]")
 }
 
 // fieldHints are the column and key names whose values are known to be one
@@ -171,9 +241,55 @@ var fieldHints = map[string]string{
 	"employer": EntityCompany,
 }
 
+// placeholders are values a labelled column holds that are no one: a totals
+// row, a gap filled in. A fake replaces a value everywhere in a file, so one
+// of these taken for a name would turn every "Total" into a person.
+var placeholders = map[string]bool{
+	"total": true, "totals": true, "subtotal": true, "grand total": true, "sum": true,
+	"n/a": true, "na": true, "none": true, "nil": true, "null": true, "-": true, "--": true, "?": true,
+	"tbd": true, "tba": true, "tbc": true, "unknown": true, "various": true, "other": true, "misc": true,
+}
+
+// labelled reports whether a text's label says what it is: it has one, and
+// the text is not a placeholder, nor a phone number too short to be one
+// (an extension, a year).
+func labelled(t docText) bool {
+	v := strings.TrimSpace(t.value)
+	if t.entity == "" || v == "" || placeholders[strings.ToLower(v)] {
+		return false
+	}
+	if t.entity == EntityPhone {
+		digits := 0
+		for _, r := range v {
+			if r >= '0' && r <= '9' {
+				digits++
+			}
+		}
+		return digits >= minPhoneDigits
+	}
+	return true
+}
+
+// fieldSuffixes name an entity at the end of a longer label: "Mobile Phone",
+// "Work Email", "Contact Phone Number", "homePhone". Only phones and emails:
+// a label ending in "name" is as often a product's or a file's.
+var fieldSuffixes = []struct{ suffix, entity string }{
+	{"phone", EntityPhone}, {"phonenumber", EntityPhone}, {"mobile", EntityPhone}, {"mobilenumber", EntityPhone},
+	{"email", EntityEmail}, {"emailaddress", EntityEmail},
+}
+
 // fieldHint returns the entity a column or key name says its values are.
 func fieldHint(label string) string {
-	return fieldHints[companyKey(label)]
+	key := companyKey(label)
+	if e := fieldHints[key]; e != "" {
+		return e
+	}
+	for _, s := range fieldSuffixes {
+		if strings.HasSuffix(key, s.suffix) {
+			return s.entity
+		}
+	}
+	return ""
 }
 
 // decodeText returns a file's text as UTF-8, and a function that encodes a

@@ -12,7 +12,7 @@ import (
 )
 
 // attachmentMail carries every kind of attachment: ones the anonymiser reads
-// (a CSV in Windows-1252, a DOCX with macros, an RTF, unnamed JSON) and
+// (a CSV in Windows-1252, a DOCX with macros, an RTF, unnamed JSON, an XLSX) and
 // ones it does not (a PNG, a PDF, an .eml sent as a file), plus a broken
 // DOCX, and the DOCX again without a name. Wendy Moss is named only in the
 // CSV's Name column and the body.
@@ -23,6 +23,9 @@ func attachmentMail(t *testing.T) string {
 		{"word/document.xml", xmlH + `<w:document ` + wNS + `><w:body><w:p><w:r><w:t>Quote for Sarah Lane</w:t></w:r></w:p></w:body></w:document>`},
 		{"word/vbaProject.bin", "macros"},
 	})
+	xlsx := minimalXLSX(t, `<workbook `+xNS+` `+rNS+`><sheets><sheet name="Tom Baker" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		`<worksheet `+xNS+`><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Name</t></is></c></row>`+
+			`<row r="2"><c r="A2" t="inlineStr"><is><t>Wendy Moss</t></is></c><c r="B2"><f>'Tom Baker'!A2</f></c></row></sheetData></worksheet>`)
 	part := func(headers, body string) string {
 		return "--B\r\n" + headers + "\r\n\r\n" + body + "\r\n"
 	}
@@ -40,6 +43,8 @@ func attachmentMail(t *testing.T) string {
 			b64(`{"name": "Wendy Moss", "phone": "0412 345 678"}`)) +
 		part("Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\nContent-Disposition: attachment\r\nContent-Transfer-Encoding: base64",
 			base64.StdEncoding.EncodeToString(docx)) +
+		part("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name=\"budget.xlsx\"\r\nContent-Disposition: attachment; filename=\"budget.xlsx\"\r\nContent-Transfer-Encoding: base64",
+			base64.StdEncoding.EncodeToString(xlsx)) +
 		part("Content-Type: image/png; name=\"Sarah.png\"\r\nContent-Disposition: attachment; filename=\"Sarah.png\"\r\nContent-Transfer-Encoding: base64",
 			b64("\x89PNG real photo")) +
 		part("Content-Type: application/pdf; name=\"Sarah.pdf\"\r\nContent-Disposition: attachment; filename=\"Sarah.pdf\"\r\nContent-Transfer-Encoding: base64",
@@ -85,7 +90,7 @@ func anonymiseWithAttachments(t *testing.T, mode string) (*Output, map[string][]
 
 func TestAttachmentsAreReplacedByDefault(t *testing.T) {
 	out, parts := anonymiseWithAttachments(t, AttachmentsReplace)
-	if out.AttachmentsRewritten != 0 || out.Attachments != 9 || len(out.DroppedParts) != 0 {
+	if out.AttachmentsRewritten != 0 || out.Attachments != 10 || len(out.DroppedParts) != 0 {
 		t.Errorf("rewritten %d, replaced %d, dropped %v", out.AttachmentsRewritten, out.Attachments, out.DroppedParts)
 	}
 	for name, data := range parts {
@@ -97,19 +102,22 @@ func TestAttachmentsAreReplacedByDefault(t *testing.T) {
 
 func TestAttachmentsAreRewrittenInPlace(t *testing.T) {
 	out, parts := anonymiseWithAttachments(t, AttachmentsAnonymise)
-	// The CSV, both DOCX, RTF and JSON are rewritten; the PNG, PDF, the
-	// .eml sent as a file and the broken DOCX are replaced.
-	if out.AttachmentsRewritten != 5 || out.Attachments != 4 {
+	// The CSV, both DOCX, RTF, JSON and XLSX are rewritten; the PNG, PDF,
+	// the .eml sent as a file and the broken DOCX are replaced.
+	if out.AttachmentsRewritten != 6 || out.Attachments != 4 {
 		t.Errorf("rewritten %d, replaced %d", out.AttachmentsRewritten, out.Attachments)
 	}
 	all := ""
 	for name, data := range parts {
 		all += "\n" + name + "\n" + string(data)
 	}
-	var docx []byte
+	var docx, xlsx []byte
 	for name, data := range parts {
 		if strings.HasSuffix(name, ".docx") && bytes.HasPrefix(data, []byte("PK")) {
 			docx = data
+		}
+		if strings.HasSuffix(name, ".xlsx") {
+			xlsx = data
 		}
 		if strings.HasSuffix(name, ".csv") {
 			// Converted from Windows-1252, rewritten, kept as a CSV.
@@ -118,18 +126,20 @@ func TestAttachmentsAreRewrittenInPlace(t *testing.T) {
 			}
 		}
 	}
-	if docx == nil {
-		t.Fatal("no rewritten DOCX")
+	if docx == nil || !bytes.HasPrefix(xlsx, []byte("PK")) {
+		t.Fatal("no rewritten DOCX or XLSX")
 	}
-	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range zr.File {
-		rc, _ := f.Open()
-		b, _ := io.ReadAll(rc)
-		_ = rc.Close()
-		all += "\n" + f.Name + "\n" + string(b)
+	for _, office := range [][]byte{docx, xlsx} {
+		zr, err := zip.NewReader(bytes.NewReader(office), int64(len(office)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range zr.File {
+			rc, _ := f.Open()
+			b, _ := io.ReadAll(rc)
+			_ = rc.Close()
+			all += "\n" + f.Name + "\n" + string(b)
+		}
 	}
 	for _, s := range []string{"Sarah", "Lane", "Wendy", "Moss", "Tom", "Baker", "acme-plumbing", "0412 345 678", "real photo", "real invoice", "real old mail", "macros"} {
 		if strings.Contains(all, s) {

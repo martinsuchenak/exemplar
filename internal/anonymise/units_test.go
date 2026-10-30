@@ -181,6 +181,77 @@ func TestPatterns(t *testing.T) {
 	}
 }
 
+// A number with a calling code is a phone number in any country's format;
+// without one, or with too few or too many digits, it is not taken for one.
+func TestInternationalPhones(t *testing.T) {
+	for text, want := range map[string]string{
+		"Call +1 469-555-0100 today":   "+1 469-555-0100",
+		"Tel: +213 662 00 00 10, fax":  "+213 662 00 00 10",
+		"(+254 700 000123)":            "+254 700 000123",
+		"+44 (0)20 7946 0000.":         "+44 (0)20 7946 0000",
+		"+223 -0200 000-771 x":         "+223 -0200 000-771",
+		"+6591234567":                  "+6591234567",
+		"up +12.5% on 2025":            "",
+		"x+1 469-555-0100":             "", // no word right before the +
+		"+1 234 567":                   "", // 7 digits
+		"+1 234 567 890 123 456 789":   "", // 19 digits: not one number
+		"call 0801 234 5678 from home": "",
+	} {
+		got := ""
+		for _, s := range patternSpans(text) {
+			if s.Entity == EntityPhone && strings.HasPrefix(text[s.Start:s.End], "+") {
+				got = text[s.Start:s.End]
+			}
+		}
+		if got != want {
+			t.Errorf("%q: phone %q, want %q", text, got, want)
+		}
+	}
+}
+
+// A column whose values are mostly known people is a column of people: its
+// other names are people too, and so are those of a column that becomes
+// one by them.
+func TestAddColumnNames(t *testing.T) {
+	f := newFound(defaultProfile(t))
+	f.add("Wendy Moss", EntityPerson)
+	f.add("Ravi Nair", EntityPerson)
+	col := func(column string, values ...string) []docText {
+		var out []docText
+		for _, v := range values {
+			out = append(out, docText{value: v, column: column})
+		}
+		return out
+	}
+	var texts []docText
+	texts = append(texts, col("lead", "Wendy Moss", "Ravi Nair", "Lee Ford", "Lee Ford", "Vacant", "TBD", "")...)
+	texts = append(texts, col("manager", "Lee Ford", "Ravi Nair", "Ana De La Cruz", "Sales Team 2")...) // by Lee Ford
+	texts = append(texts, col("city", "Wendy Moss", "Perth West", "Port Hedland", "Mount Isa")...)      // one in four
+	// One detected name on most rows makes a column of people by its cells;
+	// on two of four it does not.
+	texts = append(texts, col("owner", "Wendy Moss", "Wendy Moss", "Wendy Moss", "Kai Lund")...)
+	texts = append(texts, col("region", "Wendy Moss", "Wendy Moss", "Swan Valley", "Swan Valley")...)
+	texts = append(texts, col("notes", "Wendy Moss", "Ravi Nair", "call back", "Max Tan")...) // not counted: searched only
+	texts[len(texts)-1].column = ""
+	f.addColumnNames(texts)
+	for v, want := range map[string]string{
+		"Lee Ford": EntityPerson, "Ana De La Cruz": EntityPerson, "Kai Lund": EntityPerson, "Swan Valley": "",
+		"Vacant": "", "TBD": "", "Sales Team 2": "", "Perth West": "", "Port Hedland": "", "Max Tan": "",
+	} {
+		if got := f.entities[v]; got != want {
+			t.Errorf("%q: %q, want %q", v, got, want)
+		}
+	}
+	for v, want := range map[string]bool{
+		"Lee Ford": true, "Robert (Lachlan) Smith": true, "Vacant": false, "Lee 2": false,
+		"a b c d e f": false, "SALES TEAM": true, "info@x.com": false, "Mr / Mrs": false,
+	} {
+		if columnName(v) != want {
+			t.Errorf("columnName(%q) = %v", v, !want)
+		}
+	}
+}
+
 func TestFoundFilters(t *testing.T) {
 	f := newFound(defaultProfile(t))
 	f.add("x", EntityPerson)
@@ -198,6 +269,14 @@ func TestFoundFilters(t *testing.T) {
 	for v, want := range map[string]bool{"Sarah Lane": true, "Sarah\nOps": false, "UID:x": false, "ABN": false, "123": false} {
 		if plausibleName(v) != want {
 			t.Errorf("plausibleName(%q) != %v", v, want)
+		}
+	}
+	for v, want := range map[string]string{
+		"Sarah Lane 0412": "Sarah Lane", "0412 Sarah Lane, 08": "Sarah Lane,", " Sarah ": "Sarah",
+		"Newco 7": "Newco", "Studio54 Group": "Studio54 Group", "R2 D2": "R2 D2", "0412 158": "0412", "": "",
+	} {
+		if got := trimName(v); got != want {
+			t.Errorf("trimName(%q) = %q, want %q", v, got, want)
 		}
 	}
 	h := htmlText(`<html><head><style>.x{}</style></head><body><p>Hi&nbsp;Tom</p><img alt="Acme Logo"><a href="mailto:bob@x.com">x</a></body></html>`)
@@ -310,7 +389,7 @@ func TestReplacerBoundaries(t *testing.T) {
 	}
 	for in, want := range map[string]string{
 		"Tom, Tomas, atom, TOM.":     "Ann, Tomas, atom, ANN.",
-		"tom@x.com Tom-x x-Tom @Tom": "tom@x.com Tom-x x-Tom @Tom",
+		"tom@x.com Tom-x x-Tom @Tom": "tom@x.com Tom-x x-Tom @Ann", // a mention is a name
 		"see acme.com. acme.com.au":  "see fake.example. acme.com.au",
 		"A&amp;B and A&B":            "C&amp;D and C&D",
 		"nothing here":               "nothing here",

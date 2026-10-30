@@ -9,6 +9,53 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+### Added
+
+- Anonymise and ingest read XLSX workbooks: cell text and the strings
+  cells share, formulas' strings, comments old and threaded, tables, pivot
+  caches, charts, text boxes, links to other workbooks, connections and the
+  file's properties. A sheet named for a person is renamed within Excel's
+  rules, and every formula, chart and pivot cache that refers to it
+  follows. A column labelled `Name`, `Email`, `Phone`… marks the cells
+  below it, as in a CSV, including phone numbers typed as numbers. Macros,
+  printer settings and other parts nothing reads are dropped and listed.
+  An XLSX attached to an email is rewritten in place when the profile says
+  `attachments = "anonymise"`. See docs/anonymisation.md#xlsx.
+
+### Changed
+
+- A column of people is found without a label that says so. Once
+  detection has run, a CSV column, sheet column or JSON key whose values
+  are mostly known people (by distinct values, or by cells when one name
+  fills most rows) has its other name-like values taken for people too.
+  Before, a column such as `Account Manager` lost only the names the
+  detector happened to find. See docs/anonymisation.md#documents.
+
+- A value under a labelled CSV column or JSON key that is a placeholder
+  (`N/A`, `TBD`, `Total`, `unknown`…), or a value under a phone label with
+  fewer than 6 digits, is no longer taken for what the label names. Before,
+  its fake replaced it everywhere in the file, so every "Total" could
+  become a person's name. Detection still reads these values.
+- A CSV column or JSON key whose label ends in a phone or email label
+  (`Mobile Phone`, `homePhone`, `Work Email`) marks its values as one, as
+  `Phone` and `Email` do. Before, numbers in such a column were left as
+  written unless the detector knew their country's format.
+
+### Security
+
+- A name written as a mention (`@Sarah Lane`, as Outlook, Teams and Office
+  comments write them) is replaced, in emails and every document format;
+  before, a known name right after an `@` was left as written. The `@` of
+  an address still only ever precedes a faked domain.
+- A phone number written with its calling code (`+234 801 234 5678`) is
+  replaced in any country's format. Before, only Australian numbers and
+  the formats Presidio knows were found, so most other countries' numbers
+  were left as written in free text.
+- A phone number right after a name is replaced. Presidio can run a name
+  into the number beside it ("Sarah Lane 0412"), and that name's match
+  kept the number from being found; a detected name now loses its words
+  with no letter first. This affects every format.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

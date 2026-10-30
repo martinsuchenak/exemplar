@@ -76,6 +76,13 @@ func TestAnonymiseRoute(t *testing.T) {
 		t.Errorf("docx = %d %v", w.Code, w.Header())
 	}
 
+	// So does an XLSX.
+	w = post("/api/v1/anonymise?name=budget.xlsx", reader.Secret, "", bytes.NewReader(anonymisetest.XLSX("Owed by Ottoline")))
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+		w.Header().Get("X-Exemplar-Dropped-Parts") != "xl/vbaProject.bin" || !bytes.HasPrefix(w.Body.Bytes(), []byte("PK")) {
+		t.Errorf("xlsx = %d %v", w.Code, w.Header())
+	}
+
 	// A format instead of a name.
 	w = post("/api/v1/anonymise?format=json", reader.Secret, "", strings.NewReader(`{"name": "Ottoline"}`))
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || strings.Contains(w.Body.String(), "Ottoline") {

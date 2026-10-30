@@ -490,8 +490,10 @@ func (e *Engine) detect(ctx context.Context, text string, f *found) error {
 			continue
 		}
 		value := text[s.Start:s.End]
-		if (s.Entity == EntityPerson || s.Entity == EntityOrganization) && !plausibleName(value) {
-			continue
+		if s.Entity == EntityPerson || s.Entity == EntityOrganization {
+			if value = trimName(value); !plausibleName(value) {
+				continue
+			}
 		}
 		f.add(value, s.Entity)
 	}

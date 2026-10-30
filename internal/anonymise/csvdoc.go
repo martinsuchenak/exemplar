@@ -87,7 +87,8 @@ func (d *csvDoc) readRow(i int) ([]csvField, int, error) {
 
 // texts returns each row as one text, cells on their own lines, and every
 // cell under a header that names an entity ("Email", "Phone") as that
-// entity. The header row is searched too.
+// entity. The header row is searched too. Below the header, each cell is
+// also counted in its column (see addColumnNames).
 func (d *csvDoc) texts() []docText {
 	var hints []string
 	if len(d.rows) > 1 {
@@ -100,9 +101,13 @@ func (d *csvDoc) texts() []docText {
 		values := make([]string, len(row))
 		for c, f := range row {
 			values[c] = f.value
-			if r > 0 && c < len(hints) && hints[c] != "" {
+			if r == 0 || hints == nil {
+				continue
+			}
+			if c < len(hints) && hints[c] != "" {
 				out = append(out, docText{value: f.value, entity: hints[c]})
 			}
+			out = append(out, docText{value: f.value, column: strconv.Itoa(c)})
 		}
 		out = append(out, docText{value: strings.Join(values, "\n")})
 	}

@@ -248,12 +248,20 @@ func isWord(r rune) bool {
 var domainRe = regexp.MustCompile(`(?i)^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z][a-z0-9-]*$`)
 
 // boundaryBefore: not preceded by a word character or '-', nor by '@' or
-// '.' unless the match is a domain.
+// '.' unless the match is a domain. An '@' that starts a word is a mention
+// (@Sarah Lane), not part of an address, so a name may follow it.
 func boundaryBefore(s string, i int, domain bool) bool {
 	if i == 0 {
 		return true
 	}
-	r, _ := utf8.DecodeLastRuneInString(s[:i])
+	r, n := utf8.DecodeLastRuneInString(s[:i])
+	if r == '@' && !domain {
+		if i == n {
+			return true
+		}
+		before, _ := utf8.DecodeLastRuneInString(s[:i-n])
+		return !isWord(before) && before != '.' && before != '-'
+	}
 	if r == '@' || r == '.' {
 		return domain
 	}

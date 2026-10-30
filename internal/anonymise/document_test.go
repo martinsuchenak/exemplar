@@ -265,6 +265,11 @@ func TestFieldHints(t *testing.T) {
 	for label, want := range map[string]string{
 		"E-mail": EntityEmail, "email_address": EntityEmail, "Full Name": EntityPerson, "first_name": EntityPerson,
 		"Mobile": EntityPhone, "Organisation": EntityCompany, "notes": "", "": "",
+		// A phone or email label inside a longer one.
+		"Mobile Phone": EntityPhone, "homePhone": EntityPhone, "Contact Phone Number": EntityPhone,
+		"Work Mobile": EntityPhone, "Personal E-mail": EntityEmail, "billing_email_address": EntityEmail,
+		// Not at the end, or a name of something else.
+		"Phone list": "", "Email Verified": "", "Product Name": "", "Username": "",
 	} {
 		if got := fieldHint(label); got != want {
 			t.Errorf("fieldHint(%q) = %q, want %q", label, got, want)
@@ -378,5 +383,50 @@ func TestHTMLCharacterReferences(t *testing.T) {
 	dec, starts, ends := decodeRefs("a&eacute;b&bogus;c")
 	if dec != "aéb&bogus;c" || starts[1] != 1 || starts[2] != 1 || ends[3] != 9 || starts[3] != 9 || starts[len(dec)] != 18 {
 		t.Errorf("decodeRefs = %q %v %v", dec, starts, ends)
+	}
+}
+
+// A column of staff names the detector finds only some of, under a label no
+// hint knows, loses all of them, in every table format. Its label stays,
+// and so does a column that is not one of people.
+func TestColumnsOfPeople(t *testing.T) {
+	is := func(v string) string { return `<c t="inlineStr"><is><t>` + v + `</t></is></c>` }
+	row := func(cells ...string) string {
+		var b strings.Builder
+		for _, c := range cells {
+			b.WriteString(is(c))
+		}
+		return `<row>` + b.String() + `</row>`
+	}
+	sheet := `<worksheet ` + xNS + `><sheetData>` + row("Account Manager", "Stage") + row("Wendy Moss", "Lead") +
+		row("Ravi Nair", "Won") + row("Lee Ford", "Lead") + row("Lee Ford", "Lost Cause") + `</sheetData></worksheet>`
+	book := `<workbook ` + xNS + ` ` + rNS + `><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>`
+	for name, data := range map[string]string{
+		"deals.csv":  "Account Manager,Stage\nWendy Moss,Lead\nRavi Nair,Won\nLee Ford,Lead\nLee Ford,Lost Cause\n",
+		"deals.json": `[{"manager":"Wendy Moss","stage":"Lead"},{"manager":"Ravi Nair","stage":"Won"},{"manager":"Lee Ford","stage":"Lost Cause"}]`,
+		"deals.xlsx": string(minimalXLSX(t, book, sheet)),
+	} {
+		e, err := New(testKey(t), defaultProfile(t), wordDetector{names: []string{"Wendy Moss", "Ravi Nair"}}, newMemRegistry())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := string(anonymiseDoc(t, e, name, data).Data)
+		if strings.HasSuffix(name, ".xlsx") {
+			_, parts := unzip(t, []byte(out))
+			out = parts["xl/worksheets/sheet1.xml"]
+		}
+		for _, s := range []string{"Wendy", "Ravi", "Lee Ford"} {
+			if strings.Contains(out, s) {
+				t.Errorf("%s: %s kept:\n%s", name, s, out)
+			}
+		}
+		for _, s := range []string{"Lost Cause", "Lead"} {
+			if !strings.Contains(out, s) {
+				t.Errorf("%s: %s replaced:\n%s", name, s, out)
+			}
+		}
+		if name != "deals.json" && !strings.Contains(out, "Account Manager") {
+			t.Errorf("%s: the label was replaced:\n%s", name, out)
+		}
 	}
 }

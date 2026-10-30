@@ -198,27 +198,49 @@ var patterns = []struct {
 	entity string
 	re     *regexp.Regexp
 	group  int
+	// check, when set, must accept a match for it to count.
+	check func(string) bool
 }{
-	{EntityEmail, regexp.MustCompile(`[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+`), 0},
-	{EntityURL, regexp.MustCompile(`(?i)\bhttps?://[^\s<>"')\]]+`), 0},
-	{EntityURL, regexp.MustCompile(`(?i)\bwww\.[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s<>"')\]]*`), 0},
-	{EntityMoney, regexp.MustCompile(`(?:AUD|USD|NZD|EUR|GBP|A\$|US\$|\$|£|€)\s?\d[\d,]*(?:\.\d{1,2})?(?:\s?[kKmM]\b)?`), 0},
-	{EntityMoney, regexp.MustCompile(`\b\d[\d,]*\.\d{2}\s?(?:AUD|USD|NZD|EUR|GBP|dollars)\b`), 0},
-	{EntityPhone, regexp.MustCompile(`(?:\+?61\s?|\b0)4\d{2}[\s-]?\d{3}[\s-]?\d{3}\b`), 0},
-	{EntityPhone, regexp.MustCompile(`(?:\+?61\s?\(?0?|\(?\b0)[2378]\)?[\s-]?\d{4}[\s-]?\d{4}\b`), 0},
-	{EntityPhone, regexp.MustCompile(`\b1[38]00[\s-]?\d{3}[\s-]?\d{3}\b`), 0},
-	{EntityABN, regexp.MustCompile(`(?i)\bABN[:\s]\s*(\d{2}\s?\d{3}\s?\d{3}\s?\d{3})\b`), 1},
-	{EntityACN, regexp.MustCompile(`(?i)\bACN[:\s]\s*(\d{3}\s?\d{3}\s?\d{3})\b`), 1},
-	{EntityStreet, regexp.MustCompile(`\b(?:(?:Unit|Suite|Level|Shop)\s+\d+[A-Za-z]?[,/]?\s*)?\d{1,5}[A-Za-z]?(?:-\d{1,5})?\s+(?:[A-Z][a-z]+\s){1,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Court|Ct|Place|Pl|Lane|Ln|Parade|Pde|Highway|Hwy|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Way|Close|Cl)\b\.?`), 0},
-	{EntityStreet, regexp.MustCompile(`\b(?:PO|P\.O\.)\s?Box\s+\d{1,6}\b`), 0},
-	{EntityCompany, regexp.MustCompile(`\b(?:[A-Z][A-Za-z0-9&'\-]+\s){1,5}(?:Pty\.?\s?Ltd\.?|Limited|Ltd\.?|Inc\.?|LLC|Group|Holdings)\b`), 0},
+	{EntityEmail, regexp.MustCompile(`[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+`), 0, nil},
+	{EntityURL, regexp.MustCompile(`(?i)\bhttps?://[^\s<>"')\]]+`), 0, nil},
+	{EntityURL, regexp.MustCompile(`(?i)\bwww\.[a-z0-9-]+(?:\.[a-z0-9-]+)+[^\s<>"')\]]*`), 0, nil},
+	{EntityMoney, regexp.MustCompile(`(?:AUD|USD|NZD|EUR|GBP|A\$|US\$|\$|£|€)\s?\d[\d,]*(?:\.\d{1,2})?(?:\s?[kKmM]\b)?`), 0, nil},
+	{EntityMoney, regexp.MustCompile(`\b\d[\d,]*\.\d{2}\s?(?:AUD|USD|NZD|EUR|GBP|dollars)\b`), 0, nil},
+	{EntityPhone, regexp.MustCompile(`(?:\+?61\s?|\b0)4\d{2}[\s-]?\d{3}[\s-]?\d{3}\b`), 0, nil},
+	{EntityPhone, regexp.MustCompile(`(?:\+?61\s?\(?0?|\(?\b0)[2378]\)?[\s-]?\d{4}[\s-]?\d{4}\b`), 0, nil},
+	{EntityPhone, regexp.MustCompile(`\b1[38]00[\s-]?\d{3}[\s-]?\d{3}\b`), 0, nil},
+	// Any country's number written with its calling code ("+1 469-555-0100",
+	// "+213 662 34 59 10"): the "+" says it is a phone number, whatever the
+	// country writes it like. 8 to 15 digits, as E.164 allows.
+	{EntityPhone, regexp.MustCompile(`\B\+\d[\d ().-]{5,22}\d\b`), 0, phoneDigits(8, 15)},
+	{EntityABN, regexp.MustCompile(`(?i)\bABN[:\s]\s*(\d{2}\s?\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
+	{EntityACN, regexp.MustCompile(`(?i)\bACN[:\s]\s*(\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
+	{EntityStreet, regexp.MustCompile(`\b(?:(?:Unit|Suite|Level|Shop)\s+\d+[A-Za-z]?[,/]?\s*)?\d{1,5}[A-Za-z]?(?:-\d{1,5})?\s+(?:[A-Z][a-z]+\s){1,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Court|Ct|Place|Pl|Lane|Ln|Parade|Pde|Highway|Hwy|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Way|Close|Cl)\b\.?`), 0, nil},
+	{EntityStreet, regexp.MustCompile(`\b(?:PO|P\.O\.)\s?Box\s+\d{1,6}\b`), 0, nil},
+	{EntityCompany, regexp.MustCompile(`\b(?:[A-Z][A-Za-z0-9&'\-]+\s){1,5}(?:Pty\.?\s?Ltd\.?|Limited|Ltd\.?|Inc\.?|LLC|Group|Holdings)\b`), 0, nil},
+}
+
+// phoneDigits accepts a phone number with min to max digits.
+func phoneDigits(min, max int) func(string) bool {
+	return func(v string) bool {
+		n := 0
+		for _, r := range v {
+			if r >= '0' && r <= '9' {
+				n++
+			}
+		}
+		return n >= min && n <= max
+	}
 }
 
 func patternSpans(text string) []Span {
 	var spans []Span
 	for _, p := range patterns {
 		for _, m := range p.re.FindAllStringSubmatchIndex(text, -1) {
-			spans = append(spans, Span{Start: m[2*p.group], End: m[2*p.group+1], Entity: p.entity})
+			start, end := m[2*p.group], m[2*p.group+1]
+			if p.check == nil || p.check(text[start:end]) {
+				spans = append(spans, Span{Start: start, End: end, Entity: p.entity})
+			}
 		}
 	}
 	return spans
@@ -234,8 +256,13 @@ func newFound(p *Profile) *found {
 	return &found{profile: p, entities: map[string]string{}}
 }
 
+// cleanValue trims the space and punctuation around a found value.
+func cleanValue(v string) string {
+	return strings.Trim(strings.TrimSpace(v), `.,;:()[]<>"'`)
+}
+
 func (f *found) add(value, entity string) {
-	value = strings.Trim(strings.TrimSpace(value), `.,;:()[]<>"'`)
+	value = cleanValue(value)
 	if len(value) < 2 || f.profile.isStop(value) {
 		return
 	}
@@ -275,6 +302,23 @@ func (f *found) dropFragments() {
 			}
 		}
 	}
+}
+
+// trimName drops the words with no letter in them from either end of a
+// detected name. The detector can run a name into the number beside it
+// ("Sarah Lane 0412" out of "Sarah Lane 0412 345 678"); the name's
+// match would then overlap the phone number's and keep it from being
+// replaced.
+func trimName(v string) string {
+	hasLetter := func(s string) bool { return strings.IndexFunc(s, unicode.IsLetter) >= 0 }
+	v = strings.TrimSpace(v)
+	for i := strings.LastIndexFunc(v, unicode.IsSpace); i >= 0 && !hasLetter(v[i:]); i = strings.LastIndexFunc(v, unicode.IsSpace) {
+		v = strings.TrimSpace(v[:i])
+	}
+	for i := strings.IndexFunc(v, unicode.IsSpace); i >= 0 && !hasLetter(v[:i]); i = strings.IndexFunc(v, unicode.IsSpace) {
+		v = strings.TrimSpace(v[i:])
+	}
+	return v
 }
 
 // plausibleName filters NER noise that would damage structure if replaced:

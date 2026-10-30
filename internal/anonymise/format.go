@@ -32,6 +32,7 @@ const (
 	FormatJinja    Format = "jinja"
 	FormatDOCX     Format = "docx"
 	FormatRTF      Format = "rtf"
+	FormatXLSX     Format = "xlsx"
 )
 
 // File is one file to anonymise, under the name it arrived with. The name
@@ -74,8 +75,9 @@ var formats = []formatDef{
 	{FormatHTML, []string{".html", ".htm"}, "document", "text/html", docHandler{parse: parseHTML}},
 	{FormatTwig, []string{".twig"}, "document", "text/plain", docHandler{parse: parseTemplate}},
 	{FormatJinja, []string{".j2", ".jinja", ".jinja2"}, "document", "text/plain", docHandler{parse: parseTemplate}},
-	{FormatDOCX, []string{".docx"}, "document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docxHandler{}},
+	{FormatDOCX, []string{".docx"}, "document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ooxmlHandler{docxFormat}},
 	{FormatRTF, []string{".rtf"}, "document", "application/rtf", rtfHandler{}},
+	{FormatXLSX, []string{".xlsx"}, "document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ooxmlHandler{xlsxFormat}},
 }
 
 // notYet explains the extensions people try that cannot be read yet.

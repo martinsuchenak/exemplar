@@ -257,6 +257,7 @@ var attachmentFormats = map[string]Format{
 	"application/json": FormatJSON, "application/x-ndjson": FormatJSONL, "text/html": FormatHTML,
 	"application/rtf": FormatRTF, "text/rtf": FormatRTF,
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": FormatDOCX,
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       FormatXLSX,
 }
 
 // attachmentFile returns the handler and content of an attachment the

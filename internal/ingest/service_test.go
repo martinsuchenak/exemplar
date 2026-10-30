@@ -1,6 +1,7 @@
 package ingest_test
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
@@ -124,6 +125,27 @@ func content(t *testing.T, a *app.App, p principal.Principal, id string) string 
 	return string(b)
 }
 
+// officeText returns every entry of a DOCX or XLSX, so a secret is found
+// where compression would hide it; anything else as it is.
+func officeText(t *testing.T, body string) string {
+	t.Helper()
+	zr, err := zip.NewReader(strings.NewReader(body), int64(len(body)))
+	if err != nil {
+		return body
+	}
+	var all strings.Builder
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		all.WriteString(f.Name + "\n" + string(b) + "\n")
+	}
+	return all.String()
+}
+
 func TestIngestStoresAnonymisedFixtures(t *testing.T) {
 	a := newApp(t, 0)
 	admin := testutil.Admin(t, a)
@@ -232,15 +254,16 @@ func TestIngestStoresDocuments(t *testing.T) {
 		{Name: "letter.html.twig", Data: []byte("<p>Dear {{ name }}, from Priya Shah</p>")},
 		{Name: "Quote.DOCX", Data: anonymisetest.DOCX("Quote for Tom Reid, 0412 345 678")},
 		{Name: "letter.rtf", Data: []byte(`{\rtf1\ansi{\info{\author Priya Shah}}\pard Dear Tom Reid, call 0412 345 678.\par}`)},
+		{Name: "Budget.xlsx", Data: anonymisetest.XLSX("Tom Reid owes $1,200, call 0412 345 678")},
 	}
 	res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{Batch: "docs"}, files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig", "docs-005.docx", "docs-006.rtf"}
+	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig", "docs-005.docx", "docs-006.rtf", "docs-007.xlsx"}
 	for i, f := range res.Files {
 		dropped := 0
-		if strings.HasSuffix(want[i], ".docx") {
+		if strings.HasSuffix(want[i], ".docx") || strings.HasSuffix(want[i], ".xlsx") {
 			dropped = 1 // its macros
 		}
 		if f.Error != "" || f.FixtureName != want[i] || f.Replacements == 0 || f.DroppedParts != dropped {
@@ -248,11 +271,11 @@ func TestIngestStoresDocuments(t *testing.T) {
 		}
 	}
 	fixtures, err := a.Fixtures.List(ctx, admin, dsID, fixture.ListFilter{})
-	if err != nil || len(fixtures) != 6 {
+	if err != nil || len(fixtures) != 7 {
 		t.Fatalf("fixtures = %d, %v", len(fixtures), err)
 	}
 	for _, f := range fixtures {
-		body := content(t, a, admin, f.ID)
+		body := officeText(t, content(t, a, admin, f.ID))
 		for _, s := range secrets {
 			if strings.Contains(body, s) {
 				t.Errorf("%s still contains %q:\n%s", f.Name, s, body)

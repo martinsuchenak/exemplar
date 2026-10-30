@@ -54,7 +54,7 @@ the [exemplar-anonymise skill](skills/exemplar-anonymise/SKILL.md); see
   generated emails, documents and records about them, reproducible from a
   seed.
 - **Real data, anonymised:** ingest emails and documents (text, Markdown,
-  CSV, TSV, JSON, HTML, Twig and Jinja, DOCX, RTF) into quarantine for
+  CSV, TSV, JSON, HTML, Twig and Jinja, DOCX, RTF, XLSX) into quarantine for
   review, or anonymise files on the spot without storing anything
   (`exemplar anonymise`, also `--local`).
 - **Three interfaces** over the same services: REST, MCP (read-only) and

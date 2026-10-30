@@ -19,6 +19,8 @@ func TestApply(t *testing.T) {
 		"A&amp;B Pty Ltd and A&B Pty Ltd":        "C&amp;D Pty Ltd and C&D Pty Ltd",
 		"pay 1234.56 not v1234.56 nor 1.1234.56": "pay 9999.99 not v1234.56 nor 1.1234.56",
 		"Ann.":                                   "Bea.",
+		"@Ann said, cc @ANN (@Ann)":              "@Bea said, cc @BEA (@Bea)",
+		"x@Ann x.@Ann x-@Ann":                    "x@Ann x.@Ann x-@Ann",
 	} {
 		if got := r.Apply(in); got != want {
 			t.Errorf("Apply(%q) = %q, want %q", in, got, want)

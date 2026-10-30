@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf16"
 )
 
 // File is generated file content.
@@ -263,7 +265,7 @@ func writeXLSX(g *Gen, d document) ([]byte, error) {
 			`</Relationships>`},
 		{"xl/workbook.xml", xmlHeader + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
 			`xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-			`<sheets><sheet name="` + xmlEscape(sheetName(d.title)) + `" sheetId="1" r:id="rId1"/></sheets></workbook>`},
+			`<sheets><sheet name="` + xmlEscape(FitSheetName(d.title, MaxSheetName)) + `" sheetId="1" r:id="rId1"/></sheets></workbook>`},
 		{"xl/_rels/workbook.xml.rels", xmlHeader + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
 			`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
 			`</Relationships>`},
@@ -280,16 +282,35 @@ func columnName(i int) string {
 	return name
 }
 
-// sheetName fits Excel's sheet name rules: at most 31 characters, none of []:*?/\.
-func sheetName(title string) string {
+// MaxSheetName is the most characters an Excel sheet name may hold,
+// counted in UTF-16 units as Excel counts them.
+const MaxSheetName = 31
+
+// FitSheetName fits a title to Excel's sheet name rules: at most max UTF-16
+// units, none of []:*?/\ or control characters, no apostrophe or space at
+// either end, and not empty. The anonymiser renames sheets with it too.
+func FitSheetName(title string, max int) string {
 	s := strings.Map(func(r rune) rune {
-		if strings.ContainsRune(`[]:*?/\`, r) {
+		if strings.ContainsRune(`[]:*?/\`, r) || unicode.IsControl(r) {
 			return ' '
 		}
 		return r
 	}, title)
-	if len(s) > 31 {
-		s = strings.TrimSpace(s[:31])
+	s = strings.Trim(truncateUTF16(strings.Trim(s, " '"), max), " '")
+	if s == "" {
+		return "Sheet"
+	}
+	return s
+}
+
+// truncateUTF16 cuts s to at most n UTF-16 units without splitting a
+// character.
+func truncateUTF16(s string, n int) string {
+	units := 0
+	for i, r := range s {
+		if units += utf16.RuneLen(r); units > n {
+			return s[:i]
+		}
 	}
 	return s
 }

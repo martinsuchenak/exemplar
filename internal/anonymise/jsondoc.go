@@ -105,6 +105,10 @@ func (d *jsonDoc) texts() []docText {
 	for _, s := range d.strings {
 		if !s.key {
 			out = append(out, docText{value: s.value, entity: fieldHint(s.under)})
+			if s.under != "" {
+				// The values of one key, in every object, are a column.
+				out = append(out, docText{value: s.value, column: s.under})
+			}
 		}
 	}
 	return out
