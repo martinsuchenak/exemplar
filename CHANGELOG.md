@@ -9,6 +9,27 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+### Added
+
+- Anonymise and ingest read PDFs, rewritten in place by PDFium (Chrome's
+  PDF engine) run inside exemplar as WebAssembly: no CGO and no other
+  service, and each file gets its own engine with a memory cap and a
+  deadline. Each text object holding a match is drawn again with the fakes
+  at the same place, size and colour, in the standard font nearest its own;
+  annotations and form fields are flattened into the page first, links are
+  kept with their addresses rewritten, and every image is replaced with a
+  grey one. Metadata, bookmarks and other strings outside the pages are
+  rewritten; scripts, embedded files, XMP metadata, the structure tree and
+  page thumbnails are dropped and listed. Password-protected and scanned
+  PDFs are refused. A PDF attached to an email is rewritten in place when
+  the profile says `attachments = "anonymise"`. See
+  docs/anonymisation.md#pdf. The binary grows by about 12 MB; its
+  third-party licences are in THIRD_PARTY_NOTICES.md, shipped in the
+  archives and images.
+- Bank account numbers and BSBs are found by their labels (`BSB: 062-000`,
+  `Account No. 1234 5678`) and by column or key labels (`BSB`, `Account
+  Number`), in every format, and replaced digit by digit.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

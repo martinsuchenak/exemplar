@@ -1,6 +1,7 @@
 package anonymise
 
 import (
+	"os"
 	"testing"
 
 	"github.com/martinsuchenak/exemplar/internal/textswap"
@@ -105,5 +106,61 @@ func FuzzXLSX(f *testing.F) {
 		if err == nil && out == nil {
 			t.Fatal("no output and no error")
 		}
+	})
+}
+
+// FuzzPDF runs mangled PDFs through the whole PDF handler: it must fail
+// cleanly or write a PDF that opens again. PDFium reads the input in its
+// sandbox, so this mostly tests the Go around it. Each run starts PDFium,
+// which the fuzzer's instrumentation makes slow: a few runs a minute, so
+// run it for hours, or rely on FuzzPDFObjects for the Go.
+func FuzzPDF(f *testing.F) {
+	f.Add(onePagePDF("BT /F1 12 Tf 72 720 Td (Invoice for Ottoline Quaife) Tj ET"))
+	f.Add(kitchenSink())
+	for _, name := range []string{"chrome-invoice.pdf", "quartz-notes.pdf"} {
+		if data, err := os.ReadFile("testdata/pdf/" + name); err == nil {
+			f.Add(data)
+		}
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 1<<20 {
+			return
+		}
+		e, err := New(testKey(t), defaultProfile(t), wordDetector{names: []string{"Ottoline Quaife"}}, newMemRegistry())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := e.Anonymise(ctx, File{Name: "f.pdf", Data: data})
+		if err != nil {
+			return
+		}
+		d, err := readPDF(ctx, out.Data)
+		if err != nil {
+			t.Fatalf("the anonymised PDF does not open: %v", err)
+		}
+		d.s.close()
+	})
+}
+
+// FuzzPDFObjects runs mangled PDFs through what pdfcpu does: reading the
+// strings outside the drawing, and rewriting them, repairing forms,
+// replacing images, dropping parts and adding links. pdfcpu only ever reads
+// what PDFium wrote, but that is still a PDF of the sender's making.
+func FuzzPDFObjects(f *testing.F) {
+	f.Add(onePagePDF("BT /F1 12 Tf 72 720 Td (Invoice for Ottoline Quaife) Tj ET"))
+	f.Add(kitchenSink())
+	rep, err := textswap.New(map[string]string{"Ottoline Quaife": "Ann Lee"})
+	if err != nil {
+		f.Fatal(err)
+	}
+	links := [][]pdfLink{{{uri: "mailto:ottoline@example.org", page: -1}, {page: 0}, {page: 7}}}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 1<<20 {
+			return
+		}
+		if _, _, err := pdfStrings(ctx, data); err != nil {
+			return
+		}
+		_, _ = pdfFinish(ctx, data, rep, links, &Output{})
 	})
 }

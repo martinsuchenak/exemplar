@@ -36,6 +36,7 @@ WORKDIR /app
 # On the PATH, so `docker compose exec exemplar exemplar bootstrap` works.
 COPY --from=builder /app/bin/exemplar /usr/local/bin/exemplar
 COPY --from=builder /app/exemplar-config.toml .
+COPY --from=builder /app/LICENSE /app/NOTICE /app/THIRD_PARTY_NOTICES.md /usr/share/licenses/exemplar/
 
 USER app
 

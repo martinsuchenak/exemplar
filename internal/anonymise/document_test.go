@@ -270,6 +270,7 @@ func TestFieldHints(t *testing.T) {
 		"Work Mobile": EntityPhone, "Personal E-mail": EntityEmail, "billing_email_address": EntityEmail,
 		// Not at the end, or a name of something else.
 		"Phone list": "", "Email Verified": "", "Product Name": "", "Username": "",
+		"BSB": EntityBankAccount, "Account Number": EntityBankAccount, "bank_account": EntityBankAccount, "Account Name": "",
 	} {
 		if got := fieldHint(label); got != want {
 			t.Errorf("fieldHint(%q) = %q, want %q", label, got, want)

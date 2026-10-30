@@ -37,6 +37,7 @@
 - `internal/apperr/`: error kinds services return; `rest.RespondServiceError` maps them to HTTP.
 - `cmd/mcp/`: read-only MCP server and its tools; same API key auth and services as REST.
 - `internal/ingest/`, `internal/anonymise/`, `internal/mimetree/`: real-email ingest into quarantine; the anonymiser touches no storage (registry and Presidio sit behind interfaces). Never log or store raw input or dry-run reports. See `docs/anonymisation.md`.
+- PDFs are read by PDFium compiled to WebAssembly (`internal/anonymise/pdfium.go`, `pdf.go`), one engine per file, and finished by pdfcpu (`pdfcpu.go`), which only reads what PDFium wrote. go-pdfium has argument-order bugs the code works around; see the comments there. Keep `THIRD_PARTY_NOTICES.md` in step with the libraries the binary embeds.
 - `skills/exemplar-anonymise/SKILL.md`: a skill users install so agents run `exemplar anonymise` without reading originals. Keep it in step with the `anonymise` command's flags and output.
 - `internal/archive/`, `internal/exchange/`, `internal/backup/`: one archive format; export/import of datasets (REST, normal access rules) and host-only backup/restore. See `docs/backup-and-exchange.md`.
 - `Dockerfile`, `docker-compose.yml` (with Presidio), `exemplar.nomad`: deployment; see `docs/deployment.md`. Keep them in step with the config, env vars and data paths. `.dockerignore` keeps `tmp/`, `data/` and keys out of builds.

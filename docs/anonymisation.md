@@ -65,8 +65,9 @@ later` (see [Presidio](#presidio)).
 | Subdomains | Domains anywhere | Generic labels (`mail`, `www`, `api`, `reply`, `mx1`…) kept; any other label (a client, product or system name) replaced with a fake, the same every time |
 | URLs | Pattern | Same scheme on the fake domain; path and query replaced |
 | Profile terms | The profile's `terms` list | The company-style fake (the same company as the domain it names), in any case, also inside identifiers; a term wins over a name a display name made of it |
-| Phone numbers | Australian patterns | Fake digits; leading zeros and the first other digit kept (`04…`, `(02)…`, `13…`) |
+| Phone numbers | Australian patterns, and any number written with its calling code (`+234 …`) | Fake digits; leading zeros and the first other digit kept (`04…`, `(02)…`, `13…`) |
 | ABN, ACN | Labelled patterns | Fake digits, same layout |
+| Bank account numbers, BSBs | Their labels (`BSB: 062-000`, `Account No. 1234 5678`); a column or key labelled `BSB` or `Account Number` | Fake digits, same layout |
 | Money | `$`, `AUD` patterns | Fake digits, same layout |
 | Street addresses, PO boxes | Pattern | A synthetic street address |
 | Message-ID, In-Reply-To, References, Content-ID | Header and `cid:` | Keyed hashes, so threads and inline images still match |
@@ -166,12 +167,14 @@ back broken.
 | DOCX | `.docx` | See [DOCX](#docx) | See [DOCX](#docx) |
 | RTF | `.rtf` | See [RTF](#rtf) | See [RTF](#rtf) |
 | XLSX | `.xlsx` | See [XLSX](#xlsx) | See [XLSX](#xlsx) |
+| PDF | `.pdf` | See [PDF](#pdf) | See [PDF](#pdf) |
 | Twig, Jinja | `.twig`, `.j2`, `.jinja`, `.jinja2` | Literal text (as HTML for `page.html.twig`), comments, and quoted strings inside tags | Every tag as written outside its strings: variables, filters and keywords are code, so `{{ customer.name }}` is untouched while `{% set signer = "Jane Doe" %}` is not. `{% verbatim %}` and `{% raw %}` bodies are literal text |
 
 A CSV column or JSON key named for an entity marks its values as that entity,
 even where the detector would not find them: `name`, `full_name`,
 `first_name`, `last_name`, `surname`; `email`, `e-mail`, `email_address`;
-`phone`, `mobile`, `tel`; `company`, `organisation`, `employer`. A longer
+`phone`, `mobile`, `tel`; `company`, `organisation`, `employer`; `bsb`,
+`account_number`, `bank_account`. A longer
 label ending in a phone or email one counts too: `Mobile Phone`,
 `homePhone`, `Contact Phone Number`, `Work Email`. Only letters and digits
 of the label count, in any case. A placeholder under such a label
@@ -352,6 +355,70 @@ so a file of nothing but escapes fails instead of multiplying in memory.
 The output is tokenised again and must have the same groups and control
 words, apart from text, replaced pictures and dropped groups. Groups may nest
 at most 2,000 deep.
+
+### PDF
+
+A PDF stores no words: each page is drawing instructions that place
+characters, often in fonts holding only the letters the file uses. So a PDF
+is rewritten in place, page by page, by PDFium, Chrome's PDF engine. It runs
+inside exemplar compiled to WebAssembly (go-pdfium, wazero): no other
+service, and a malformed file can at worst stop its own engine. Each file
+gets one at a time, which may use at most 512 MiB, and the file, however
+many engines it takes, is stopped after two minutes.
+
+1. The file is opened (one that needs a password is refused) and every page
+   is flattened: annotations and form fields become page content, so their
+   visible text is read and rewritten as the page's is. Links are read
+   first, since flattening removes them, and added back at the end.
+2. Each page's text is read with the box of every character, along with
+   every text and image object and its bounds, inside forms too. A
+   character belongs to the smallest text object holding its centre.
+3. Detection reads the pages' text, marked-content strings and every string
+   stored outside the drawing (see below), as one document.
+4. A text object holding a match is removed and drawn again with the fakes
+   in it: same place, size, colour and render mode, in the standard font
+   nearest its own (Helvetica, Times or Courier, bold and italic as the
+   original). A name split across objects (`Sarah` in one, `Lane` in the
+   next) gets its fake in the first, which may take the width the whole
+   match took; what follows the match starts where the match ended. A fake
+   longer than that room is squeezed into it. Only a page with something to
+   change is written again (or one with an image inline in its content).
+5. pdfcpu rewrites the strings outside the drawing, replaces every image and
+   drops what no rule knows. The file is then opened again and must hold
+   exactly the text that was written. PDFium writes the text of some
+   embedded fonts back wrong when it writes a page again (a symbolic subset
+   whose codes it re-derives): an object kept whose text comes back
+   different is drawn again in a standard font too, and the file written
+   once more. Text that was never written, or new text missing, fails it.
+
+| Where | What is personal there | Treatment |
+|-------|------------------------|-----------|
+| Page text | Names, addresses, numbers | Each text object with a match drawn again as above; the rest kept, in its own font |
+| Text in forms (reusable content) | Letterheads, stamps, flattened fields | As page text. The new text is drawn on the page just after its form; where the form sits inside another (a flattened field), what the inner form drew is moved onto the page with it, as PDFium writes no change deeper |
+| Annotations, form fields | Comments, filled fields, signatures' appearance | Flattened: what they show is page text; what they hide (a comment's note, a field's value, its author) goes |
+| Links | Web and `mailto:` addresses | Rewritten; links to pages kept; links to files, programs or scripts dropped |
+| Marked content | `ActualText`, `Alt`: what a screen reader says | Rewritten. PDFium writes a form's content only when an object leaves it, so an object in a form whose marked content changes is moved onto the page, as text in a nested form is |
+| Images | Photos, signatures, logos | Every image replaced with a grey pixel, drawn or not: page thumbnails, masks and patterns included |
+| Strings outside the drawing | Title, author, subject and keywords; bookmarks; named destinations; layer names | Rewritten (the author is a person); strings a reader looks things up by (a font's registry and ordering, a language tag, a font's glyph list, a file identifier) are left alone |
+| JavaScript, embedded files, form-field data, the structure tree, XMP metadata, page thumbnails, applications' private data, digital signatures, portfolios, web captures, annotations flattening left | Unknown or duplicated | Dropped and listed (`dropped_parts`) |
+
+The same file anonymised with the same key comes out the same: the file
+identifier PDFium would make at random is a hash of the content. An
+encrypted PDF that opens without a password comes back unencrypted.
+
+**Refused.** A password-protected PDF; a damaged one; one of more than 2000
+pages; and a scan: a page whose images cover half of it, with fewer than 50
+characters of visible text, or with any invisible text (the layer OCR adds
+over a scanned image, which rewriting would leave the image under). A
+changed text object holding a character the standard fonts cannot show
+(Chinese, Arabic, Cyrillic) fails its page: the fakes cannot be drawn in its
+own font.
+
+**Not covered.** Text drawn as outlines, or inside an image, cannot be read.
+A form holding no match keeps its content as written, an image inline in
+it included. A rewritten line is in
+a standard font, a longer fake is squeezed and a shorter one leaves a gap;
+the tags screen readers use are dropped with the structure tree.
 
 ## Anonymise without ingesting
 
@@ -563,11 +630,11 @@ By default every attachment is replaced by a generated file of the same
 type, so nothing of the original survives. A profile with
 `attachments = "anonymise"` rewrites instead the attachments the anonymiser
 reads, in place, through the same handler a document of that format goes
-through: text, Markdown, CSV, TSV, JSON, JSON Lines, HTML, DOCX, RTF and XLSX. The
+through: text, Markdown, CSV, TSV, JSON, JSON Lines, HTML, DOCX, RTF, XLSX and PDF. The
 format comes from the attachment's file name, or its media type when the
 name gives none (`text/csv`, `application/json`…); text is converted from
-its charset to UTF-8 first. Everything else (images, PDFs, `.xls` and
-other spreadsheets, an `.eml` sent as a file) is still replaced, and so is an attachment its
+its charset to UTF-8 first. Everything else (images, `.xls` and other
+spreadsheets, an `.eml` sent as a file) is still replaced, and so is an attachment its
 handler cannot read: a broken file is never passed through.
 
 A rewritten attachment is read with the email's people already known, and
@@ -593,10 +660,10 @@ ingest with the same key will produce.
 
 ## Limits
 
-- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (PDF, images, `.doc`, `.dotx`, `.docm`, `.xls`, `.xlsm`, `.xlsb`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
+- Emails and the document formats above are read; the extension picks the format, case aside. Any other file (images, `.doc`, `.dotx`, `.docm`, `.xls`, `.xlsm`, `.xlsb`) fails on its own, with an error naming the supported extensions. `.msg` (Outlook) files are rejected with a hint to convert them to `.eml` first. exemplar serves uploaded `.msg` fixtures as they are but cannot anonymise them yet.
 - In JSON, keys and numbers are never changed: a phone number stored as a number, or a name used as a key, survives. In templates, nothing is matched across a tag.
 - Charsets other than UTF-8, US-ASCII, ISO-8859-1 and Windows-1252 are rejected per file.
-- Attachment contents are replaced, not anonymised, unless the profile rewrites attachments in a format the anonymiser reads; a PDF's text never survives.
+- Attachment contents are replaced, not anonymised, unless the profile rewrites attachments in a format the anonymiser reads.
 - Dates are kept, so a timeline can be recognised by someone who knows it.
 - Detection is not perfect. Names Presidio misses and that never appear in a header, or identifiers with no pattern (customer numbers, for example), can survive. This is why every fixture is reviewed before it leaves quarantine.
 - One request is capped at `storage.max_ingest_mb` (default 200 MiB) and 1000 files. At most `storage.max_concurrent_runs` ingest and anonymise runs (default 2) are held at once; the rest get `429` before their upload is read.

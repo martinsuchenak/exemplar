@@ -39,7 +39,7 @@ func TestAnonymiseLocally(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, data := range map[string]string{
-		"a.md": anonMD, "b.csv": "Name,Phone\nWendy Moss,0412 345 678\n", "c.pdf": "%PDF",
+		"a.md": anonMD, "b.csv": "Name,Phone\nWendy Moss,0412 345 678\n", "c.xls": "xls",
 	} {
 		if err := os.WriteFile(filepath.Join(in, name), []byte(data), 0o600); err != nil {
 			t.Fatal(err)
@@ -70,7 +70,7 @@ func TestAnonymiseLocally(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "1 of 3 files failed") {
 		t.Errorf("multi err = %v", err)
 	}
-	for _, want := range []string{"1 a.md -> document-", "2 b.csv -> document-", "3 c.pdf failed: cannot anonymise .pdf", "ORIGINAL personal data", `"0412 345 678" -> "`, unreviewedWarning} {
+	for _, want := range []string{"1 a.md -> document-", "2 b.csv -> document-", "3 c.xls failed: cannot anonymise .xls", "ORIGINAL personal data", `"0412 345 678" -> "`, unreviewedWarning} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr misses %q:\n%s", want, errOut)
 		}
@@ -99,7 +99,7 @@ func TestAnonymiseArguments(t *testing.T) {
 	}
 	for want, args := range map[string][]string{
 		"needs --format or --name":       {"anonymise", "-", "--local", "--patterns-only"},
-		`unknown format "pdf"`:           {"anonymise", "-", "--format", "pdf", "--local", "--patterns-only"},
+		`unknown format "xls"`:           {"anonymise", "-", "--format", "xls", "--local", "--patterns-only"},
 		"are for stdin":                  {"anonymise", md, "--format", "md", "--local"},
 		"not both":                       {"anonymise", md, "--output", "x", "--out-dir", "y", "--local"},
 		"--patterns-only to run without": {"anonymise", md, "--local"},
@@ -159,12 +159,12 @@ func TestAnonymiseOnTheServer(t *testing.T) {
 	}
 
 	// A single file's error is the command's error.
-	pdf := filepath.Join(dir, "x.pdf")
+	pdf := filepath.Join(dir, "x.xls")
 	if err := os.WriteFile(pdf, []byte("%PDF"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runCLIWith(t, "", "anonymise", pdf, "--server", s.url, "--api-key", member); err == nil || !strings.Contains(err.Error(), "cannot anonymise .pdf") {
-		t.Errorf("pdf err = %v", err)
+	if _, _, err := runCLIWith(t, "", "anonymise", pdf, "--server", s.url, "--api-key", member); err == nil || !strings.Contains(err.Error(), "cannot anonymise .xls") {
+		t.Errorf("xls err = %v", err)
 	}
 	if _, _, err := runCLIWith(t, anonMD, "anonymise", "-", "--format", "md", "--link-registry", "--server", s.url, "--api-key", member); err == nil || !strings.Contains(err.Error(), "admin key") {
 		t.Errorf("link as member err = %v", err)

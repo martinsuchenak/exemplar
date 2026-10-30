@@ -1,6 +1,6 @@
 ---
 name: exemplar-anonymise
-description: Anonymise real files (emails, text, Markdown, CSV, TSV, JSON, HTML, Twig and Jinja templates, DOCX, RTF, XLSX) with the exemplar CLI, without reading the originals. Use when asked to anonymise, scrub, de-identify or redact personal data in files, to make real data safe to share or use as test data, or to put exemplar anonymise in a script or pipeline.
+description: Anonymise real files (emails, text, Markdown, CSV, TSV, JSON, HTML, Twig and Jinja templates, DOCX, RTF, XLSX, PDF) with the exemplar CLI, without reading the originals. Use when asked to anonymise, scrub, de-identify or redact personal data in files, to make real data safe to share or use as test data, or to put exemplar anonymise in a script or pipeline.
 ---
 
 # Anonymising files with exemplar
@@ -65,9 +65,9 @@ set -o pipefail; exemplar anonymise data.jsonl 2>/dev/null | jq -c '.name'
 
 Formats are picked by extension: `.eml`, `.txt`/`.text`/`.log`,
 `.md`/`.markdown`, `.csv`, `.tsv`, `.json`, `.jsonl`/`.ndjson`,
-`.html`/`.htm`, `.twig`, `.j2`/`.jinja`/`.jinja2`, `.docx`, `.rtf`, `.xlsx`. For
+`.html`/`.htm`, `.twig`, `.j2`/`.jinja`/`.jinja2`, `.docx`, `.rtf`, `.xlsx`, `.pdf`. For
 stdin, `--format` takes the same names without the dot (`md`, `csv`, `json`,
-`eml`, `docx`, `xlsx`…). PDF, `.xls`, `.xlsm`, `.doc` and `.msg` are not supported; say so
+`eml`, `docx`, `xlsx`, `pdf`…). `.xls`, `.xlsm`, `.doc` and `.msg` are not supported; say so
 rather than converting them yourself, since converting means reading them.
 
 ## Choosing where it runs
@@ -93,10 +93,10 @@ them.
   failed, the error (`exemplar: 1 of 3 files failed`).
 - **Exit status** is non-zero when any file failed. A failed file writes
   nothing to stdout; with `--out-dir` the other files are still written.
-- **Dropped parts** (a DOCX's or XLSX's macros, an RTF's embedded objects) are listed
+- **Dropped parts** (a DOCX's or XLSX's macros, an RTF's embedded objects, a PDF's scripts and embedded files) are listed
   in the summary. They are removed, not anonymised; mention them to the
   user.
-- Errors name the problem (`not UTF-8 text`, `cannot anonymise .pdf`,
+- Errors name the problem (`not UTF-8 text`, `cannot anonymise .xls`,
   `this key already has an anonymise run in progress`). Runs are one at a
   time per key: wait for one to finish before starting the next, rather
   than running several in parallel.
@@ -107,8 +107,9 @@ them.
 ## What not to do
 
 - Don't work around a refusal (an unsupported format, a charset that is
-  refused, a password-protected DOCX) by decoding or converting the file
-  yourself.
+  refused, a password-protected DOCX or PDF, a scanned PDF) by decoding,
+  converting or OCR-ing the file yourself. A scanned PDF's text is in an
+  image, which exemplar cannot anonymise: tell the user.
 - Don't anonymise by hand, with `sed` or your own code: exemplar keeps fakes
   consistent across files and formats, and checks the output still parses.
 - Don't use `exemplar ingest` unless the user asks to store the result as

@@ -79,7 +79,14 @@ would rename namespace prefixes Office depends on. `docx.go` and `xlsx.go`
 say which rule reads each part; `xlsx.go` also reads formulas, so sheet
 names and the references to them change together. RTF has its own too (`rtf.go`): a tokeniser, a
 reader that knows which destinations hold text, and the same splicing, so
-only changed text is written again.
+only changed text is written again. PDF's (`pdf.go`) runs PDFium, compiled to
+WebAssembly and run by wazero inside the process (`pdfium.go`): one engine
+per file, with a memory cap and a deadline. It flattens each page, reads its
+text with every character's box and its text objects' bounds, and replaces
+each text object holding a match with one in a standard font at the same
+place. pdfcpu (`pdfcpu.go`) then rewrites the strings outside the pages'
+drawing and drops what no rule knows, working only on what PDFium wrote,
+and the result is opened again and checked.
 `app.Open` builds the anonymiser from the key, Presidio URL and profiles; with
 no key or no Presidio URL, ingest reports that it is not configured. See
 [anonymisation.md](anonymisation.md).

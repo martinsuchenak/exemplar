@@ -5,12 +5,17 @@ package anonymisetest
 import (
 	"archive/zip"
 	"bytes"
+	"compress/zlib"
 	"context"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/martinsuchenak/exemplar/internal/anonymise"
 )
@@ -127,4 +132,77 @@ func DOCX(text string) []byte {
 	}
 	_ = zw.Close()
 	return b.Bytes()
+}
+
+// PDF builds a one-page PDF whose page shows text in Helvetica, plus a
+// script (a JavaScript name tree), which is dropped.
+func PDF(text string) []byte {
+	escape := strings.NewReplacer(`\`, `\\`, "(", `\(`, ")", `\)`)
+	content := "BT /F1 12 Tf 72 720 Td (" + escape.Replace(text) + ") Tj ET"
+	objs := []string{
+		"<< /Type /Catalog /Pages 2 0 R /Names << /JavaScript << /Names [(init) 5 0 R] >> >> >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 6 0 R >> >> >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content),
+		"<< /S /JavaScript /JS (app.alert(1)) >>",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	var b strings.Builder
+	b.WriteString("%PDF-1.7\n")
+	offsets := make([]int, len(objs))
+	for i, o := range objs {
+		offsets[i] = b.Len()
+		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", i+1, o)
+	}
+	xref := b.Len()
+	fmt.Fprintf(&b, "xref\n0 %d\n0000000000 65535 f \n", len(objs)+1)
+	for _, o := range offsets {
+		fmt.Fprintf(&b, "%010d 00000 n \n", o)
+	}
+	fmt.Fprintf(&b, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(objs)+1, xref)
+	return []byte(b.String())
+}
+
+var (
+	pdfStream  = regexp.MustCompile(`(?s)stream\r?\n(.*?)endstream`)
+	pdfStrings = regexp.MustCompile(`(?s)<([0-9A-Fa-f\s]+)>|\(((?:\\.|[^\\)])*)\)`)
+)
+
+// PDFText returns a PDF as text a secret can be searched for in: the file,
+// every stream inflated, and every string in them decoded (hex strings, as
+// PDFium writes text, and UTF-16 strings, as metadata often is).
+func PDFText(data []byte) string {
+	parts := []string{string(data)}
+	for _, m := range pdfStream.FindAllSubmatch(data, -1) {
+		if r, err := zlib.NewReader(bytes.NewReader(m[1])); err == nil {
+			if b, err := io.ReadAll(r); err == nil {
+				parts = append(parts, string(b))
+			}
+		}
+	}
+	var out strings.Builder
+	for _, p := range parts {
+		out.WriteString(p + "\n")
+		for _, m := range pdfStrings.FindAllStringSubmatch(p, -1) {
+			var raw []byte
+			if m[1] != "" {
+				raw, _ = hex.DecodeString(strings.Join(strings.Fields(m[1]), ""))
+			} else {
+				raw = []byte(strings.NewReplacer(`\(`, "(", `\)`, ")", `\\`, `\`).Replace(m[2]))
+			}
+			if bytes.HasPrefix(raw, []byte{0xfe, 0xff}) && len(raw)%2 == 0 {
+				u := make([]uint16, 0, len(raw)/2-1)
+				for i := 2; i < len(raw); i += 2 {
+					u = append(u, uint16(raw[i])<<8|uint16(raw[i+1]))
+				}
+				out.WriteString(string(utf16.Decode(u)) + "\n")
+				continue
+			}
+			for _, c := range raw {
+				out.WriteRune(rune(c)) // Latin-1, as WinAnsi mostly is
+			}
+			out.WriteString("\n")
+		}
+	}
+	return out.String()
 }

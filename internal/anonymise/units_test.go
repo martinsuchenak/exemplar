@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -249,6 +251,40 @@ func TestAddColumnNames(t *testing.T) {
 		if columnName(v) != want {
 			t.Errorf("columnName(%q) = %v", v, !want)
 		}
+	}
+}
+
+// Bank details are found by their labels; a number without one is not
+// taken for an account.
+func TestBankAccounts(t *testing.T) {
+	for text, want := range map[string][]string{
+		"Bank Details Account No: 1234 5678 BSB: 062-000":  {"1234 5678", "062-000"},
+		"Account Number: 987 654 321\nBSB Number: 083-004": {"987 654 321", "083-004"},
+		"Acct # 12345678, bsb 062000":                      {"12345678", "062000"},
+		"A/C No. 0012-3456-78":                             {"0012-3456-78"},
+		"Account Name: Lane Plumbing; invoice 1234 5678":   nil,
+		"BSB: 30-6085": nil,
+	} {
+		var got []string
+		for _, sp := range patternSpans(text) {
+			if sp.Entity == EntityBankAccount {
+				got = append(got, text[sp.Start:sp.End])
+			}
+		}
+		slices.Sort(got)
+		slices.Sort(want)
+		if !slices.Equal(got, want) {
+			t.Errorf("%q: %q, want %q", text, got, want)
+		}
+	}
+	e := pdfEngine(t)
+	out, err := e.Anonymise(ctx, File{Name: "bank.txt", Data: []byte("Pay to Account No: 1234 5678 BSB: 062-000.\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out.Data); strings.Contains(got, "1234 5678") || strings.Contains(got, "062-000") ||
+		!regexp.MustCompile(`Account No: \d{4} \d{4} BSB: \d{3}-\d{3}\.`).MatchString(got) {
+		t.Errorf("out = %q", got)
 	}
 }
 

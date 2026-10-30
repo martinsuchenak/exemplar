@@ -40,7 +40,7 @@ func files() []anonymise.File {
 	return []anonymise.File{
 		{Name: "one.eml", Data: anonymisetest.Email("Ottoline Shah", "Tom Reid", "acmeplumbing.com.au", "Leak", "Hi Tom, call me on 0412 345 678. Ottoline")},
 		{Name: "notes.md", Data: []byte("# Leak\n\nTom Reid met Ottoline Shah. 0412 345 678\n")},
-		{Name: "report.pdf", Data: []byte("%PDF")},
+		{Name: "report.xls", Data: []byte("xls")},
 		{Name: "notes.md", Data: []byte("Ottoline again\n")},
 	}
 }
@@ -71,8 +71,8 @@ func TestAnyKeyAnonymisesAndNothingIsStored(t *testing.T) {
 	if res.Profile != "default" || res.Linked || len(res.Files) != 4 {
 		t.Fatalf("result = %+v", res)
 	}
-	if f := res.Files[2]; f.Error == "" || !strings.Contains(f.Error, "cannot anonymise .pdf") || f.Data != nil {
-		t.Errorf("pdf = %+v", f)
+	if f := res.Files[2]; f.Error == "" || !strings.Contains(f.Error, "cannot anonymise .xls") || f.Data != nil {
+		t.Errorf("xls = %+v", f)
 	}
 	for i, f := range []scrub.FileResult{res.Files[0], res.Files[1], res.Files[3]} {
 		if f.Error != "" || f.Replacements == 0 || f.Report != nil {
@@ -271,8 +271,8 @@ func TestDetectorFailureIsGeneric(t *testing.T) {
 	// A file that fails for its own reason is not the detector's failure.
 	a := newApp(t, false, 0)
 	res, err := a.Scrub.Anonymise(ctx, readOnly(t, a, testutil.Admin(t, a)), scrub.Request{}, files()[2:3])
-	if err != nil || res.Files[0].Unavailable || !strings.Contains(res.Files[0].Error, ".pdf") {
-		t.Errorf("pdf = %+v, %v", res, err)
+	if err != nil || res.Files[0].Unavailable || !strings.Contains(res.Files[0].Error, ".xls") {
+		t.Errorf("xls = %+v, %v", res, err)
 	}
 }
 

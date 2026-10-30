@@ -518,14 +518,14 @@ func TestAnonymise(t *testing.T) {
 		t.Errorf("docx = %+v, %v", d, err)
 	}
 	// An error is the server's message, as its kind.
-	if _, err := member.AnonymiseFile(ctx, scrub.Request{}, "a.pdf", strings.NewReader("%PDF"), io.Discard); !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "cannot anonymise .pdf") {
-		t.Errorf("pdf err = %v", err)
+	if _, err := member.AnonymiseFile(ctx, scrub.Request{}, "a.xls", strings.NewReader("xls"), io.Discard); !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "cannot anonymise .xls") {
+		t.Errorf("xls err = %v", err)
 	}
 	if _, err := member.AnonymiseFile(ctx, scrub.Request{LinkRegistry: true}, "a.md", strings.NewReader("x"), io.Discard); !errors.Is(err, apperr.ErrForbidden) {
 		t.Errorf("link err = %v", err)
 	}
 
-	res, err := member.AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{file("a.md", "Ottoline\n"), file("b.json", `{"name": "Wendy Moss"}`), file("c.pdf", "%PDF")})
+	res, err := member.AnonymiseFiles(ctx, scrub.Request{}, []client.IngestFile{file("a.md", "Ottoline\n"), file("b.json", `{"name": "Wendy Moss"}`), file("c.xls", "xls")})
 	if err != nil {
 		t.Fatal(err)
 	}

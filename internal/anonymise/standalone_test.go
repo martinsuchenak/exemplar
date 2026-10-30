@@ -88,7 +88,7 @@ func TestMediaTypesAndNames(t *testing.T) {
 			t.Errorf("NameFor(%s) = %q, which is %q (%v)", f, name, got, err)
 		}
 	}
-	if MediaType("pdf") != "application/octet-stream" || NameFor("pdf") != "" {
+	if MediaType("xls") != "application/octet-stream" || NameFor("xls") != "" {
 		t.Error("an unknown format has a media type or name")
 	}
 	if MediaType(FormatCSV) != "text/csv" || MediaType(FormatEmail) != "message/rfc822" {

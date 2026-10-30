@@ -213,9 +213,17 @@ spctl --assess --type open --context context:primary-signature --verbose=2 exemp
   labels, formulas, comments, a table, a pivot cache, a chart, external
   links); a new Excel rule adds its secrets there. RTF has one in
   `rtf_test.go` (split runs, escapes, fields, comments, `\info`, shapes,
-  pictures, object data). The parsers also have fuzz tests in
+  pictures, object data). PDF has one in `pdf_test.go` (`kitchenSink`: a
+  name split across text objects, in bold, serif, mono and coloured text, in
+  forms, a filled field, a comment, links, bookmarks, metadata, an embedded
+  file, scripts and an image), plus PDFs printed by Chrome and by macOS in
+  `testdata/pdf/`, whose made-up sources sit beside them; a new PDF rule adds
+  its secrets to the kitchen sink. The parsers also have fuzz tests in
   `fuzz_test.go`, which `go test` runs on their seeds; to fuzz one, run
   `go test ./internal/anonymise -run '^$' -fuzz '^FuzzXLSX$' -fuzztime 1m`.
+  `FuzzPDF` starts PDFium on every run, which the fuzzer's instrumentation
+  makes slow (a few runs a minute); `FuzzPDFObjects` fuzzes the Go part
+  (pdfcpu) quickly.
 
 - **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
   that records envelopes and data, can require AUTH PLAIN and can reject a

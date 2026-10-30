@@ -36,6 +36,9 @@ const (
 	EntityStreet    = "STREET_ADDRESS"
 	EntityDomain    = "DOMAIN"
 	EntityContentID = "CONTENT_ID"
+	// EntityBankAccount is a bank account number or a BSB, found by its
+	// label (Presidio has no recogniser for them).
+	EntityBankAccount = "BANK_ACCOUNT"
 )
 
 // presidioEntities are requested from Presidio; the Go patterns cover the rest.
@@ -47,14 +50,14 @@ var presidioEntities = []string{
 // digitEntities are replaced digit by digit, keeping their format.
 var digitEntities = map[string]bool{
 	EntityPhone: true, EntityCreditCard: true, EntityIBAN: true, EntityABN: true, EntityACN: true,
-	EntityTFN: true, EntityMedicare: true, EntityMoney: true, EntityIP: true,
+	EntityTFN: true, EntityMedicare: true, EntityMoney: true, EntityIP: true, EntityBankAccount: true,
 }
 
 // priority decides between two types found for the same text: the more
 // specific wins (an email over a URL, a company over an organisation).
 var priority = map[string]int{
 	EntityContentID: 10, EntityEmail: 9, EntityURL: 8, EntityCompany: 7, EntityStreet: 7, EntityABN: 6,
-	EntityPhone: 6, EntityMoney: 5, EntityPerson: 4, EntityOrganization: 3,
+	EntityBankAccount: 6, EntityPhone: 6, EntityMoney: 5, EntityPerson: 4, EntityOrganization: 3,
 }
 
 // Span is one detected value in a text, as byte offsets.
@@ -215,6 +218,10 @@ var patterns = []struct {
 	{EntityPhone, regexp.MustCompile(`\B\+\d[\d ().-]{5,22}\d\b`), 0, phoneDigits(8, 15)},
 	{EntityABN, regexp.MustCompile(`(?i)\bABN[:\s]\s*(\d{2}\s?\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
 	{EntityACN, regexp.MustCompile(`(?i)\bACN[:\s]\s*(\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
+	// Bank details by their labels: "BSB: 062-000", "Account No. 1234 5678",
+	// "Account Number 987 654 321", "A/C #12345678".
+	{EntityBankAccount, regexp.MustCompile(`(?i)\bBSB(?:\s*(?:No\.?|Number|#))?\s*[:.]?\s*(\d{3}[\s-]?\d{3})\b`), 1, nil},
+	{EntityBankAccount, regexp.MustCompile(`(?i)\b(?:Account|Acct|A/C)\s*(?:No\.?|Number|Num|#)\s*[:.]?\s*(\d(?:[\s-]?\d){4,15})\b`), 1, nil},
 	{EntityStreet, regexp.MustCompile(`\b(?:(?:Unit|Suite|Level|Shop)\s+\d+[A-Za-z]?[,/]?\s*)?\d{1,5}[A-Za-z]?(?:-\d{1,5})?\s+(?:[A-Z][a-z]+\s){1,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Court|Ct|Place|Pl|Lane|Ln|Parade|Pde|Highway|Hwy|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Way|Close|Cl)\b\.?`), 0, nil},
 	{EntityStreet, regexp.MustCompile(`\b(?:PO|P\.O\.)\s?Box\s+\d{1,6}\b`), 0, nil},
 	{EntityCompany, regexp.MustCompile(`\b(?:[A-Z][A-Za-z0-9&'\-]+\s){1,5}(?:Pty\.?\s?Ltd\.?|Limited|Ltd\.?|Inc\.?|LLC|Group|Holdings)\b`), 0, nil},

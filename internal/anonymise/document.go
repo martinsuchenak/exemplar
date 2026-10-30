@@ -239,6 +239,8 @@ var fieldHints = map[string]string{
 	"phone": EntityPhone, "phonenumber": EntityPhone, "mobile": EntityPhone, "telephone": EntityPhone, "tel": EntityPhone,
 	"company": EntityCompany, "companyname": EntityCompany, "organisation": EntityCompany, "organization": EntityCompany,
 	"employer": EntityCompany,
+	"bsb":      EntityBankAccount, "accountnumber": EntityBankAccount, "accountno": EntityBankAccount, "bankaccount": EntityBankAccount,
+	"bankaccountnumber": EntityBankAccount,
 }
 
 // placeholders are values a labelled column holds that are no one: a totals

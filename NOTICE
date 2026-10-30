@@ -2,3 +2,6 @@ exemplar
 Copyright 2026 Martin Suchenak
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes third-party software, among it PDFium, FreeType and
+libjpeg-turbo; see THIRD_PARTY_NOTICES.md.

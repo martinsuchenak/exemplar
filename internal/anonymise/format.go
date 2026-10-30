@@ -33,6 +33,7 @@ const (
 	FormatDOCX     Format = "docx"
 	FormatRTF      Format = "rtf"
 	FormatXLSX     Format = "xlsx"
+	FormatPDF      Format = "pdf"
 )
 
 // File is one file to anonymise, under the name it arrived with. The name
@@ -78,6 +79,7 @@ var formats = []formatDef{
 	{FormatDOCX, []string{".docx"}, "document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ooxmlHandler{docxFormat}},
 	{FormatRTF, []string{".rtf"}, "document", "application/rtf", rtfHandler{}},
 	{FormatXLSX, []string{".xlsx"}, "document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ooxmlHandler{xlsxFormat}},
+	{FormatPDF, []string{".pdf"}, "document", "application/pdf", pdfHandler{}},
 }
 
 // notYet explains the extensions people try that cannot be read yet.

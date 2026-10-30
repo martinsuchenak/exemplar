@@ -58,6 +58,7 @@ archives:
     files:
       - LICENSE
       - NOTICE
+      - THIRD_PARTY_NOTICES.md
       - README.md
       - CHANGELOG.md
       - exemplar-config.toml
@@ -99,6 +100,9 @@ dockers_v2:
     dockerfile: Dockerfile.release
     extra_files:
       - exemplar-config.toml
+      - LICENSE
+      - NOTICE
+      - THIRD_PARTY_NOTICES.md
     images:
       - ghcr.io/martinsuchenak/exemplar
     tags:

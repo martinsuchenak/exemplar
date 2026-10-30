@@ -83,6 +83,13 @@ func TestAnonymiseRoute(t *testing.T) {
 		t.Errorf("xlsx = %d %v", w.Code, w.Header())
 	}
 
+	// So does a PDF, its script dropped.
+	w = post("/api/v1/anonymise?name=invoice.pdf", reader.Secret, "", bytes.NewReader(anonymisetest.PDF("Owed by Ottoline")))
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/pdf" ||
+		w.Header().Get("X-Exemplar-Dropped-Parts") != "JavaScript" || strings.Contains(anonymisetest.PDFText(w.Body.Bytes()), "Ottoline") {
+		t.Errorf("pdf = %d %v", w.Code, w.Header())
+	}
+
 	// A format instead of a name.
 	w = post("/api/v1/anonymise?format=json", reader.Secret, "", strings.NewReader(`{"name": "Ottoline"}`))
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || strings.Contains(w.Body.String(), "Ottoline") {
@@ -91,9 +98,9 @@ func TestAnonymiseRoute(t *testing.T) {
 
 	for target, want := range map[string]int{
 		"/api/v1/anonymise":                              http.StatusBadRequest, // neither name nor format
-		"/api/v1/anonymise?format=pdf":                   http.StatusBadRequest, // not a format yet
+		"/api/v1/anonymise?format=xls":                   http.StatusBadRequest, // not a format yet
 		"/api/v1/anonymise?name=a.md&format=json":        http.StatusBadRequest,
-		"/api/v1/anonymise?name=a.pdf":                   http.StatusBadRequest, // unsupported file
+		"/api/v1/anonymise?name=a.xls":                   http.StatusBadRequest, // unsupported file
 		"/api/v1/anonymise?name=a.json":                  http.StatusBadRequest, // not JSON
 		"/api/v1/anonymise?name=a.md&link_registry=yes":  http.StatusBadRequest,
 		"/api/v1/anonymise?name=a.md&link_registry=true": http.StatusForbidden, // reader, not admin
@@ -116,7 +123,7 @@ func TestAnonymiseRoute(t *testing.T) {
 
 	// Several files: one batch, answered with a zip and its manifest.
 	body, ctype := upload(t, map[string]string{"profile": "default"}, map[string][]byte{
-		"a.md": []byte(md), "b.csv": []byte("Name\nWendy Moss\n"), "c.pdf": []byte("%PDF"),
+		"a.md": []byte(md), "b.csv": []byte("Name\nWendy Moss\n"), "c.xls": []byte("xls"),
 	})
 	w = post("/api/v1/anonymise", reader.Secret, ctype, body)
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/zip" || w.Header().Get("X-Exemplar-Unreviewed") != "true" {
@@ -132,7 +139,7 @@ func TestAnonymiseRoute(t *testing.T) {
 	stored := 0
 	for _, f := range res.Files {
 		if f.Error != "" {
-			if !strings.Contains(f.Error, "cannot anonymise .pdf") {
+			if !strings.Contains(f.Error, "cannot anonymise .xls") {
 				t.Errorf("error = %s", f.Error)
 			}
 			continue

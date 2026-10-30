@@ -258,6 +258,7 @@ var attachmentFormats = map[string]Format{
 	"application/rtf": FormatRTF, "text/rtf": FormatRTF,
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": FormatDOCX,
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       FormatXLSX,
+	"application/pdf": FormatPDF,
 }
 
 // attachmentFile returns the handler and content of an attachment the

@@ -109,7 +109,7 @@ func emails() []ingest.File {
 	return []ingest.File{
 		{Name: "one.eml", Data: anonymisetest.Email("Priya Shah", "Tom Reid", "acmeplumbing.com.au", "Leak at site", "Hi Tom, call me on 0412 345 678. Priya")},
 		{Name: "outlook.msg", Data: []byte("binary")},
-		{Name: "report.pdf", Data: []byte("%PDF")},
+		{Name: "report.xls", Data: []byte("xls")},
 		{Name: "TWO.EML", Data: anonymisetest.Email("Tom Reid", "Priya Shah", "acmeplumbing.com.au", "Re Leak at site", "Thanks Priya, fixed. Tom")},
 	}
 }
@@ -162,7 +162,7 @@ func TestIngestStoresAnonymisedFixtures(t *testing.T) {
 	for _, f := range res.Files {
 		byName[f.Name] = f
 	}
-	if !strings.Contains(byName["outlook.msg"].Error, "MSG") || !strings.Contains(byName["report.pdf"].Error, "cannot anonymise .pdf") {
+	if !strings.Contains(byName["outlook.msg"].Error, "MSG") || !strings.Contains(byName["report.xls"].Error, "cannot anonymise .xls") {
 		t.Errorf("rejections = %+v", res.Files)
 	}
 	if byName["one.eml"].FixtureName != "b1-001.eml" || byName["TWO.EML"].FixtureName != "b1-002.eml" || byName["one.eml"].Replacements == 0 || byName["one.eml"].Report != nil {
@@ -255,27 +255,31 @@ func TestIngestStoresDocuments(t *testing.T) {
 		{Name: "Quote.DOCX", Data: anonymisetest.DOCX("Quote for Tom Reid, 0412 345 678")},
 		{Name: "letter.rtf", Data: []byte(`{\rtf1\ansi{\info{\author Priya Shah}}\pard Dear Tom Reid, call 0412 345 678.\par}`)},
 		{Name: "Budget.xlsx", Data: anonymisetest.XLSX("Tom Reid owes $1,200, call 0412 345 678")},
+		{Name: "Invoice.PDF", Data: anonymisetest.PDF("Invoice for Tom Reid, call 0412 345 678")},
 	}
 	res, err := a.Ingest.Ingest(ctx, admin, dsID, ingest.Request{Batch: "docs"}, files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig", "docs-005.docx", "docs-006.rtf", "docs-007.xlsx"}
+	want := []string{"docs-001.eml", "docs-002.md", "docs-003.csv", "docs-004.html.twig", "docs-005.docx", "docs-006.rtf", "docs-007.xlsx", "docs-008.pdf"}
 	for i, f := range res.Files {
 		dropped := 0
-		if strings.HasSuffix(want[i], ".docx") || strings.HasSuffix(want[i], ".xlsx") {
-			dropped = 1 // its macros
+		if strings.HasSuffix(want[i], ".docx") || strings.HasSuffix(want[i], ".xlsx") || strings.HasSuffix(want[i], ".pdf") {
+			dropped = 1 // its macros, or its script
 		}
 		if f.Error != "" || f.FixtureName != want[i] || f.Replacements == 0 || f.DroppedParts != dropped {
 			t.Errorf("file %d = %+v, want %s", i, f, want[i])
 		}
 	}
 	fixtures, err := a.Fixtures.List(ctx, admin, dsID, fixture.ListFilter{})
-	if err != nil || len(fixtures) != 7 {
+	if err != nil || len(fixtures) != 8 {
 		t.Fatalf("fixtures = %d, %v", len(fixtures), err)
 	}
 	for _, f := range fixtures {
 		body := officeText(t, content(t, a, admin, f.ID))
+		if strings.HasSuffix(f.Name, ".pdf") {
+			body = anonymisetest.PDFText([]byte(body))
+		}
 		for _, s := range secrets {
 			if strings.Contains(body, s) {
 				t.Errorf("%s still contains %q:\n%s", f.Name, s, body)

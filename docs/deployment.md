@@ -33,7 +33,8 @@ environment variables in [cli.md](cli.md) (`SERVER_PORT`, `PRESIDIO_URL`,
 
 Size the server's memory for its uploads. An ingest or anonymise run holds
 its whole upload in memory while it works, and parsing a document takes
-several times more, so a large upload can need hundreds of MiB. At most
+several times more, so a large upload can need hundreds of MiB, and a PDF
+is read by an engine of its own that may use up to 512 MiB more. At most
 `storage.max_concurrent_runs` runs (`MAX_CONCURRENT_RUNS`, default 2) are
 held at once; the rest get `429` before their upload is read. Keep
 `max_ingest_mb` and `max_concurrent_runs` small enough for the memory you

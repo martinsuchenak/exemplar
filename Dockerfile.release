@@ -12,6 +12,8 @@ RUN apk add --no-cache ca-certificates tzdata \
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/exemplar /usr/local/bin/exemplar
 
+COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md /usr/share/licenses/exemplar/
+
 WORKDIR /app
 COPY exemplar-config.toml .
 

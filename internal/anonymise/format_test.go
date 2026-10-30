@@ -10,7 +10,7 @@ import (
 )
 
 // supported is the error's list of extensions, in format order.
-const supported = "the supported files are .eml, .txt, .text, .log, .md, .markdown, .csv, .tsv, .json, .jsonl, .ndjson, .html, .htm, .twig, .j2, .jinja, .jinja2, .docx, .rtf, .xlsx"
+const supported = "the supported files are .eml, .txt, .text, .log, .md, .markdown, .csv, .tsv, .json, .jsonl, .ndjson, .html, .htm, .twig, .j2, .jinja, .jinja2, .docx, .rtf, .xlsx, .pdf"
 
 func TestFormatOf(t *testing.T) {
 	for name, want := range map[string]string{
@@ -34,7 +34,7 @@ func TestFormatOf(t *testing.T) {
 		"Budget 2025.XLSX":      "xlsx",
 		"Letter.RTF":            "rtf",
 		"outlook.msg":           "MSG files are not supported yet; convert to .eml first",
-		"report.pdf":            "cannot anonymise .pdf: " + supported,
+		"report.xls":            "cannot anonymise .xls: " + supported,
 		"README":                "cannot anonymise a file without an extension: " + supported,
 		"":                      "cannot anonymise a file without an extension: " + supported,
 		"archive.eml.zip":       "cannot anonymise .zip: " + supported,
@@ -50,7 +50,7 @@ func TestFormatOf(t *testing.T) {
 			t.Errorf("FormatOf(%q) = %q, want %q", name, got, want)
 		}
 	}
-	want := []Format{FormatEmail, FormatText, FormatMarkdown, FormatCSV, FormatTSV, FormatJSON, FormatJSONL, FormatHTML, FormatTwig, FormatJinja, FormatDOCX, FormatRTF, FormatXLSX}
+	want := []Format{FormatEmail, FormatText, FormatMarkdown, FormatCSV, FormatTSV, FormatJSON, FormatJSONL, FormatHTML, FormatTwig, FormatJinja, FormatDOCX, FormatRTF, FormatXLSX, FormatPDF}
 	if got := Formats(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Formats() = %v", got)
 	}
@@ -142,13 +142,13 @@ func TestFileNamesMatchAttachmentNames(t *testing.T) {
 func TestUnsupportedFilesFailAlone(t *testing.T) {
 	e := newEngine(t, newMemRegistry())
 	files := []File{
-		{Name: "notes.pdf", Data: []byte("Sarah Lane called")},
+		{Name: "notes.xls", Data: []byte("Sarah Lane called")},
 		eml(original),
 		{Name: "outlook.msg", Data: []byte("binary")},
 	}
 	errs := e.Prepare(ctx, files)
 	if len(errs) != 3 || errs[1] != nil ||
-		errs[0] == nil || !strings.Contains(errs[0].Error(), "cannot anonymise .pdf") ||
+		errs[0] == nil || !strings.Contains(errs[0].Error(), "cannot anonymise .xls") ||
 		errs[2] == nil || !strings.Contains(errs[2].Error(), "MSG") {
 		t.Fatalf("errs = %v", errs)
 	}
