@@ -229,7 +229,7 @@ Then:
 # The anonymisation key (optional: without it, ingest stays off)
 nomad var put nomad/jobs/exemplar anon_key=$(openssl rand -hex 32)
 
-nomad job run -var image=ghcr.io/martinsuchenak/exemplar:0.1.0 exemplar.nomad
+nomad job run -var image=ghcr.io/martinsuchenak/exemplar:0.2.0 exemplar.nomad
 
 # The first admin key
 nomad alloc exec -task exemplar <alloc-id> exemplar bootstrap

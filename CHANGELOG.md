@@ -9,6 +9,8 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Added
 
 - MCP: `list_datasets` takes a `query`, words matched in dataset names,
@@ -90,5 +92,6 @@ version without one); see [docs/development.md](docs/development.md#releasing).
   signed multi-arch image at `ghcr.io/martinsuchenak/exemplar`, and a
   Homebrew cask (`brew install --cask martinsuchenak/tap/exemplar`).
 
-[Unreleased]: https://github.com/martinsuchenak/exemplar/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/martinsuchenak/exemplar/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/martinsuchenak/exemplar/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/martinsuchenak/exemplar/releases/tag/v0.1.0

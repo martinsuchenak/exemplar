@@ -2,7 +2,7 @@
 # docs/deployment.md.
 #
 #   nomad var put nomad/jobs/exemplar anon_key=$(openssl rand -hex 32)   # optional
-#   nomad job run -var image=ghcr.io/martinsuchenak/exemplar:0.1.0 exemplar.nomad
+#   nomad job run -var image=ghcr.io/martinsuchenak/exemplar:0.2.0 exemplar.nomad
 #
 # Needs a client with the Docker driver, CNI plugins (bridge networking) and a
 # host volume called exemplar-data, writable by UID 10001:
