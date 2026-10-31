@@ -25,7 +25,10 @@ services:
       # (the anonymise tool works without it). Set it in .env only.
       EXEMPLAR_ANON_KEY: ${EXEMPLAR_ANON_KEY:-}
       MAX_INGEST_MB: ${EXEMPLAR_MAX_INGEST_MB:-200}
-      MAX_CONCURRENT_RUNS: ${EXEMPLAR_MAX_CONCURRENT_RUNS:-2}
+      # A run sends one detector call at a time, so keep this and Presidio's
+      # PRESIDIO_WORKERS equal. (0 here means no limit, which no worker
+      # count matches, so the two are set apart.)
+      MAX_CONCURRENT_RUNS: ${EXEMPLAR_MAX_CONCURRENT_RUNS:-4}
     volumes:
       - exemplar-data:/app/data
     depends_on:
@@ -39,6 +42,9 @@ services:
     environment:
       # The default 30s worker timeout kills the worker while the model loads.
       GUNICORN_CMD_ARGS: --timeout 300
+      # One worker answers one request at a time, and each loads its own
+      # model: about 768 MiB more memory per worker (docs/deployment.md).
+      WORKERS: ${PRESIDIO_WORKERS:-4}
     # Reachable from exemplar only; never published.
     expose:
       - "3000"

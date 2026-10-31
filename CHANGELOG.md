@@ -22,6 +22,17 @@ version without one); see [docs/development.md](docs/development.md#releasing).
   capitals (`PETRA VANCLIFF`) is read again title-cased, so Presidio finds
   it; only the lines holding such runs are sent again.
 
+### Changed
+
+- `docker-compose.yml` and `exemplar.nomad` give Presidio one worker per
+  run and hold 4 runs at once (up from 2 and 1). Presidio's single default
+  worker let only one file be checked at a time, however many runs the
+  server held; with 4, about four times as many files are anonymised a
+  minute. Presidio needs about 768 MiB more memory per worker: the Nomad
+  job's `runs` variable sets the runs, the workers and both tasks' memory
+  together, and Compose takes `PRESIDIO_WORKERS`. See
+  docs/deployment.md.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

@@ -40,6 +40,17 @@ held at once; the rest get `429` before their upload is read. Keep
 `max_ingest_mb` and `max_concurrent_runs` small enough for the memory you
 give exemplar, or give it more.
 
+Give Presidio one worker per run. A run sends one detector call at a time,
+and one Presidio worker answers one call at a time, so with a single worker
+(Presidio's own default) every run waits on the others and more runs add
+nothing. Both setups give Presidio as many workers as exemplar holds runs
+(4 by default). Each worker loads its own model, about 768 MiB of memory.
+On one machine, with small documents, 4 runs and 4 workers anonymised about
+four times as many files a minute as 1 worker: around 5,300 emails or 2,700
+Word documents a minute, against 1,300 and 660. PDFs are bound by exemplar's
+CPU instead (about 300 ms and most of a core each, about 800 a minute with
+4 runs).
+
 ## Working with a deployed server
 
 Everything an admin does, reviewing included, goes through the API: the
@@ -154,13 +165,15 @@ with their defaults:
 | `EXEMPLAR_PORT` | `8080` | Port the API is published on |
 | `EXEMPLAR_ANON_KEY` | empty | The anonymisation key; empty leaves ingest off |
 | `EXEMPLAR_MAX_INGEST_MB` | `200` | Largest upload one ingest or anonymise run accepts |
-| `EXEMPLAR_MAX_CONCURRENT_RUNS` | `2` | Most ingest and anonymise runs held at once, together |
+| `EXEMPLAR_MAX_CONCURRENT_RUNS` | `4` | Most ingest and anonymise runs held at once, together |
+| `PRESIDIO_WORKERS` | `4` | Presidio's workers: keep it equal to the runs above (it cannot follow them, as `0` runs means no limit) |
 | `PRESIDIO_IMAGE` | `presidio-analyzer:2.2.362` | The version exemplar is tested against; change it only to one you have tested |
 
 Presidio takes a minute or two to load its model after it starts; until it
 is up, anonymising answers "the anonymiser's detector is unavailable; try
 again later" and everything else works.
-It needs about 2 GiB of memory, and a CPU that exposes AVX: without it,
+It needs about 1.3 GiB of memory and 768 MiB more for each worker (about
+4.3 GiB with 4), and a CPU that exposes AVX: without it,
 Presidio's numpy fails to load (`import numpy`, in `_multiarray_umath`),
 its worker restarts in a loop, and every file is "detector unavailable". A
 virtual machine must pass the host's CPU features through: in Proxmox, set
@@ -213,9 +226,12 @@ See [backup-and-exchange.md](backup-and-exchange.md).
 `exemplar.nomad` runs one group: Presidio as a sidecar that starts first,
 and exemplar, sharing a bridge network so exemplar reaches Presidio on
 `localhost:3000`. exemplar registers the `exemplar` service with Nomad's
-service discovery, with a `/health` check. It gives exemplar 1 GiB of
-memory and takes uploads of up to 100 MiB, one run at a time
-(`MAX_INGEST_MB`, `MAX_CONCURRENT_RUNS`); raise them together.
+service discovery, with a `/health` check. It takes uploads of up to
+100 MiB (`MAX_INGEST_MB`) and holds `runs` of them at once (4 by default);
+Presidio gets a worker for each. Memory follows `runs`: 1 GiB per run for
+exemplar and 1.25 GiB plus 768 MiB per worker for Presidio, about 8.3 GiB
+together with 4 (`-var runs=2` asks for about 4.8 GiB). Raise
+`MAX_INGEST_MB` only with exemplar's memory.
 
 The cluster needs:
 
@@ -247,8 +263,8 @@ nomad job run -var image=ghcr.io/martinsuchenak/exemplar:0.4.0 exemplar.nomad
 nomad alloc exec -task exemplar <alloc-id> exemplar bootstrap
 ```
 
-The job's variables are `image`, `presidio_image` (pin a tested version)
-and `datacenters`. The key is read from the Nomad variable
+The job's variables are `image`, `presidio_image` (pin a tested version),
+`runs` (1 to 16) and `datacenters`. The key is read from the Nomad variable
 `nomad/jobs/exemplar` (item `anon_key`) into the task's environment; only
 this job and holders of a token that can read that variable see it.
 Changing the variable restarts the task.

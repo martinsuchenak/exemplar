@@ -26,6 +26,17 @@ variable "presidio_image" {
   default     = "mcr.microsoft.com/presidio-analyzer:2.2.362"
 }
 
+variable "runs" {
+  type        = number
+  description = "Ingest and anonymise runs exemplar holds at once. Presidio gets one worker for each, and both tasks' memory follows: about 1 GiB per run for exemplar (uploads of up to 100 MiB) and 768 MiB per worker for Presidio"
+  default     = 4
+
+  validation {
+    condition     = var.runs >= 1 && var.runs <= 16
+    error_message = "runs must be from 1 to 16."
+  }
+}
+
 variable "datacenters" {
   type    = list(string)
   default = ["dc1"]
@@ -83,11 +94,14 @@ job "exemplar" {
       env {
         # The default 30s worker timeout kills the worker while the model loads.
         GUNICORN_CMD_ARGS = "--timeout 300"
+        # One worker answers one request at a time, and each loads its own
+        # model, so memory grows with them.
+        WORKERS = var.runs
       }
 
       resources {
-        cpu    = 1000
-        memory = 2048
+        cpu    = 500 + 500 * var.runs
+        memory = 1280 + 768 * var.runs
       }
     }
 
@@ -108,9 +122,9 @@ job "exemplar" {
         PRESIDIO_URL = "http://localhost:3000"
         # An ingest or anonymise run holds its upload in memory and parsing
         # takes several times more, so these and the memory below go
-        # together: one run of up to 100 MiB at a time fits in 1 GiB.
+        # together: a run of up to 100 MiB fits in 1 GiB.
         MAX_INGEST_MB       = "100"
-        MAX_CONCURRENT_RUNS = "1"
+        MAX_CONCURRENT_RUNS = var.runs
       }
 
       # The anonymisation key, from the Nomad variable nomad/jobs/exemplar
@@ -131,8 +145,8 @@ job "exemplar" {
       kill_timeout = "35s"
 
       resources {
-        cpu    = 256
-        memory = 1024
+        cpu    = 256 * var.runs
+        memory = 1024 * var.runs
       }
     }
   }
