@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -42,10 +43,14 @@ const (
 	EntityBankAccount = "BANK_ACCOUNT"
 )
 
-// presidioEntities are requested from Presidio; the Go patterns cover the rest.
+// presidioEntities are requested from Presidio; the Go patterns cover the
+// rest. Only types the default Presidio Analyzer has a recogniser for: it
+// has none for ABNs, ACNs, tax file numbers, Medicare numbers or
+// organisations, and logs a warning for every request naming one. The
+// patterns below find those numbers, and companies are learned from
+// addresses and company suffixes.
 var presidioEntities = []string{
 	EntityPerson, EntityEmail, EntityPhone, EntityURL, EntityCreditCard, EntityIBAN, EntityIP,
-	EntityABN, EntityACN, EntityTFN, EntityMedicare, EntityOrganization,
 }
 
 // digitEntities are replaced digit by digit, keeping their format.
@@ -58,7 +63,8 @@ var digitEntities = map[string]bool{
 // specific wins (an email over a URL, a company over an organisation).
 var priority = map[string]int{
 	EntityContentID: 10, EntityEmail: 9, EntityURL: 8, EntityCompany: 7, EntityStreet: 7, EntityABN: 6,
-	EntityBankAccount: 6, EntityPhone: 6, EntityMoney: 5, EntityPerson: 4, EntityOrganization: 3,
+	EntityBankAccount: 6, EntityTFN: 6, EntityMedicare: 6, EntityPhone: 6, EntityMoney: 5, EntityPerson: 4,
+	EntityOrganization: 3,
 }
 
 // Span is one detected value in a text, as byte offsets.
@@ -248,6 +254,15 @@ var patterns = []struct {
 	{EntityPhone, regexp.MustCompile(`(?i)\bdirect\s*:\s*(\+?\(?\d[\d ().-]{2,19}\d{2})\b`), 1, phoneDigits(6, 15)},
 	{EntityABN, regexp.MustCompile(`(?i)\bABN[:\s]\s*(\d{2}\s?\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
 	{EntityACN, regexp.MustCompile(`(?i)\bACN[:\s]\s*(\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
+	// Tax file and Medicare card numbers: after their labels ("TFN: 123 456
+	// 782", "Tax file number 123456782", "Medicare No. 2123 45670 1")
+	// whatever the digits; without one, only a number standing alone,
+	// written as these are, whose check digit holds, so few other numbers
+	// are taken for one.
+	{EntityTFN, regexp.MustCompile(`(?i)\b(?:TFN|tax\s+file\s+(?:no\.?|number|#))\s*[:.]?\s*(\d(?:[\s-]?\d){7,8})\b`), 1, nil},
+	{EntityTFN, digitRun, 0, validTFN},
+	{EntityMedicare, regexp.MustCompile(`(?i)\bmedicare(?:\s+card)?(?:\s*(?:no\.?|number|#))?\s*[:.]?\s*(\d(?:[\s-]?\d){9,10})\b`), 1, nil},
+	{EntityMedicare, digitRun, 0, validMedicare},
 	// Bank details by their labels: "BSB: 062-000", "Account No. 1234 5678",
 	// "Account Number 987 654 321", "A/C #12345678".
 	{EntityBankAccount, regexp.MustCompile(`(?i)\bBSB(?:\s*(?:No\.?|Number|#))?\s*[:.]?\s*(\d{3}[\s-]?\d{3})\b`), 1, nil},
@@ -255,6 +270,75 @@ var patterns = []struct {
 	{EntityStreet, regexp.MustCompile(`\b(?:(?:Unit|Suite|Level|Shop)\s+\d+[A-Za-z]?[,/]?\s*)?\d{1,5}[A-Za-z]?(?:-\d{1,5})?\s+(?:[A-Z][a-z]+\s){1,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Court|Ct|Place|Pl|Lane|Ln|Parade|Pde|Highway|Hwy|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Way|Close|Cl)\b\.?`), 0, nil},
 	{EntityStreet, regexp.MustCompile(`\b(?:PO|P\.O\.)\s?Box\s+\d{1,6}\b`), 0, nil},
 	{EntityCompany, regexp.MustCompile(`\b(?:[A-Z][A-Za-z0-9&'\-]+\s){1,5}(?:Pty\.?\s?Ltd\.?|Limited|Ltd\.?|Inc\.?|LLC|Group|Holdings)\b`), 0, nil},
+}
+
+// digitRun is a run of digits with single spaces or hyphens between their
+// groups, taken whole, so a check sees every digit of a number and never a
+// piece of a longer one (the last nine digits of an ABN, say).
+var digitRun = regexp.MustCompile(`\b\d+(?:[ -]\d+)*\b`)
+
+// digitGroups returns a number's digits and the length of each group.
+func digitGroups(v string) ([]int, []int) {
+	var digits, groups []int
+	for _, g := range strings.FieldsFunc(v, func(r rune) bool { return r == ' ' || r == '-' }) {
+		for _, r := range g {
+			digits = append(digits, int(r-'0'))
+		}
+		groups = append(groups, len(g))
+	}
+	return digits, groups
+}
+
+// shaped reports whether groups is one of shapes, and the digits are not
+// all the same (a run of zeros passes most check digits).
+func shaped(digits, groups []int, shapes ...[]int) bool {
+	same := true
+	for _, d := range digits {
+		same = same && d == digits[0]
+	}
+	if len(digits) == 0 || same {
+		return false
+	}
+	for _, sh := range shapes {
+		if slices.Equal(groups, sh) {
+			return true
+		}
+	}
+	return false
+}
+
+// validTFN reports whether v is a tax file number as written (123 456 782,
+// or the nine digits together) whose check digit holds: the digits,
+// weighted 1 4 3 7 5 8 6 9 10, add up to a multiple of 11.
+func validTFN(v string) bool {
+	digits, groups := digitGroups(v)
+	if !shaped(digits, groups, []int{9}, []int{3, 3, 3}) {
+		return false
+	}
+	sum := 0
+	for i, w := range []int{1, 4, 3, 7, 5, 8, 6, 9, 10} {
+		sum += digits[i] * w
+	}
+	return sum%11 == 0
+}
+
+// validMedicare reports whether v is a Medicare card number as written
+// (2123 45670 1, with the holder's number after it or not, or the digits
+// together) whose check digit holds: it starts with 2 to 6, and its first
+// eight digits, weighted 1 3 7 9 1 3 7 9, add up to the ninth, modulo 10.
+func validMedicare(v string) bool {
+	digits, groups := digitGroups(v)
+	if !shaped(digits, groups, []int{10}, []int{11}, []int{4, 5, 1}, []int{4, 5, 2}, []int{4, 5, 1, 1}) {
+		return false
+	}
+	if digits[0] < 2 || digits[0] > 6 {
+		return false
+	}
+	sum := 0
+	for i, w := range []int{1, 3, 7, 9, 1, 3, 7, 9} {
+		sum += digits[i] * w
+	}
+	return sum%10 == digits[8]
 }
 
 // phoneDigits accepts a phone number with min to max digits.

@@ -9,6 +9,17 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+### Fixed
+
+- Tax file numbers and Medicare card numbers are anonymised. exemplar asked
+  Presidio for them, but its default setup finds neither, so they came
+  through unchanged. They are now found after their labels (`TFN:`,
+  `Medicare No.`, a column of them), and without one when a number stands
+  alone, written as they are, and its check digit holds.
+- Presidio is asked only for the types its default setup can find, so it no
+  longer logs "doesn't have the corresponding recognizer" for ABNs, ACNs,
+  tax file numbers, Medicare numbers and organisations on every request.
+
 ## [0.5.1] - 2026-10-31
 
 ### Fixed

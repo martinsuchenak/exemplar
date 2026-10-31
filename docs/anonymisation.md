@@ -67,6 +67,7 @@ later` (see [Presidio](#presidio)).
 | Profile terms | The profile's `terms` list | The company-style fake (the same company as the domain it names), in any case, also inside identifiers; a term wins over a name a display name made of it |
 | Phone numbers | Australian patterns, any number written with its calling code (`+234 …`), and any number after a phone label (`Tel:`, `Mobile`, `Fax`, `Ph`, `Direct:`, `Direct line`) with 6 to 15 digits, ending in two or more, so `Mobile 0412 345 678 2 units` leaves the `2` | Fake digits; leading zeros and the first other digit kept (`04…`, `(02)…`, `13…`) |
 | ABN, ACN | Labelled patterns | Fake digits, same layout |
+| Tax file numbers, Medicare card numbers | After their labels (`TFN:`, `Tax file number`, `Medicare No.`) whatever the digits; a column or key labelled `TFN` or `Medicare`; without a label, a number standing alone, written as these are (`123 456 782`, `2123 45670 1`, or the digits together), whose check digit holds | Fake digits, same layout |
 | Bank account numbers, BSBs | Their labels (`BSB: 062-000`, `Account No. 1234 5678`); a column or key labelled `BSB` or `Account Number` | Fake digits, same layout |
 | Money | `$`, `AUD` patterns | Fake digits, same layout |
 | Street addresses, PO boxes | Pattern | A synthetic street address |
@@ -174,7 +175,8 @@ A CSV column or JSON key named for an entity marks its values as that entity,
 even where the detector would not find them: `name`, `full_name`,
 `first_name`, `last_name`, `surname`; `email`, `e-mail`, `email_address`;
 `phone`, `mobile`, `tel`; `company`, `organisation`, `employer`; `bsb`,
-`account_number`, `bank_account`. A longer
+`account_number`, `bank_account`; `tfn`, `tax_file_number`; `medicare`,
+`medicare_number`. A longer
 label ending in a phone or email one counts too: `Mobile Phone`,
 `homePhone`, `Contact Phone Number`, `Work Email`. Only letters and digits
 of the label count, in any case. A placeholder under such a label
@@ -613,7 +615,7 @@ docker run -d --name presidio -e GUNICORN_CMD_ARGS="--timeout 300" \
 
 - `GUNICORN_CMD_ARGS="--timeout 300"` is needed: the first request loads the model, which takes longer than Gunicorn's default 30-second worker timeout, so the worker is killed and the request hangs.
 - The image is about 1 GB.
-- Default Presidio does not tag organisations, ABNs, Australian mobile numbers or many other countries' numbers. exemplar's own patterns cover those (other countries' numbers when written with their calling code), and companies are also learned from addresses.
+- Default Presidio does not tag organisations, ABNs, ACNs, tax file numbers, Medicare numbers, Australian mobile numbers or many other countries' numbers. exemplar's own patterns cover those (other countries' numbers when written with their calling code), and companies are also learned from addresses. exemplar asks Presidio only for the types it can find (people, email addresses, phone numbers, URLs, credit cards, IBANs, IP addresses), so it logs no "doesn't have the corresponding recognizer" warnings.
 - To tune recognisers, mount a configuration file and point `ANALYZER_CONF_FILE` at it (see the Presidio documentation).
 
 exemplar sends each text part with the batch's header names as an ad-hoc deny

@@ -254,6 +254,9 @@ var fieldHints = map[string]string{
 	"employer": EntityCompany,
 	"bsb":      EntityBankAccount, "accountnumber": EntityBankAccount, "accountno": EntityBankAccount, "bankaccount": EntityBankAccount,
 	"bankaccountnumber": EntityBankAccount,
+	"tfn":               EntityTFN, "taxfilenumber": EntityTFN, "taxfileno": EntityTFN,
+	"medicare": EntityMedicare, "medicarenumber": EntityMedicare, "medicareno": EntityMedicare,
+	"medicarecardnumber": EntityMedicare,
 }
 
 // placeholders are values a labelled column holds that are no one: a totals

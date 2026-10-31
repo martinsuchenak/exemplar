@@ -326,6 +326,69 @@ func TestBankAccounts(t *testing.T) {
 	}
 }
 
+// Tax file and Medicare card numbers are found after their labels whatever
+// their digits, and without one only standing alone, written as they are,
+// with a check digit that holds; a piece of a longer number, a phone number
+// or a run of zeros is not taken for one.
+func TestTaxFileAndMedicareNumbers(t *testing.T) {
+	for text, want := range map[string][]string{
+		"TFN: 123 456 782":                       {"123 456 782"},
+		"Tax file number 123456782.":             {"123456782"},
+		"tfn 123 456 783 (mistyped)":             {"123 456 783"},
+		"ref 123 456 782 on file":                {"123 456 782"},
+		"ref 123 456 783 on file":                nil, // check digit fails
+		"ref 123 456 782 111":                    nil, // part of a longer number
+		"ABN 51 824 753 556":                     nil, // an ABN's last nine digits
+		"zeros 000 000 000":                      nil,
+		"Medicare No. 2123 45670 1":              {"2123 45670 1"},
+		"medicare card number: 9999 99999 9":     {"9999 99999 9"},
+		"card 2123456701, holder 2123 45670 1 2": {"2123456701", "2123 45670 1 2"},
+		"card 7123 45670 1":                      nil, // starts with 7
+		"card 2123 45671 1":                      nil, // check digit fails
+		"call +61 412 345 678":                   nil,
+	} {
+		var got []string
+		for _, sp := range patternSpans(text) {
+			if sp.Entity == EntityTFN || sp.Entity == EntityMedicare {
+				got = append(got, text[sp.Start:sp.End])
+			}
+		}
+		slices.Sort(got)
+		got = slices.Compact(got)
+		slices.Sort(want)
+		if !slices.Equal(got, want) {
+			t.Errorf("%q: %q, want %q", text, got, want)
+		}
+	}
+	if !validTFN("123 456 782") || validTFN("12 3456 782") || !validMedicare("2123 45670 1") || validMedicare("21234 5670 1") {
+		t.Error("a number written in another shape was taken, or the right one was not")
+	}
+	for label, want := range map[string]string{"TFN": EntityTFN, "Tax File Number": EntityTFN, "Medicare No": EntityMedicare, "medicare_number": EntityMedicare} {
+		if got := fieldHint(label); got != want {
+			t.Errorf("fieldHint(%q) = %q, want %s", label, got, want)
+		}
+	}
+	e := pdfEngine(t)
+	out, err := e.Anonymise(ctx, File{Name: "ids.txt", Data: []byte("TFN 123 456 782, Medicare 2123 45670 1.\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out.Data); strings.Contains(got, "123 456 782") || strings.Contains(got, "2123 45670 1") ||
+		!regexp.MustCompile(`TFN \d{3} \d{3} \d{3}, Medicare \d{4} \d{5} \d\.`).MatchString(got) {
+		t.Errorf("out = %q", got)
+	}
+}
+
+// Presidio is asked only for types its default setup can find: for the
+// others it has no recogniser and logs a warning on every request.
+func TestPresidioEntities(t *testing.T) {
+	for _, e := range []string{EntityABN, EntityACN, EntityTFN, EntityMedicare, EntityOrganization} {
+		if slices.Contains(presidioEntities, e) {
+			t.Errorf("Presidio is asked for %s, which it has no recogniser for", e)
+		}
+	}
+}
+
 func TestFoundFilters(t *testing.T) {
 	f := newFound(defaultProfile(t))
 	f.add("x", EntityPerson)
