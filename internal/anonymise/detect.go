@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Entity types the anonymiser handles.
@@ -237,6 +238,14 @@ var patterns = []struct {
 	// "+213 662 34 59 10"): the "+" says it is a phone number, whatever the
 	// country writes it like. 8 to 15 digits, as E.164 allows.
 	{EntityPhone, regexp.MustCompile(`\B\+\d[\d ().-]{5,22}\d\b`), 0, phoneDigits(8, 15)},
+	// Any country's number after a phone label ("Tel: 0803 424 8179",
+	// "Mobile 07064 794884", "Phone (08) 9123 4567", "Direct line 9123
+	// 4567"): the label says what it is. 6 to 15 digits, so an extension or
+	// a year is not taken, ending in a group of two or more, so a digit
+	// after it ("Mobile 0412 345 678 2 units") is not. "Direct" alone is
+	// too common a word ("direct debit"), so it needs a colon or "line".
+	{EntityPhone, regexp.MustCompile(`(?i)\b(?:ph(?:one)?|tel(?:ephone)?|mob(?:ile)?|cell(?:phone)?|fax|landline|direct\s+(?:line|dial))\b\.?\s*(?:no\.?|number|#)?\s*[:.]?\s*(\+?\(?\d[\d ().-]{2,19}\d{2})\b`), 1, phoneDigits(6, 15)},
+	{EntityPhone, regexp.MustCompile(`(?i)\bdirect\s*:\s*(\+?\(?\d[\d ().-]{2,19}\d{2})\b`), 1, phoneDigits(6, 15)},
 	{EntityABN, regexp.MustCompile(`(?i)\bABN[:\s]\s*(\d{2}\s?\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
 	{EntityACN, regexp.MustCompile(`(?i)\bACN[:\s]\s*(\d{3}\s?\d{3}\s?\d{3})\b`), 1, nil},
 	// Bank details by their labels: "BSB: 062-000", "Account No. 1234 5678",
@@ -259,6 +268,127 @@ func phoneDigits(min, max int) func(string) bool {
 		}
 		return n >= min && n <= max
 	}
+}
+
+// capsRun is a run of two or more words with at least one written in
+// capitals ("PETRA VANCLIFF", "Rui TALLOW").
+var capsRun = regexp.MustCompile(`\b(?:\p{Lu}[\p{L}'-]*[ \t]+)+\p{Lu}[\p{L}'-]*\b`)
+
+// titleCaps returns text with each word written in capitals, in a run of
+// words that includes one, title-cased ("PETRA VANCLIFF" becomes "Petra
+// Vancliff"), byte for byte as long, so the detector's offsets fit the text.
+// Presidio's model reads names in capitals poorly. It also returns the runs
+// it changed.
+func titleCaps(text string) (string, [][2]int) {
+	b := []byte(text)
+	var changed [][2]int
+	for _, run := range capsRun.FindAllStringIndex(text, -1) {
+		did := false
+		for _, w := range wordSpans(text[run[0]:run[1]]) {
+			word := text[run[0]+w[0] : run[0]+w[1]]
+			if utf8.RuneCountInString(word) < 2 || strings.ToUpper(word) != word {
+				continue
+			}
+			first, size := utf8.DecodeRuneInString(word)
+			titled := string(first) + strings.ToLower(word[size:])
+			if len(titled) != len(word) {
+				continue // a letter whose lower case is longer: left as it is
+			}
+			copy(b[run[0]+w[0]:], titled)
+			did = true
+		}
+		if did {
+			changed = append(changed, [2]int{run[0], run[1]})
+		}
+	}
+	return string(b), changed
+}
+
+// capsContext is how much of a run's line either side of it goes to the
+// detector with it: enough to read a name by.
+const capsContext = 200
+
+// capsText is the parts of a text around its runs of capitals, title-cased
+// and joined by blank lines, for the detector to read again. Sending only
+// these, not the whole text, keeps the second read small.
+type capsText struct {
+	text string
+	// parts holds each part's start in the original text, its start in
+	// capsText.text and its length.
+	parts [][3]int
+}
+
+// capsParts returns text's runs of capitals in their context, or false
+// when there are none to read again.
+func capsParts(text string) (capsText, bool) {
+	titled, runs := titleCaps(text)
+	if len(runs) == 0 {
+		return capsText{}, false
+	}
+	var windows [][2]int
+	for _, r := range runs {
+		lineStart := strings.LastIndexByte(text[:r[0]], '\n') + 1
+		lineEnd := len(text)
+		if i := strings.IndexByte(text[r[1]:], '\n'); i >= 0 {
+			lineEnd = r[1] + i
+		}
+		start, end := max(lineStart, r[0]-capsContext), min(lineEnd, r[1]+capsContext)
+		for start < r[0] && !utf8.RuneStart(text[start]) {
+			start++
+		}
+		for end > r[1] && end < len(text) && !utf8.RuneStart(text[end]) {
+			end--
+		}
+		if n := len(windows); n > 0 && start <= windows[n-1][1] {
+			windows[n-1][1] = max(windows[n-1][1], end)
+			continue
+		}
+		windows = append(windows, [2]int{start, end})
+	}
+	var c capsText
+	var b strings.Builder
+	for _, w := range windows {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		c.parts = append(c.parts, [3]int{w[0], b.Len(), w[1] - w[0]})
+		b.WriteString(titled[w[0]:w[1]])
+	}
+	c.text = b.String()
+	return c, true
+}
+
+// at maps a span of c.text to the original text; false when the span is
+// malformed or not inside one part.
+func (c capsText) at(s Span) (Span, bool) {
+	if s.Start < 0 || s.Start >= s.End {
+		return Span{}, false
+	}
+	for _, p := range c.parts {
+		if s.Start >= p[1] && s.End <= p[1]+p[2] {
+			return Span{Start: s.Start - p[1] + p[0], End: s.End - p[1] + p[0], Entity: s.Entity}, true
+		}
+	}
+	return Span{}, false
+}
+
+// wordSpans returns the byte spans of s's space-separated words.
+func wordSpans(s string) [][2]int {
+	var out [][2]int
+	start := -1
+	for i, r := range s {
+		switch {
+		case unicode.IsSpace(r) && start >= 0:
+			out = append(out, [2]int{start, i})
+			start = -1
+		case !unicode.IsSpace(r) && start < 0:
+			start = i
+		}
+	}
+	if start >= 0 {
+		out = append(out, [2]int{start, len(s)})
+	}
+	return out
 }
 
 func patternSpans(text string) []Span {

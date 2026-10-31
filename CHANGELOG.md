@@ -9,6 +9,19 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+### Added
+
+- `exemplar anonymise --check` lists on stderr what each output holds
+  exactly as its input did (email and web addresses, numbers of six digits
+  or more, names, capitalised words), and `--check-json FILE` (or `-`)
+  writes the same as JSON for a pipeline. The comparison runs where the
+  command runs, with a server too. See
+  docs/anonymisation.md#anonymise-without-ingesting.
+- A number after a phone label (`Tel:`, `Mobile`, `Fax`, `Ph`, `Direct:`)
+  is a phone number in any country's format, and a run of names written in
+  capitals (`PETRA VANCLIFF`) is read again title-cased, so Presidio finds
+  it; only the lines holding such runs are sent again.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

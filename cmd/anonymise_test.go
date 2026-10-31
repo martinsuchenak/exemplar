@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/martinsuchenak/exemplar/internal/anonymise"
 	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
 )
@@ -168,5 +171,79 @@ func TestAnonymiseOnTheServer(t *testing.T) {
 	}
 	if _, _, err := runCLIWith(t, anonMD, "anonymise", "-", "--format", "md", "--link-registry", "--server", s.url, "--api-key", member); err == nil || !strings.Contains(err.Error(), "admin key") {
 		t.Errorf("link as member err = %v", err)
+	}
+}
+
+// --check lists on stderr what came through unchanged; --check-json writes
+// it to a file or, beside --output or --out-dir, to stdout. Stdin can be
+// checked too, and a file that failed says why.
+func TestAnonymiseCheck(t *testing.T) {
+	hermetic(t)
+	dir := t.TempDir()
+	note := "Wendy Moss met Tom Baker at Lumen Fabrication. Ref 7700012345.\n"
+	in := filepath.Join(dir, "note.md")
+	if err := os.WriteFile(in, []byte(note), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, err := runCLIWith(t, "", "anonymise", in, "--output", filepath.Join(dir, "out.md"), "--local", "--patterns-only",
+		"--check", "--check-json", filepath.Join(dir, "check.json"))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, errOut)
+	}
+	for _, want := range []string{"Unchanged: in the output exactly as in the original", "1 note.md -> document-", "number  7700012345", "name    Lumen Fabrication", unreviewedWarning} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr misses %q:\n%s", want, errOut)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "check.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report struct {
+		Files []struct {
+			Input, Output string
+			Unchanged     []anonymise.Kept
+		}
+	}
+	if err := json.Unmarshal(data, &report); err != nil || len(report.Files) != 1 || report.Files[0].Input != "note.md" ||
+		!strings.HasPrefix(report.Files[0].Output, "document-") || !slices.Contains(report.Files[0].Unchanged, anonymise.Kept{Kind: "name", Value: "Lumen Fabrication", Count: 1}) {
+		t.Errorf("check.json = %s, %v", data, err)
+	}
+
+	// A bad --check-json path fails before anything is anonymised or written.
+	for _, c := range []struct{ path, want string }{
+		{filepath.Join(dir, "check.json"), "exists"},
+		{filepath.Join(dir, "nowhere", "check.json"), "its directory does not exist"},
+		{filepath.Join(dir, "early.md"), "name the same file"},
+	} {
+		_, _, err := runCLIWith(t, "", "anonymise", in, "--output", filepath.Join(dir, "early.md"), "--local", "--patterns-only", "--check-json", c.path)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v", c.path, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "early.md")); err == nil {
+			t.Fatalf("%s: wrote the output before failing", c.path)
+		}
+	}
+
+	// - means stdout, which must not also carry the file.
+	if _, _, err := runCLIWith(t, "", "anonymise", in, "--local", "--patterns-only", "--check-json", "-"); err == nil || !strings.Contains(err.Error(), "needs --output or --out-dir") {
+		t.Errorf("err = %v", err)
+	}
+	other := filepath.Join(dir, "bad.xls")
+	if err := os.WriteFile(other, []byte("xls"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCLIWith(t, "", "anonymise", in, other, "--out-dir", filepath.Join(dir, "outs"), "--local", "--patterns-only", "--quiet", "--check-json", "-")
+	if err == nil {
+		t.Error("a failed file did not fail the command")
+	}
+	if !strings.Contains(out, `"input": "bad.xls"`) || !strings.Contains(out, `"error": "cannot anonymise .xls`) || !strings.Contains(out, `"Lumen Fabrication"`) {
+		t.Errorf("stdout = %s", out)
+	}
+
+	// Stdin is read once and kept for the check.
+	out, errOut, err = runCLIWith(t, note, "anonymise", "-", "--format", "md", "--local", "--patterns-only", "--check")
+	if err != nil || !strings.Contains(out, "Lumen Fabrication") || !strings.Contains(errOut, "name    Lumen Fabrication") {
+		t.Errorf("stdin: out %q, stderr %q, %v", out, errOut, err)
 	}
 }

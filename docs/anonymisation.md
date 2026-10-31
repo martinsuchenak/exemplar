@@ -59,13 +59,13 @@ later` (see [Presidio](#presidio)).
 | Data | Found by | Replaced with |
 |------|----------|---------------|
 | People in headers | Address headers | A registry person; the same real address always maps to the same person |
-| Names in text | Presidio (`PERSON`), plus every name from the batch's headers | Fake first and last names, case kept, each real name token mapped once; also in a mention (`@Sarah Lane`), but not after the `@` of an address |
+| Names in text | Presidio (`PERSON`), plus every name from the batch's headers; a run of words in capitals is read again title-cased, since the model reads `PETRA VANCLIFF` poorly (only the lines holding such runs, at most 200 bytes either side, go to Presidio again; a single capitalised word is never taken as a name) | Fake first and last names, case kept, each real name token mapped once; also in a mention (`@Sarah Lane`), but not after the `@` of an address |
 | Email addresses | Pattern | The person's fake address, or a fake local part at a fake domain |
 | Domains and companies | Addresses, URLs, `Pty Ltd`-style suffixes | A fake company; its domain is the company name on `.example`. A company name learned from a domain (`acme` from `acme.com.au`) is also replaced inside identifiers: `acme-prod`, `logo_acme.png`. Every domain in the address headers is also replaced where it appears alone, as in a DMARC subject |
 | Subdomains | Domains anywhere | Generic labels (`mail`, `www`, `api`, `reply`, `mx1`…) kept; any other label (a client, product or system name) replaced with a fake, the same every time |
 | URLs | Pattern | Same scheme on the fake domain; path and query replaced |
 | Profile terms | The profile's `terms` list | The company-style fake (the same company as the domain it names), in any case, also inside identifiers; a term wins over a name a display name made of it |
-| Phone numbers | Australian patterns, and any number written with its calling code (`+234 …`) | Fake digits; leading zeros and the first other digit kept (`04…`, `(02)…`, `13…`) |
+| Phone numbers | Australian patterns, any number written with its calling code (`+234 …`), and any number after a phone label (`Tel:`, `Mobile`, `Fax`, `Ph`, `Direct:`, `Direct line`) with 6 to 15 digits, ending in two or more, so `Mobile 0412 345 678 2 units` leaves the `2` | Fake digits; leading zeros and the first other digit kept (`04…`, `(02)…`, `13…`) |
 | ABN, ACN | Labelled patterns | Fake digits, same layout |
 | Bank account numbers, BSBs | Their labels (`BSB: 062-000`, `Account No. 1234 5678`); a column or key labelled `BSB` or `Account Number` | Fake digits, same layout |
 | Money | `$`, `AUD` patterns | Fake digits, same layout |
@@ -488,6 +488,46 @@ Several files cannot share one stream, so they need `--out-dir`; there a
 failed file is left out, the others are written, and the command exits
 non-zero.
 
+**Check.** Detection misses things: a company with no `Pty Ltd`, a name in
+a language the model reads poorly, a reference number with no label.
+`--check` lists on stderr what each output holds exactly as its input did:
+email and web addresses, numbers of six digits or more (dates aside),
+names (two or more capitalised words) and capitalised words. It is the
+place to start reviewing. Each file is read as the anonymiser reads its
+format, both sides, on the machine running the command: the check works
+with a server too, and nothing original is sent anywhere for it.
+
+```
+Unchanged: in the output exactly as in the original. Check each before sharing.
+1 notes.md -> document-3f9a1c.md:
+  number  7700012345
+  name    Lumen Fabrication ×2
+  words   Acme ×4, Invoice, Thanks
+```
+
+`--check-json FILE` writes the same as JSON, for a pipeline to act on (fail
+a build on a kept email address, say); `-` is stdout when the files go to
+`--output` or `--out-dir`. Like `--output`, it never overwrites; a file
+that exists, a directory that does not, or the `--output` file fails the
+command before anything is anonymised:
+
+```json
+{"files": [{"input": "notes.md", "output": "document-3f9a1c.md",
+  "unchanged": [{"kind": "name", "value": "Lumen Fabrication", "count": 2}]}]}
+```
+
+`kind` is `email`, `url`, `number`, `name` or `word`; `count` is how often
+the output holds the value; a file that failed, or could not be read back,
+has `error` instead. The list holds only values the output holds, so it
+shows nothing the output does not; what it adds is that each is real.
+Words are many and mostly harmless (`Invoice`); names, numbers and
+addresses are what to look at.
+
+```bash
+exemplar anonymise invoices/ --out-dir anon --check-json - --quiet \
+  | jq -e '[.files[].unchanged[] | select(.kind != "word")] | length == 0'
+```
+
 **Report.** `--report` prints every replacement, original next to fake, to
 stderr. It works with `--local` only: the server never sends original data
 back. For a report from the server, use `ingest --dry-run`.
@@ -577,14 +617,16 @@ A name Presidio runs into the number beside it ("Sarah Lane 0412" out of
 number is still found and replaced whole.
 
 **What it misses.** Presidio's model is trained mostly on English text, so
-in free text it misses many names from other languages and names written in
-capitals (`SARAH LANE`); a column of them is caught by the column rule
+in free text it misses many names from other languages, and names in
+capitals unless title-casing them helps (`SARAH LANE` is read again as
+`Sarah Lane`); a column of them is caught by the column rule
 (see [Columns of people](#documents)), a sentence is not. Its phone
 recogniser knows only some countries' formats. exemplar's patterns add
-Australia's, and any number written with its calling code (`+234 801 234
-5678`, 8 to 15 digits); a number written the way another country writes it
-without one (`0801 234 5678`) can be left as written when nothing labels
-it, since it looks like any other number. A column labelled `Phone` or
+Australia's, any number written with its calling code (`+234 801 234
+5678`, 8 to 15 digits), and any number after a phone label (`Tel: 0801 234
+5678`); one written the way another country writes it, with neither, can be
+left as written, since it looks like any other number. `--check` lists the
+long numbers left. A column labelled `Phone` or
 `Name` is safe either way; a free-text column holding contact details needs
 checking by hand.
 

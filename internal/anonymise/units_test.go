@@ -2,6 +2,7 @@ package anonymise
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -803,5 +804,150 @@ func TestDetectorFailure(t *testing.T) {
 	other := errors.New("calling Presidio: dial tcp: connection refused")
 	if got := DetectorFailure(other); got != other.Error() {
 		t.Errorf("DetectorFailure = %q", got)
+	}
+}
+
+// A number after a phone label is a phone number in any country's format;
+// one too short to be one, or a word that only starts like a label, is not.
+func TestLabelledPhones(t *testing.T) {
+	for text, want := range map[string]string{
+		"Tel: 0803 424 8179 (office)":       "0803 424 8179",
+		"Mobile 07064 794884":               "07064 794884",
+		"Phone (08) 9123 4567, ask for Jo":  "(08) 9123 4567",
+		"phone number: +44 20 7946 0000":    "+44 20 7946 0000",
+		"Fax. 653-242-050":                  "653-242-050",
+		"Ph 390001234":                      "390001234",
+		"Phone ext 42":                      "",
+		"Mobile phones sold in 2025: 12345": "",
+		"Telstra account 1234567":           "",
+		"Mobile 0412 345 678 2 units":       "0412 345 678",
+		"Direct debit 1234567":              "",
+		"Paid by direct 1234567":            "",
+		"Direct: 9123 4567":                 "9123 4567",
+		"Direct line 9123 4567":             "9123 4567",
+	} {
+		got := ""
+		for _, sp := range patternSpans(text) {
+			if sp.Entity == EntityPhone {
+				got = text[sp.Start:sp.End]
+			}
+		}
+		if got != want {
+			t.Errorf("%q: phone %q, want %q", text, got, want)
+		}
+	}
+}
+
+// capitalsDetector finds names only as Presidio's model mostly does:
+// written in title case. It records what it was sent, and adds malformed
+// spans when bad is set.
+type capitalsDetector struct {
+	names []string
+	sent  *[]string
+	bad   bool
+}
+
+func (d capitalsDetector) Detect(_ context.Context, text string, _ []string, _ float64) ([]Span, error) {
+	if d.sent != nil {
+		*d.sent = append(*d.sent, text)
+	}
+	var spans []Span
+	if d.bad {
+		spans = append(spans, Span{Start: 5, End: 2, Entity: EntityPerson}, Span{Start: -1, End: 3, Entity: EntityPerson},
+			Span{Start: len(text) - 1, End: len(text) + 10, Entity: EntityPerson})
+	}
+	for _, n := range d.names {
+		for i := 0; ; {
+			j := strings.Index(text[i:], n)
+			if j < 0 {
+				break
+			}
+			spans = append(spans, Span{Start: i + j, End: i + j + len(n), Entity: EntityPerson})
+			i += j + len(n)
+		}
+	}
+	return spans, nil
+}
+
+// A name written in capitals is read again title-cased, and replaced as it
+// was written.
+func TestNamesInCapitals(t *testing.T) {
+	for in, want := range map[string]string{
+		"PETRA VANCLIFF and Rui TALLOW, ABN": "Petra Vancliff and Rui Tallow, ABN",
+		"TAX INVOICE":                        "Tax Invoice",
+		"no capitals here":                   "no capitals here",
+		"KİRAZ ÖZTÜRK":                       "KİRAZ Öztürk", // İ's lower case is longer: left as it is
+	} {
+		if got, _ := titleCaps(in); got != want {
+			t.Errorf("titleCaps(%q) = %q, want %q", in, got, want)
+		}
+	}
+	e, err := New(testKey(t), defaultProfile(t), capitalsDetector{names: []string{"Petra Vancliff"}}, newMemRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.Anonymise(ctx, File{Name: "note.txt", Data: []byte("ORCHARD MUTUAL PETRA VANCLIFF 0412 345 678\nTAX INVOICE\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out.Data)
+	if strings.Contains(got, "PETRA") || strings.Contains(got, "VANCLIFF") || !strings.Contains(got, "TAX INVOICE") || !strings.Contains(got, "ORCHARD MUTUAL ") {
+		t.Errorf("out = %q", got)
+	}
+	if fake := strings.Fields(strings.TrimPrefix(got, "ORCHARD MUTUAL "))[0]; strings.ToUpper(fake) != fake {
+		t.Errorf("the fake %q is not in capitals, as the name was", fake)
+	}
+}
+
+// The second read gets only the lines with capitals, cut to some context
+// either side, and its spans map back to the text; one that is malformed
+// or crosses two parts is dropped.
+func TestCapsParts(t *testing.T) {
+	long := strings.Repeat("plain words here ", 30)
+	text := "Intro line\n" + long + "PETRA VANCLIFF " + long + "\nmiddle line\nKİRAZ ÖZTÜRK and TOM BAKER\nlast"
+	c, ok := capsParts(text)
+	if !ok {
+		t.Fatal("no parts")
+	}
+	if strings.Contains(c.text, "Intro") || strings.Contains(c.text, "middle") || strings.Contains(c.text, "last") {
+		t.Errorf("sent lines with no capitals: %q", c.text)
+	}
+	if len(c.text) > 2*capsContext+len("Petra Vancliff ")+len("\n\nKİRAZ Öztürk and Tom Baker") {
+		t.Errorf("sent %d bytes", len(c.text))
+	}
+	for _, name := range []string{"Petra Vancliff", "Tom Baker"} {
+		i := strings.Index(c.text, name)
+		m, ok := c.at(Span{Start: i, End: i + len(name), Entity: EntityPerson})
+		if !ok || !strings.EqualFold(text[m.Start:m.End], name) {
+			t.Errorf("%s maps to %+v", name, m)
+		}
+	}
+	gap := strings.Index(c.text, "\n\n")
+	for _, s := range []Span{{Start: 5, End: 2}, {Start: -1, End: 3}, {Start: gap - 2, End: gap + 4}, {Start: 0, End: len(c.text) + 1}} {
+		if m, ok := c.at(s); ok {
+			t.Errorf("at(%+v) = %+v", s, m)
+		}
+	}
+	if _, ok := capsParts("no capitals here, Only Title Case"); ok {
+		t.Error("parts for text with no capitals")
+	}
+
+	// Through the engine: malformed spans are dropped, a lone word in
+	// capitals ("BILL" of "BILL TO") is no name, and only the capitals
+	// line is sent again.
+	var sent []string
+	e, err := New(testKey(t), defaultProfile(t), capitalsDetector{names: []string{"Petra Vancliff", "Bill"}, sent: &sent, bad: true}, newMemRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.Anonymise(ctx, File{Name: "note.txt", Data: []byte("Dear all,\nBILL TO\nPETRA VANCLIFF\nthanks\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out.Data); strings.Contains(got, "VANCLIFF") || !strings.Contains(got, "BILL TO") {
+		t.Errorf("out = %q", got)
+	}
+	if len(sent) != 2 || sent[1] != "Bill To\n\nPetra Vancliff" {
+		t.Errorf("sent = %q", sent)
 	}
 }

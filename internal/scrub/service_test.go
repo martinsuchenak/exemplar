@@ -503,3 +503,17 @@ func checkDetectorLogs(t *testing.T, name string, lines []string, files int) {
 		t.Errorf("%s: %d failures logged for %d files", name, failed, files)
 	}
 }
+
+// The check needs no key, detector or database, and any caller may run it:
+// both files are already theirs.
+func TestCheckerListsUnchangedValues(t *testing.T) {
+	kept, err := app.Checker().Unchanged(ctx, principal.Principal{},
+		anonymise.File{Name: "a.txt", Data: []byte("ref 7700012345 for Wendy Moss")},
+		anonymise.File{Name: "b.txt", Data: []byte("ref 7700012345 for Ann Lee")})
+	if err != nil || len(kept) != 1 || kept[0] != (anonymise.Kept{Kind: anonymise.KeptNumber, Value: "7700012345", Count: 1}) {
+		t.Errorf("kept = %+v, %v", kept, err)
+	}
+	if _, err := app.Checker().Unchanged(ctx, principal.Principal{}, anonymise.File{Name: "a.xls"}, anonymise.File{Name: "b.txt"}); err == nil {
+		t.Error("checked an .xls")
+	}
+}

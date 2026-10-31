@@ -320,7 +320,7 @@ go ahead; the command then exits non-zero. See
 ### `anonymise`
 
 ```bash
-exemplar anonymise <file-or-directory>... [--output FILE | --out-dir DIR] [--profile P] [--quiet]
+exemplar anonymise <file-or-directory>... [--output FILE | --out-dir DIR] [--profile P] [--quiet] [--check] [--check-json FILE|-]
 exemplar anonymise - --format F | --name N ...
 exemplar anonymise ... --local [--presidio-url URL | --patterns-only] [--anon-key-file F] [--report]
 exemplar anonymise ... --link-registry   # admin key
@@ -338,6 +338,12 @@ cleanly into the next one (`… | exemplar anonymise - --format json | jq .`).
 A file that fails writes nothing to stdout and makes the command exit
 non-zero. `--report`, with
 `--local` only, prints every replacement with its original on stderr.
+`--check` lists on stderr what each output holds exactly as its input did
+(addresses, long numbers, names, capitalised words), and `--check-json`
+writes that list as JSON to a new file, or to stdout (`-`) when the files
+go to `--output` or `--out-dir`; both work with a server too, as the
+comparison runs on this machine. A `--check-json` file that exists, or
+whose directory does not, fails the command before anything runs.
 `--local` takes the anonymiser flags `serve` takes (`--presidio-url`,
 `--anon-key-file`, `--anon-profiles-dir`), plus `--patterns-only` to run
 without Presidio. `--link-registry` makes linked fakes from the server's key

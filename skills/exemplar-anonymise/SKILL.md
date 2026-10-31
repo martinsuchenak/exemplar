@@ -84,6 +84,21 @@ rather than converting them yourself, since converting means reading them.
 can, for example, rewrite email attachments in place instead of replacing
 them.
 
+## Checking what came through
+
+Detection is not perfect. Add `--check` (stderr) or `--check-json FILE`
+(`-` for stdout beside `--output`/`--out-dir`) to list what each output
+holds exactly as its input did: `email`, `url`, `number`, `name`, `word`.
+The list holds only values the output holds, so you may read it, like the
+output; it marks those values as real. Point the user at every `email`,
+`url`, `number` and `name` entry before they share the output; `word`
+entries are mostly ordinary words. In a pipeline, act on the JSON:
+
+```bash
+exemplar anonymise in/ --out-dir anon --quiet --check-json - \
+  | jq -e '[.files[].unchanged[] | select(.kind != "word")] | length == 0'
+```
+
 ## Reading the result
 
 - **stdout** is the anonymised file, and nothing else.

@@ -191,6 +191,12 @@ func LocalAnonymiser(cfg LocalConfig) (*scrub.Service, error) {
 	return scrub.NewLocal(scrubCfg), nil
 }
 
+// Checker returns the anonymise tool's check, which needs no database,
+// key or detector.
+func Checker() *scrub.Checker {
+	return &scrub.Checker{}
+}
+
 // Close closes the database.
 func (a *App) Close() error {
 	return a.conn.Close()

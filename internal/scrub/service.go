@@ -349,3 +349,14 @@ func sortedFormats(set map[anonymise.Format]bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// Checker compares files with their anonymised copies, for a reviewer, or
+// a pipeline, to act on. It runs where both files are, the CLI's machine:
+// it reads nothing stored and logs nothing, so any caller may use it.
+type Checker struct{}
+
+// Unchanged lists what anonymised holds exactly as original did
+// (anonymise.Unchanged). Nothing is stored or logged.
+func (Checker) Unchanged(ctx context.Context, _ principal.Principal, original, anonymised anonymise.File) ([]anonymise.Kept, error) {
+	return anonymise.Unchanged(ctx, original, anonymised)
+}

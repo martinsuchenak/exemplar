@@ -485,6 +485,20 @@ func (e *Engine) detect(ctx context.Context, text string, f *found) error {
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrDetector, err)
 	}
+	// Names in capitals are read again title-cased (see capsParts); a name
+	// found there is the text's own, capitals and all.
+	if caps, ok := capsParts(text); ok {
+		again, err := e.detector.Detect(ctx, caps.text, names, e.profile.ScoreThreshold)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrDetector, err)
+		}
+		for _, s := range again {
+			// Only a name that holds a word title-cased here is new.
+			if m, ok := caps.at(s); ok && s.Entity == EntityPerson && caps.text[s.Start:s.End] != text[m.Start:m.End] {
+				more = append(more, m)
+			}
+		}
+	}
 	for _, s := range append(spans, more...) {
 		if s.Start < 0 || s.End > len(text) || s.Start >= s.End {
 			continue

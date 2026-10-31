@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +45,8 @@ func anonymiseCmd() *cli.Command {
 			&cli.StringFlag{Name: "name", Usage: "File name of stdin, which picks its format"},
 			&cli.BoolFlag{Name: "report", Usage: "Print every replacement to stderr (--local only; prints original data)"},
 			&cli.BoolFlag{Name: "quiet", Usage: "Leave out the per-file summary on stderr"},
+			&cli.BoolFlag{Name: "check", Usage: "List on stderr what came through unchanged (addresses, long numbers, names): values in the output only"},
+			&cli.StringFlag{Name: "check-json", Usage: "Write that list as JSON to a new file, or - for stdout when the files go to --output or --out-dir"},
 			&cli.BoolFlag{Name: "patterns-only", Usage: "With --local, run without Presidio: names in prose are missed"},
 			&cli.BoolFlag{Name: "link-registry", Usage: "Fakes from the server's key and registry, as ingest makes (admin key)"},
 		}, anonymiserFlags()...)...),
@@ -64,6 +67,20 @@ func anonymiseCmd() *cli.Command {
 					return err
 				}
 			}
+			checkJSON := cmd.GetString("check-json")
+			checking := cmd.GetBool("check") || checkJSON != ""
+			if err := checkJSONPath(checkJSON, outDir, output); err != nil {
+				return err
+			}
+			if checking {
+				// The check compares each output with its original, which a
+				// pipe cannot give twice.
+				for i := range inputs {
+					if err := inputs[i].load(); err != nil {
+						return err
+					}
+				}
+			}
 			req := scrub.Request{Profile: cmd.GetString("profile"), LinkRegistry: cmd.GetBool("link-registry"), Report: cmd.GetBool("report")}
 
 			var res *scrub.Result
@@ -81,7 +98,16 @@ func anonymiseCmd() *cli.Command {
 			if err := writeAnonymised(res, outDir, output); err != nil {
 				return err
 			}
-			return summarise(cmd, inputs, res)
+			var checks []checkFile
+			if checking {
+				checks = check(ctx, app.Checker(), inputs, res)
+				if checkJSON != "" {
+					if err := writeCheckJSON(checkJSON, checks); err != nil {
+						return err
+					}
+				}
+			}
+			return summarise(cmd, inputs, res, checks)
 		},
 	}
 }
@@ -90,6 +116,20 @@ func anonymiseCmd() *cli.Command {
 type anonymiseInput struct {
 	name string // its base name, which picks the format
 	path string // empty for stdin
+	data []byte // its content, once loaded
+}
+
+// load reads the input into memory, so it can be read again.
+func (in *anonymiseInput) load() error {
+	r, err := in.open()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = r.Close() }()
+	if in.data, err = io.ReadAll(r); err != nil {
+		return fmt.Errorf("reading %s: %w", in.name, err)
+	}
+	return nil
 }
 
 func anonymiseInputs(cmd *cli.Command) ([]anonymiseInput, error) {
@@ -125,6 +165,9 @@ func anonymiseInputs(cmd *cli.Command) ([]anonymiseInput, error) {
 }
 
 func (in anonymiseInput) open() (io.ReadCloser, error) {
+	if in.data != nil {
+		return io.NopCloser(bytes.NewReader(in.data)), nil
+	}
 	if in.path == "" {
 		return io.NopCloser(stdin), nil
 	}
@@ -256,7 +299,7 @@ func emptyDir(dir string) error {
 // the original name (from this command line, never from the server), its
 // fake, the count, or why it failed. --report adds every replacement. The
 // warning that the output is unreviewed always comes last.
-func summarise(cmd *cli.Command, inputs []anonymiseInput, res *scrub.Result) error {
+func summarise(cmd *cli.Command, inputs []anonymiseInput, res *scrub.Result, checks []checkFile) error {
 	failed := 0
 	for i, f := range res.Files {
 		switch {
@@ -275,6 +318,9 @@ func summarise(cmd *cli.Command, inputs []anonymiseInput, res *scrub.Result) err
 			}
 			_, _ = fmt.Fprintln(stderr, line)
 		}
+	}
+	if cmd.GetBool("check") {
+		printChecks(checks)
 	}
 	if cmd.GetBool("report") {
 		_, _ = fmt.Fprintln(stderr, "The report below contains ORIGINAL personal data: do not paste, share or keep it.")
@@ -296,4 +342,104 @@ func summarise(cmd *cli.Command, inputs []anonymiseInput, res *scrub.Result) err
 		return fmt.Errorf("%d of %d files failed", failed, len(res.Files))
 	}
 	return nil
+}
+
+// checkFile is one file's check, as --check-json writes it.
+type checkFile struct {
+	Input     string           `json:"input"`
+	Output    string           `json:"output,omitempty"`
+	Unchanged []anonymise.Kept `json:"unchanged"`
+	Error     string           `json:"error,omitempty"`
+}
+
+// check lists, for each file anonymised, what its output holds exactly as
+// its input did. A file that failed, or that cannot be read back, says why.
+func check(ctx context.Context, checker *scrub.Checker, inputs []anonymiseInput, res *scrub.Result) []checkFile {
+	out := make([]checkFile, len(res.Files))
+	for i, f := range res.Files {
+		c := checkFile{Input: inputs[i].name, Output: f.Name, Unchanged: []anonymise.Kept{}}
+		if f.Error != "" {
+			c.Error = f.Error
+		} else if kept, err := checker.Unchanged(ctx, principal.Principal{}, anonymise.File{Name: inputs[i].name, Data: inputs[i].data}, anonymise.File{Name: f.Name, Data: f.Data}); err != nil {
+			c.Error = "checking: " + err.Error()
+		} else {
+			c.Unchanged = kept
+		}
+		out[i] = c
+	}
+	return out
+}
+
+// checkJSONPath checks --check-json's path before anything is anonymised:
+// - needs the files to go elsewhere than stdout, and a file must be new, in
+// a directory that exists, and not the --output file.
+func checkJSONPath(path, outDir, output string) error {
+	switch {
+	case path == "":
+		return nil
+	case path == "-":
+		if outDir == "" && output == "" {
+			return errors.New("--check-json - needs --output or --out-dir: stdout carries the file")
+		}
+		return nil
+	case output != "" && filepath.Clean(path) == filepath.Clean(output):
+		return errors.New("--check-json and --output name the same file")
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("--check-json %s exists", path)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if fi, err := os.Stat(filepath.Dir(path)); err != nil || !fi.IsDir() {
+		return fmt.Errorf("--check-json %s: its directory does not exist", path)
+	}
+	return nil
+}
+
+// writeCheckJSON writes the checks to path, a new file, or to stdout for -.
+func writeCheckJSON(path string, checks []checkFile) error {
+	data, err := json.MarshalIndent(struct {
+		Files []checkFile `json:"files"`
+	}{checks}, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if path == "-" {
+		_, err = stdout.Write(data)
+		return err
+	}
+	return writeNew(path, data)
+}
+
+// printChecks lists on stderr what each file kept: every kind but words in
+// full, words on one line.
+func printChecks(checks []checkFile) {
+	_, _ = fmt.Fprintln(stderr, "Unchanged: in the output exactly as in the original. Check each before sharing.")
+	for i, c := range checks {
+		switch {
+		case c.Error != "":
+			_, _ = fmt.Fprintf(stderr, "%d %s: not checked: %s\n", i+1, c.Input, c.Error)
+			continue
+		case len(c.Unchanged) == 0:
+			_, _ = fmt.Fprintf(stderr, "%d %s -> %s: nothing\n", i+1, c.Input, c.Output)
+			continue
+		}
+		_, _ = fmt.Fprintf(stderr, "%d %s -> %s:\n", i+1, c.Input, c.Output)
+		var words []string
+		for _, k := range c.Unchanged {
+			v := k.Value
+			if k.Count > 1 {
+				v += fmt.Sprintf(" ×%d", k.Count)
+			}
+			if k.Kind == anonymise.KeptWord {
+				words = append(words, v)
+				continue
+			}
+			_, _ = fmt.Fprintf(stderr, "  %-7s %s\n", k.Kind, v)
+		}
+		if len(words) > 0 {
+			_, _ = fmt.Fprintf(stderr, "  %-7s %s\n", "words", strings.Join(words, ", "))
+		}
+	}
 }
