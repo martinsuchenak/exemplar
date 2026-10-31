@@ -329,6 +329,20 @@ fixtures named `<batch>-001.eml`, `<batch>-002.csv`, …, keeping each file's
 extension. Without `--batch` a new batch name is
 made up and printed; purge takes it. Directories are read as for `upload`.
 
+One run takes at most 1000 files and `storage.max_ingest_mb` in all. Send
+more in several runs with the same `--batch`: each run numbers on after the
+highest fixture the batch already holds in that dataset, so they stay one
+batch to review and purge.
+
+```bash
+find ~/mail -name '*.eml' -print0 | xargs -0 -n 500 exemplar ingest q-inbox --batch inbox-2026-10
+```
+
+Fakes come from the server's key, so a name gets the same fake in every
+run; but names are learned from the files of one run only (see
+[anonymisation.md](anonymisation.md#workflow)), so keep a mail thread in
+one run where you can.
+
 `--dry-run` stores nothing and prints every replacement, original next to
 fake. That output is original personal data: read it, don't save or share it.
 A file that fails (a `.msg`, an unsupported charset) is reported and the rest

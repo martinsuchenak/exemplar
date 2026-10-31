@@ -518,3 +518,68 @@ func TestReviewInFrozenQuarantine(t *testing.T) {
 		t.Error("ingest into a frozen quarantine succeeded")
 	}
 }
+
+// A batch too big for one request comes in several runs under one name:
+// each run numbers on after the highest fixture the batch already holds in
+// the dataset (a failed file's number stays unused), so the runs never
+// clash. Another dataset's fixtures of the same batch do not count.
+func TestBatchAcrossRuns(t *testing.T) {
+	a := newApp(t, 0)
+	admin := testutil.Admin(t, a)
+	dsID := quarantine(t, a, admin)
+	files := emails()
+	var nested strings.Builder
+	nested.WriteString("From: a@b.com.au\r\nTo: c@d.com.au\r\nContent-Type: multipart/mixed; boundary=q0\r\n\r\n")
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&nested, "--q%d\r\nContent-Type: multipart/mixed; boundary=q%d\r\n\r\n", i, i+1)
+	}
+	deep := ingest.File{Name: "deep.eml", Data: []byte(nested.String())} // fails: too deep
+	names := func(res *ingest.Result) []string {
+		var out []string
+		for _, f := range res.Files {
+			if f.Error != "" && f.FixtureName != "" {
+				t.Errorf("%s failed but has a name", f.Name)
+			}
+			if f.FixtureName != "" {
+				out = append(out, f.FixtureName)
+			}
+		}
+		return out
+	}
+	run := func(dataset string, req ingest.Request, fs ...ingest.File) []string {
+		t.Helper()
+		res, err := a.Ingest.Ingest(ctx, admin, dataset, req, fs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return names(res)
+	}
+	if got := run(dsID, ingest.Request{Batch: "b1"}, files[0], deep, files[3]); strings.Join(got, ",") != "b1-001.eml,b1-003.eml" {
+		t.Errorf("first run = %v", got)
+	}
+	if got := run(dsID, ingest.Request{Batch: "b1"}, files[3], files[0]); strings.Join(got, ",") != "b1-004.eml,b1-005.eml" {
+		t.Errorf("second run = %v, want numbers after the first run's", got)
+	}
+	// A dry run stores nothing, so it names nothing.
+	if got := run(dsID, ingest.Request{Batch: "b1", DryRun: true}, files[0]); len(got) != 0 {
+		t.Errorf("dry run named %v", got)
+	}
+	other, err := a.Datasets.Create(ctx, admin, dataset.CreateInput{Name: "inbox-other", Scope: dataset.ScopeQuarantine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := run(other.ID, ingest.Request{Batch: "b1"}, files[0]); strings.Join(got, ",") != "b1-001.eml" {
+		t.Errorf("another dataset = %v, want its own numbering", got)
+	}
+	if n, err := a.Fixtures.LastIngestNumber(ctx, admin, dsID, "b1"); err != nil || n != 5 {
+		t.Errorf("last number = %d, %v", n, err)
+	}
+	if n, err := a.Fixtures.LastIngestNumber(ctx, admin, dsID, "b"); err != nil || n != 0 {
+		t.Errorf("a batch whose name prefixes another's = %d, %v", n, err)
+	}
+	// Only a key that can change the dataset learns its batch's numbers.
+	member := testutil.Member(t, a, admin, "alice")
+	if _, err := a.Fixtures.LastIngestNumber(ctx, member, dsID, "b1"); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("member err = %v", err)
+	}
+}

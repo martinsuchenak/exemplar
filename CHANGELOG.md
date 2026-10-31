@@ -9,6 +9,13 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+### Fixed
+
+- An ingest batch can come in several runs (more files than one request
+  takes): each run numbers its fixtures on after the highest the batch
+  already holds in the dataset. A second run under the same `--batch` used
+  to start again at 001 and fail every file whose name the first had taken.
+
 ## [0.5.0] - 2026-10-31
 
 ### Added

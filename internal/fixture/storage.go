@@ -192,6 +192,28 @@ func (s *Storage) ListAll(ctx context.Context, exec xdal.DBExecutor, datasetID s
 	return s.query(ctx, exec, query, args)
 }
 
+// BatchNames returns the names of an ingest batch's fixtures in a dataset.
+func (s *Storage) BatchNames(ctx context.Context, exec xdal.DBExecutor, datasetID, batch string) ([]string, error) {
+	query, args, err := s.qb.Select("name").From("fixtures").Where("dataset_id = ?", datasetID).Where("ingest_batch = ?", batch).Build()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := exec.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 // DeleteBatch removes every fixture from an ingest batch and returns how many.
 func (s *Storage) DeleteBatch(ctx context.Context, exec xdal.DBExecutor, batch string) (int64, error) {
 	query, args, err := s.qb.Delete("fixtures").Where("ingest_batch = ?", batch).Build()

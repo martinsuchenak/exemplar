@@ -11,6 +11,7 @@ import (
 	"mime"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -445,6 +446,35 @@ func (s *Service) CopyShareable(ctx context.Context, exec xdal.DBExecutor, srcID
 		copied++
 	}
 	return copied, skipped, nil
+}
+
+// LastIngestNumber returns the highest number an ingest batch's fixtures in
+// a dataset carry (they are named <batch>-<number><extension>), or 0 when
+// it has none there, so a later run of the same batch numbers on after
+// them instead of clashing. The caller must be able to change the dataset.
+func (s *Service) LastIngestNumber(ctx context.Context, actor principal.Principal, datasetID, batch string) (int, error) {
+	if _, err := s.datasets.Authorize(ctx, nil, actor, datasetID, dataset.AccessWrite); err != nil {
+		return 0, err
+	}
+	names, err := s.storage.BatchNames(ctx, s.db, datasetID, batch)
+	if err != nil {
+		return 0, err
+	}
+	last := 0
+	for _, name := range names {
+		rest, ok := strings.CutPrefix(name, batch+"-")
+		if !ok {
+			continue
+		}
+		end := 0
+		for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+			end++
+		}
+		if n, err := strconv.Atoi(rest[:end]); err == nil && n > last {
+			last = n
+		}
+	}
+	return last, nil
 }
 
 // PurgeBatch deletes every fixture from an ingest batch, in every dataset it

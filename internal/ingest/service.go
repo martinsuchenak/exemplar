@@ -225,7 +225,14 @@ func (s *Service) Ingest(ctx context.Context, actor principal.Principal, dataset
 	// the nesting or part limits, say) fails on its own.
 	prepared := engine.Prepare(ctx, batch)
 
+	// A batch may come in several runs (more files than one request takes):
+	// each numbers on after what the batch already holds in the dataset.
 	stored, n := 0, 0
+	if !req.DryRun {
+		if n, err = s.fixtures.LastIngestNumber(ctx, actor, datasetID, req.Batch); err != nil {
+			return nil, err
+		}
+	}
 	for i, f := range batch {
 		n++
 		fr := FileResult{Name: f.Name}
