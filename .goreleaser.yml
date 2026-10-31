@@ -73,6 +73,10 @@ sboms:
 
 # Keyless cosign signatures (GitHub OIDC). The checksum file covers every archive;
 # SBOMs are signed separately. Verify with `cosign verify-blob --bundle`.
+# The release workflow fetches Sigstore's trust root and signing config once
+# and passes them in SIGSTORE_TRUSTED_ROOT and SIGSTORE_SIGNING_CONFIG, so
+# the signings GoReleaser runs at once never write cosign's TUF cache
+# together.
 signs:
   - id: checksum
     cmd: cosign
@@ -81,6 +85,8 @@ signs:
     args:
       - sign-blob
       - "--bundle=${signature}"
+      - "--signing-config={{ .Env.SIGSTORE_SIGNING_CONFIG }}"
+      - "--trusted-root={{ .Env.SIGSTORE_TRUSTED_ROOT }}"
       - "${artifact}"
       - "--yes"
   - id: sbom
@@ -90,6 +96,8 @@ signs:
     args:
       - sign-blob
       - "--bundle=${signature}"
+      - "--signing-config={{ .Env.SIGSTORE_SIGNING_CONFIG }}"
+      - "--trusted-root={{ .Env.SIGSTORE_TRUSTED_ROOT }}"
       - "${artifact}"
       - "--yes"
 
@@ -129,6 +137,8 @@ docker_signs:
   - cmd: cosign
     args:
       - sign
+      - "--signing-config={{ .Env.SIGSTORE_SIGNING_CONFIG }}"
+      - "--trusted-root={{ .Env.SIGSTORE_TRUSTED_ROOT }}"
       - "${artifact}@${digest}"
       - "--yes"
 

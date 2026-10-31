@@ -91,7 +91,10 @@ The tag starts `.github/workflows/release.yml`, which runs GoReleaser
   licence, README, changelog, `exemplar-config.toml` and the `skills/` folder, plus `checksums.txt` and an
   SPDX SBOM per archive;
 - keyless cosign signatures of the checksums and SBOMs, and a GitHub build
-  provenance attestation;
+  provenance attestation. The workflow fetches Sigstore's trust root and
+  signing config once, before GoReleaser, and every signing uses those
+  files: cosign otherwise rewrites its TUF cache on each run, and signings
+  running at once can collide there and fail the release;
 - a multi-arch image (`linux/amd64`, `linux/arm64`) at
   `ghcr.io/martinsuchenak/exemplar`, tagged with the version, the minor
   version and `latest` (not for pre-releases), built from the release
