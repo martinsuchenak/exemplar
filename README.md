@@ -24,7 +24,7 @@ server and a CLI.
 │   ├── auth/                # API key middleware (calls the account service)
 │   ├── db/                  # SQLite connection and migrations
 │   └── rest/                # JSON helpers and service error mapping
-├── skills/                  # Agent skills to install (exemplar-anonymise)
+├── skills/                  # Agent skills to install (exemplar-anonymise, exemplar-seed)
 ├── build/                   # Build information
 ├── exemplar-config.toml     # Configuration file
 ├── Dockerfile               # Docker build file
@@ -45,6 +45,10 @@ model, CLI, API, MCP and development conventions.
 To let an AI agent anonymise files without reading the originals, install
 the [exemplar-anonymise skill](skills/exemplar-anonymise/SKILL.md); see
 [docs/anonymisation.md](docs/anonymisation.md#anonymise-without-ingesting).
+To let one fill another system (a CRM, a helpdesk) with fake sample data
+through its API or UI, install the
+[exemplar-seed skill](skills/exemplar-seed/SKILL.md); see
+[docs/generation.md](docs/generation.md#records-for-another-system).
 
 ## Features
 

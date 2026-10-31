@@ -1,0 +1,208 @@
+# A customer account as a CRM's API takes it: the company, its contacts,
+# some opportunities, and for a won one a project with work requests.
+# One record per company holds the whole tree, so an agent seeding a system
+# creates the account first, then each child with the ID the system gave
+# its parent. See docs/generation.md#records-for-another-system.
+#
+#   exemplar generate --local --kind records --count 5 --people 12 \
+#     --schema-file docs/examples/crm-account.toml \
+#     --lists docs/examples/crm-lists.json
+name = "crm-account"
+description = "A CRM customer account with contacts, opportunities, a project and requests"
+exemplar = "0.5"
+step = "company"
+title = "{companyName}"
+
+# The target system's own users and statuses, with the IDs it gave them:
+# every request gives these (--lists).
+request_lists = ["users", "opportunity_statuses", "request_priorities"]
+
+[[fields]]
+name = "accountRef"
+template = "ACC-{record.number}"
+
+[[fields]]
+name = "companyName"
+value = "company.name"
+
+[[fields]]
+name = "tradingAs"
+value = "company.short"
+
+[[fields]]
+name = "abn"
+value = "company.abn"
+
+[[fields]]
+name = "phone"
+value = "company.phone"
+
+[[fields]]
+name = "website"
+value = "company.website"
+optional = 0.2
+
+[[fields]]
+name = "isActive"
+bool = 0.9
+
+[[fields]]
+name = "isOkToEmail"
+bool = 0.7
+
+[[fields]]
+name = "creditLimit"
+money = [5000, 50000]
+format = "number"
+
+[[fields]]
+name = "salesPerson"
+pick = "@users"
+hidden = true
+
+[[fields]]
+name = "idUserSalesPerson"
+value = "salesPerson.id"
+
+[[fields]]
+name = "address"
+object = true
+
+  [[fields.fields]]
+  name = "street"
+  value = "company.address.street"
+
+  [[fields.fields]]
+  name = "suburb"
+  value = "company.address.suburb"
+
+  [[fields.fields]]
+  name = "state"
+  value = "company.address.state"
+
+  [[fields.fields]]
+  name = "postCode"
+  value = "company.address.postcode"
+
+[[fields]]
+name = "contacts"
+list = { each = "company.contacts" }
+
+  [[fields.fields]]
+  name = "firstName"
+  value = "person.first_name"
+
+  [[fields.fields]]
+  name = "lastName"
+  value = "person.last_name"
+
+  [[fields.fields]]
+  name = "email"
+  value = "person.email"
+
+  [[fields.fields]]
+  name = "mobile"
+  value = "person.phone"
+
+  [[fields.fields]]
+  name = "jobTitle"
+  value = "person.job_title"
+
+[[fields]]
+name = "opportunities"
+list = { count = [1, 3] }
+
+  [[fields.fields]]
+  name = "name"
+  template = "{label} for {tradingAs}"
+
+  [[fields.fields]]
+  name = "status"
+  pick = "@opportunity_statuses"
+  hidden = true
+
+  [[fields.fields]]
+  name = "idOpportunityStatus"
+  value = "status.id"
+
+  [[fields.fields]]
+  name = "estimatedValue"
+  money = [2000, 120000]
+  format = "string"
+
+  [[fields.fields]]
+  name = "dateCreated"
+  date = { within_days = 120 }
+
+  [[fields.fields]]
+  name = "dateClosingExpected"
+  date = { after = "dateCreated", days = [14, 90] }
+
+  [[fields.fields]]
+  name = "owner"
+  pick = "@users"
+  hidden = true
+
+  [[fields.fields]]
+  name = "idUserOwner"
+  value = "owner.id"
+
+  [[fields.fields]]
+  name = "details"
+  text = { paragraph = [1, 2] }
+
+  # About half the opportunities have gone ahead as a project.
+  [[fields.fields]]
+  name = "project"
+  object = true
+  optional = 0.5
+
+    [[fields.fields.fields]]
+    name = "name"
+    template = "{name} delivery"
+
+    [[fields.fields.fields]]
+    name = "projectCode"
+    ref = "PRJ"
+
+    [[fields.fields.fields]]
+    name = "dateStart"
+    date = { after = "dateClosingExpected", days = [1, 21] }
+
+    [[fields.fields.fields]]
+    name = "idProjectManager"
+    value = "owner.id"
+
+    [[fields.fields.fields]]
+    name = "requests"
+    list = { count = [0, 4] }
+
+      [[fields.fields.fields.fields]]
+      name = "name"
+      template = "{subject}"
+
+      [[fields.fields.fields.fields]]
+      name = "info"
+      text = "sentence"
+
+      [[fields.fields.fields.fields]]
+      name = "priority"
+      pick = "@request_priorities"
+      hidden = true
+
+      [[fields.fields.fields.fields]]
+      name = "idRequestPriority"
+      value = "priority.id"
+
+      [[fields.fields.fields.fields]]
+      name = "hoursEstimated"
+      int = [1, 16]
+
+      [[fields.fields.fields.fields]]
+      name = "isChargeable"
+      bool = 0.6
+
+[[fields]]
+name = "pipelineValue"
+sum = "opportunities.estimatedValue"
+format = "number"

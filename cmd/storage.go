@@ -63,16 +63,22 @@ func anonymiserFlags() []cli.Flag {
 	}
 }
 
+// recordSchemasDirFlag is the directory of extra record schemas, which serve
+// and local generation read.
+func recordSchemasDirFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name:       "record-schemas-dir",
+		Usage:      "Directory of extra record schemas (*.toml); one named like a built-in replaces it",
+		ConfigPath: []string{"generate.record_schemas_dir"},
+		EnvVars:    []string{"RECORD_SCHEMAS_DIR"},
+	}
+}
+
 // serverFlags are the settings only serve takes: the anonymiser (ingest of
 // real data runs on the server, holding the key) and request size limits.
 func serverFlags() []cli.Flag {
 	return append(anonymiserFlags(), []cli.Flag{
-		&cli.StringFlag{
-			Name:       "record-schemas-dir",
-			Usage:      "Directory of extra record schemas (*.toml); one named like a built-in replaces it",
-			ConfigPath: []string{"generate.record_schemas_dir"},
-			EnvVars:    []string{"RECORD_SCHEMAS_DIR"},
-		},
+		recordSchemasDirFlag(),
 		&cli.IntFlag{
 			Name:         "max-ingest-mb",
 			DefaultValue: 200,

@@ -113,6 +113,16 @@ Only admin keys can read the log.
 | `fixture.purge` | An ingest batch is purged; details record how many fixtures |
 | `fixture.generate` | Synthetic content is generated into a dataset; details record kind, count, seed and people |
 | `person.generate` | People are added to the registry, directly or for generated content |
+| `record_schema.create`, `record_schema.update`, `record_schema.delete` | An admin adds, changes or removes a record schema through the API; details record the version and the file's hash (and the one an update replaced), never the file |
+
+## Record schemas
+
+Only admin keys add, change or remove record schemas through the API, and
+every change is audited. Any key that can read lists every schema and reads
+the built-in files (they are public) and API schemas' files, so an API
+schema should hold nothing a reader may not see. The server's own files
+(`--record-schemas-dir`) belong to the deployment: only their names, fields
+and list names are shown to every key, and their text to admin keys only.
 
 ## Files on disk
 

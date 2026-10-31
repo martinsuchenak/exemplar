@@ -21,9 +21,39 @@ version without one); see [docs/development.md](docs/development.md#releasing).
   is a phone number in any country's format, and a run of names written in
   capitals (`PETRA VANCLIFF`) is read again title-cased, so Presidio finds
   it; only the lines holding such runs are sent again.
+- Record schemas can describe another system's records: keys in any case
+  (`companyName`), `bool`, `const`, values picked from tables and read key
+  by key (`status.id`), `optional` (null with a chance) and `hidden`
+  fields, ints and amounts as text, `record.number`, and `object` and
+  `list` fields that nest a whole tree (an account, its contacts, deals and
+  their projects) in one record. See
+  docs/generation.md#records-for-another-system.
+- `exemplar generate --schema-file` sends schema files with the request,
+  for it alone, and `--lists` gives lists such as a target system's own
+  user and status IDs (`schema_files` and `lists` in the API); a schema
+  names the lists every request must give in `request_lists`.
+- `exemplar generate --local` makes records with no server, about people
+  made up from the seed, and prints them as JSON.
+- A schema file can say the oldest exemplar it works with
+  (`exemplar = "0.5"`); an older release refuses it with that reason.
+- Admins can add, change and remove record schemas on a running server,
+  with no restart: `exemplar schemas add`, `update` (with `--if-version`
+  to lose no one's change) and `remove`, and `POST`, `PUT` and `DELETE`
+  on `/api/v1/record-schemas`. The server checks each file, catalogues
+  included, before storing it in the database, and audits every change.
+  `exemplar schemas show` (`GET /api/v1/record-schemas/{name}`) prints a
+  schema's file (a server file's to admin keys only), and `schemas list`
+  says where each came from. See
+  docs/generation.md#schemas-added-through-the-api.
+- The exemplar-seed skill walks an agent through filling a system with
+  sample data: write the schema, fetch the target's lists, generate,
+  transform and seed. `docs/examples/crm-account.toml` is a worked example.
 
 ### Changed
 
+- A generate request that names no record schemas makes only those whose
+  `request_lists` it gives (or any of whose lists it gives, so a missing
+  one is named), instead of failing on one that needs lists.
 - `docker-compose.yml` and `exemplar.nomad` give Presidio one worker per
   run and hold 4 runs at once (up from 2 and 1). Presidio's single default
   worker let only one file be checked at a time, however many runs the

@@ -133,7 +133,12 @@ about one person.
 The record schemas the server generates, with each one's fields, so an agent
 knows what a record holds and which `record_schema` to pass to
 `search_fixtures`. No arguments. Returns `{"schemas": [Schema], "count": n}`,
-where a Schema is `{"name", "description", "step", "builtin", "hash", "fields"}`.
+where a Schema is `{"name", "description", "step", "builtin", "source", "hash", "fields"}`,
+plus, when set, `"version"` (for a schema added through the API),
+`"problem"` (why an API schema is not loaded, so it cannot be generated;
+such an entry has empty `fields` and no `step` or `hash`), `"lists"` (the named lists its fields pick from),
+`"request_lists"` (those a generate request must give) and `"exemplar"`
+(the oldest exemplar version the file works with).
 
 ## Errors
 

@@ -43,8 +43,6 @@ const (
 	maxListLimit     = 1000
 	// MaxGenerate caps how many people one call creates.
 	MaxGenerate = 1000
-	// peoplePerCompany is roughly how many new people share a new company.
-	peoplePerCompany = 3
 )
 
 // Service manages the person registry.
@@ -166,13 +164,8 @@ func (s *Service) Pick(ctx context.Context, actor principal.Principal, g *synth.
 
 // create inserts n new people from g. Email clashes get a number appended.
 func (s *Service) create(ctx context.Context, exec xdal.DBExecutor, actor principal.Principal, g *synth.Gen, n int) ([]Person, error) {
-	var companies []string
 	out := make([]Person, 0, n)
-	for i := 0; i < n; i++ {
-		if len(companies) == 0 || g.Chance(peoplePerCompany) {
-			companies = append(companies, g.CompanyName())
-		}
-		sp := g.Person(companies[g.Intn(len(companies))])
+	for _, sp := range g.People(n) {
 		sp.ID = storeutil.NewID()
 		p := Person{Person: sp, CreatedBy: actor.AccountID, CreatedAt: s.now()}
 		if err := s.insertUnique(ctx, exec, &p); err != nil {

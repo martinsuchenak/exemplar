@@ -33,12 +33,14 @@
 - `internal/account/`, `internal/dataset/`, `internal/fixture/`: handler -> service -> storage per resource.
 - `internal/audit/`: append-only audit log, written inside the callers' transactions.
 - `internal/blob/`: content-addressed file store (storage layer only).
+- `internal/recordschema/`: record schemas admins add through the API, kept in the database and checked against the whole set before each change; it holds the live set `generate` reads (built-ins, then `--record-schemas-dir` files, then API ones).
 - `internal/principal/`: the authenticated caller passed to every service method.
 - `internal/apperr/`: error kinds services return; `rest.RespondServiceError` maps them to HTTP.
 - `cmd/mcp/`: read-only MCP server and its tools; same API key auth and services as REST.
 - `internal/ingest/`, `internal/anonymise/`, `internal/mimetree/`: real-email ingest into quarantine; the anonymiser touches no storage (registry and Presidio sit behind interfaces). Never log or store raw input or dry-run reports. See `docs/anonymisation.md`.
 - PDFs are read by PDFium compiled to WebAssembly (`internal/anonymise/pdfium.go`, `pdf.go`), one engine per file, and finished by pdfcpu (`pdfcpu.go`), which only reads what PDFium wrote. go-pdfium has argument-order bugs the code works around; see the comments there. Keep `THIRD_PARTY_NOTICES.md` in step with the libraries the binary embeds.
 - `skills/exemplar-anonymise/SKILL.md`: a skill users install so agents run `exemplar anonymise` without reading originals. Keep it in step with the `anonymise` command's flags and output.
+- `skills/exemplar-seed/SKILL.md`: a skill for agents filling another system with sample data from `exemplar generate --local` and a record schema of their own. Keep it, and `docs/examples/crm-account.toml`, in step with the record schema format and the `generate` flags.
 - `internal/archive/`, `internal/exchange/`, `internal/backup/`: one archive format; export/import of datasets (REST, normal access rules) and host-only backup/restore. See `docs/backup-and-exchange.md`.
 - `Dockerfile`, `docker-compose.yml` (with Presidio), `exemplar.nomad`: deployment; see `docs/deployment.md`. Keep them in step with the config, env vars and data paths. `.dockerignore` keeps `tmp/`, `data/` and keys out of builds.
 - `internal/db/`: SQLite connection and migrations.

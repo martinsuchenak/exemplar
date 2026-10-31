@@ -174,8 +174,12 @@ uncompressed, or with a content entry over `storage.max_fixture_mb` gets
 | `GET /api/v1/persons` | any key | `?company= &limit= &offset=` | People by last name |
 | `POST /api/v1/persons` | write key | `{"count", "seed"}` | `201` `{"seed", "people": [Person]}` |
 | `GET /api/v1/persons/{id}` | any key | | Person |
-| `GET /api/v1/record-schemas` | any key | | `[{"name", "description", "step", "builtin", "hash", "fields"}]`, by name |
-| `POST /api/v1/datasets/{id}/generate` | can change the dataset | `{"kind", "count", "formats", "shapes", "from", "schemas", "profile", "people", "seed", "scenario", "tags"}` | `201` `{"seed", "fixtures": [Fixture], "person_ids"}` |
+| `GET /api/v1/record-schemas` | any key | | `[{"name", "description", "step", "builtin", "source", "version", "problem", "hash", "fields", "lists", "request_lists", "exemplar"}]`, by name; `source` is `built-in`, `file` or `api`; `version`, `problem` and the last three only when set. An API schema that is not loaded has its `problem`, empty `fields` and no `step` or `hash` |
+| `GET /api/v1/record-schemas/{name}` | any key; a `file` schema's needs an admin key | `?source=api` for the API schema of that name even where a server file has taken it | `{"name", "source", "version", "hash", "problem", "created_at", "created_by", "updated_at", "updated_by", "toml"}`: the schema and its file; the dates and accounts for API schemas only |
+| `POST /api/v1/record-schemas` | admin key | `{"toml"}`: a schema file of up to 256 KiB | `201` the same as GET; `400` for a file with a mistake, `409` for a name already used, `413` for a file too large |
+| `PUT /api/v1/record-schemas/{name}` | admin key | `{"toml", "version"}`: the new file, of the same name; `version`, if given, must be the current one | `200` the same as GET; `404` for no such API schema, `409` for a built-in or directory schema, or a stale `version` |
+| `DELETE /api/v1/record-schemas/{name}` | admin key | | `204`; `404` for no such API schema, `409` for a built-in or directory schema, `400` if another schema uses its catalogue |
+| `POST /api/v1/datasets/{id}/generate` | can change the dataset | `{"kind", "count", "formats", "shapes", "from", "schemas", "schema_files", "lists", "profile", "people", "seed", "scenario", "tags"}`; `schema_files` (TOML text, up to 20 of 256 KiB) and `lists` (`{"name": [values]}`) are for records | `201` `{"seed", "fixtures": [Fixture], "person_ids"}` |
 
 See [generation.md](generation.md) for the request fields, email shapes and
 record schemas.

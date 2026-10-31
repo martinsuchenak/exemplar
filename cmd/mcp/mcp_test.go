@@ -412,6 +412,23 @@ func TestListRecordSchemas(t *testing.T) {
 	}
 }
 
+// A schema an admin adds through the API is listed at once, with its source
+// and version.
+func TestListRecordSchemasIncludesAPIOnes(t *testing.T) {
+	w := newWorld(t)
+	ticket := "name = \"ticket\"\ntitle = \"{reference}\"\n\n[[fields]]\nname = \"reference\"\nref = \"TK\"\n"
+	if _, err := w.a.RecordSchemas.Create(context.Background(), w.admin, ticket); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := w.call(t, w.aliceReadOnly, "list_record_schemas", nil)
+	if err != nil || out["count"] != float64(len(synth.BuiltinSchemas().Names())+1) {
+		t.Fatalf("list_record_schemas = %v, %v", out["count"], err)
+	}
+	if s := fmt.Sprint(out["schemas"]); !strings.Contains(s, "name:ticket") || !strings.Contains(s, "source:api") || !strings.Contains(s, "version:1") {
+		t.Errorf("schemas = %s", s)
+	}
+}
+
 func TestGetPerson(t *testing.T) {
 	w := newWorld(t)
 	out, _, err := w.call(t, w.aliceReadOnly, "get_person", map[string]any{"id": w.personID})

@@ -205,18 +205,36 @@ reviewed.
 
 | Command | Description |
 |---------|-------------|
-| `schemas list` | The record schemas the server generates: name, step, whether built in, the file's hash and the fields |
+| `schemas list` | The record schemas the server generates: name, step, source (`built-in`, `file`, or `api v<version>`), the file's hash, the lists a request must give and the fields (or `NOT LOADED:` and why, for an API schema that no longer loads); `--json` adds every list a schema picks from and the oldest exemplar it works with |
+| `schemas show <name> [--api]` | The schema's file on stdout, so `> name.toml` saves it to edit; its source, version and hash on stderr; `--json` for all of it. A server file's (`--record-schemas-dir`) needs an admin key. `--api` shows the API schema of that name even where a server file has taken it |
+| `schemas add <file>` | Add a schema from a file (admin key); every key can generate from it at once, with no restart |
+| `schemas update <file> [--if-version N]` | Replace the API schema the file names (admin key); with `--if-version`, only if no one changed it since that version |
+| `schemas remove <name>` | Remove an API schema (admin key), unless another uses its catalogue; fixtures made from it stay |
 
 ### `generate`
 
 ```bash
-exemplar generate <dataset> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--from <fixture-id>,...] [--schemas contact,quote] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
+exemplar generate <dataset> --kind files|emails|records [--count 10] [--formats pdf,docx] [--shapes reply,bounce] [--from <fixture-id>,...] [--schemas contact,quote] [--schema-file a.toml,b.toml] [--lists lists.json] [--profile insurance|manufacturing] [--people N] [--seed N] [--scenario S] [--tags a,b]
+exemplar generate --local --kind records [--schemas …] [--schema-file …] [--lists …] [--record-schemas-dir DIR] [--count 10] [--people N] [--seed N] [--profile …]
 ```
 
 Fills a dataset with synthetic content about registry people and prints the
 seed; see [generation.md](generation.md). `--from` renders emails from
 template emails (approved real-derived ones, or any email with linked
 people) instead of shapes.
+
+For records, `--schema-file` sends record schema files with the request,
+for it alone (with no `--schemas`, those are the ones generated), and
+`--lists` a JSON object of lists by name, which replace the schemas' lists
+or give the ones a schema says a request must (`request_lists`).
+`--local` makes records in this process, about people made up from the
+seed, with no server, key or dataset, and prints them on stdout as
+`{"seed": N, "records": [...]}` (the seed also goes to stderr). It reads the
+built-in schemas plus `--record-schemas-dir`, as `serve` does; without
+`--local` that setting is ignored, since a server uses its own (so a config
+file that sets it for `serve` does no harm). Numbers in `--lists` keep
+their exact digits, locally and on a server. See
+[generation.md](generation.md#records-for-another-system).
 
 ### `upload`
 

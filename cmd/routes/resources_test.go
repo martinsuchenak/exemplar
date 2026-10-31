@@ -76,6 +76,10 @@ func TestEveryAPIRouteNeedsAKey(t *testing.T) {
 		{"GET", "/api/v1/persons/x"},
 		{"POST", "/api/v1/datasets/x/generate"},
 		{"GET", "/api/v1/record-schemas"},
+		{"POST", "/api/v1/record-schemas"},
+		{"GET", "/api/v1/record-schemas/x"},
+		{"PUT", "/api/v1/record-schemas/x"},
+		{"DELETE", "/api/v1/record-schemas/x"},
 		{"POST", "/api/v1/datasets/x/ingest"},
 		{"POST", "/api/v1/export"},
 		{"POST", "/api/v1/import"},
@@ -108,6 +112,9 @@ func TestMalformedRequests(t *testing.T) {
 		{"GET", "/api/v1/persons?offset=x", ""},
 		{"POST", "/api/v1/datasets/" + dsID + "/generate", "{"},
 		{"POST", "/api/v1/datasets/" + dsID + "/generate", `{"kind":"files"}`},
+		{"POST", "/api/v1/record-schemas", "{"},
+		{"POST", "/api/v1/record-schemas", `{"toml":"name = "}`},
+		{"PUT", "/api/v1/record-schemas/quote", "{"},
 	} {
 		if w := call(mux, r.method, r.path, key, r.body); w.Code != http.StatusBadRequest {
 			t.Errorf("%s %s %q: %d, want 400 (%s)", r.method, r.path, r.body, w.Code, w.Body)

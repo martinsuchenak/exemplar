@@ -22,6 +22,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
+	"github.com/martinsuchenak/exemplar/internal/recordschema"
 	"github.com/martinsuchenak/exemplar/internal/runlimit"
 	"github.com/martinsuchenak/exemplar/internal/scrub"
 	"github.com/martinsuchenak/exemplar/internal/synth"
@@ -71,7 +72,10 @@ type App struct {
 	Fixtures *fixture.Service
 	Persons  *person.Service
 	Generate *generate.Service
-	Ingest   *ingest.Service
+	// RecordSchemas adds, changes and removes record schemas through the
+	// API, and holds the set Generate uses.
+	RecordSchemas *recordschema.Service
+	Ingest        *ingest.Service
 	// Scrub is the anonymise tool: files in, anonymised files out, nothing
 	// stored.
 	Scrub    *scrub.Service
@@ -114,6 +118,11 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 			log.Info("record schema file replaces the built-in one", "schema", name, "dir", cfg.RecordSchemasDir)
 		}
 	}
+	recordSchemas := recordschema.NewService(conn.DB, auditService, schemas, log)
+	if err := recordSchemas.Load(ctx); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
 	ingestCfg, scrubCfg, err := anonymiserConfig(cfg)
 	if err != nil {
 		_ = conn.Close()
@@ -121,17 +130,18 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 	}
 	runs := runlimit.New(cfg.MaxConcurrentRuns)
 	return &App{
-		conn:     conn,
-		Audit:    auditService,
-		Accounts: account.NewService(conn.DB, auditService),
-		Datasets: datasets,
-		Fixtures: fixtures,
-		Persons:  persons,
-		Generate: generate.NewService(conn.DB, datasets, fixtures, persons, auditService, schemas),
-		Ingest:   ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes, runs, log),
-		Scrub:    scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes, runs, log),
-		Exchange: exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version, cfg.MaxImportBytes),
-		Backup:   backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),
+		conn:          conn,
+		Audit:         auditService,
+		Accounts:      account.NewService(conn.DB, auditService),
+		Datasets:      datasets,
+		Fixtures:      fixtures,
+		Persons:       persons,
+		Generate:      generate.NewService(conn.DB, datasets, fixtures, persons, auditService, recordSchemas),
+		RecordSchemas: recordSchemas,
+		Ingest:        ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes, runs, log),
+		Scrub:         scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes, runs, log),
+		Exchange:      exchange.NewService(conn.DB, datasets, fixtures, persons, auditService, build.Version, cfg.MaxImportBytes),
+		Backup:        backup.NewService(conn, blobs, auditService, cfg.DBPath, build.Version),
 	}, nil
 }
 
@@ -189,6 +199,17 @@ func LocalAnonymiser(cfg LocalConfig) (*scrub.Service, error) {
 		scrubCfg.Detector = anonymise.PatternsOnly{}
 	}
 	return scrub.NewLocal(scrubCfg), nil
+}
+
+// LocalGenerator returns record generation without a database or server,
+// for the CLI's local mode: the built-in schemas plus every *.toml file in
+// schemasDir (empty for none).
+func LocalGenerator(schemasDir string) (*generate.Service, error) {
+	schemas, _, err := synth.LoadSchemas(schemasDir)
+	if err != nil {
+		return nil, err
+	}
+	return generate.NewLocal(schemas), nil
 }
 
 // Checker returns the anonymise tool's check, which needs no database,

@@ -7,6 +7,8 @@ import (
 	"io"
 	"math"
 	"net/mail"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -464,5 +466,234 @@ func TestRecordsForPeopleWithoutACompany(t *testing.T) {
 	})
 	if !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "work for a company") {
 		t.Errorf("company records about individuals err = %v", err)
+	}
+}
+
+// accountSchema is a schema file a request sends: a company's record with
+// its contacts listed, and an owner picked from a list the request gives.
+const accountSchema = `name = "account"
+step = "company"
+title = "{companyName}"
+request_lists = ["owners"]
+
+[[fields]]
+name = "companyName"
+value = "company.name"
+
+[[fields]]
+name = "owner"
+pick = "@owners"
+
+[[fields]]
+name = "contacts"
+list = { each = "company.contacts" }
+
+  [[fields.fields]]
+  name = "email"
+  value = "person.email"
+`
+
+// Schema files and lists sent with a request make records there and
+// nowhere else, and their provenance names the file's hash.
+func TestGenerateFromRequestSchemas(t *testing.T) {
+	a, _, alice, d := setup(t)
+	owners := map[string][]any{"owners": {map[string]any{"id": 7.0, "name": "Sam"}}}
+	res, err := a.Generate.Generate(ctx, alice, d.ID, generate.Request{
+		Kind: generate.KindRecords, Count: 2, People: 6, Seed: 5, SchemaFiles: []string{accountSchema}, Lists: owners,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Fixtures) != 2 {
+		t.Fatalf("%d fixtures", len(res.Fixtures))
+	}
+	for _, f := range res.Fixtures {
+		if f.RecordSchema != "account" || !strings.Contains(f.Generator, "schema=account@") {
+			t.Errorf("fixture = %+v", f)
+		}
+		rc, _, err := a.Fixtures.Open(ctx, alice, f.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		var rec map[string]any
+		if err := json.Unmarshal(data, &rec); err != nil || rec["owner"].(map[string]any)["name"] != "Sam" || len(rec["contacts"].([]any)) == 0 {
+			t.Errorf("record = %s, %v", data, err)
+		}
+	}
+	if schemas, _ := a.Generate.Schemas(alice); len(schemas) != len(synth.BuiltinSchemas().Names()) {
+		t.Error("a request's schema stayed on the server")
+	}
+
+	for _, c := range []struct {
+		req  generate.Request
+		want string
+	}{
+		{generate.Request{Kind: generate.KindRecords, Count: 1, SchemaFiles: []string{accountSchema}}, `needs list "owners"`},
+		{generate.Request{Kind: generate.KindRecords, Count: 1, SchemaFiles: []string{"name = "}}, "schema file 1"},
+		{generate.Request{Kind: generate.KindRecords, Count: 1, Schemas: []synth.RecordSchema{"contact"}, Lists: map[string][]any{"owners": {"x"}}}, "no schema in the request picks from it"},
+		{generate.Request{Kind: generate.KindFiles, Count: 1, Lists: owners}, "for records"},
+		{generate.Request{Kind: generate.KindEmails, Count: 1, SchemaFiles: []string{accountSchema}}, "for records"},
+	} {
+		if _, err := a.Generate.Generate(ctx, alice, d.ID, c.req); !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("err = %v, want %q", err, c.want)
+		}
+	}
+}
+
+// Local records need no database: people are made from the seed, a few to
+// a company, and the same seed gives the same records.
+func TestLocalRecords(t *testing.T) {
+	g, err := app.LocalGenerator("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := generate.Request{Kind: generate.KindRecords, Count: 4, People: 6, Seed: 11, SchemaFiles: []string{accountSchema},
+		Lists: map[string][]any{"owners": {"Sam", "Kim"}}}
+	res, err := g.Records(ctx, principal.Principal{}, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Seed != 11 || len(res.Records) != 4 {
+		t.Fatalf("result = %+v", res)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(res.Records[0], &rec); err != nil || rec["schema"] != "account" || len(rec["contacts"].([]any)) == 0 {
+		t.Errorf("record = %s, %v", res.Records[0], err)
+	}
+	again, _ := g.Records(ctx, principal.Principal{}, req)
+	for i := range res.Records {
+		if string(res.Records[i]) != string(again.Records[i]) {
+			t.Errorf("record %d differs for the same seed", i)
+		}
+	}
+	builtin, err := g.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: 3, Schemas: []synth.RecordSchema{"contact"}})
+	if err != nil || builtin.Seed == 0 || len(builtin.Records) != 3 {
+		t.Errorf("built-in = %+v, %v", builtin, err)
+	}
+	if _, err := g.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindFiles, Count: 1}); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("files err = %v", err)
+	}
+	if _, err := g.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: 0}); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("count err = %v", err)
+	}
+	bad := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bad, "x.toml"), []byte("name = "), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.LocalGenerator(bad); err == nil {
+		t.Error("a bad schema directory loaded")
+	}
+}
+
+// A request's records may come to at most a set size, checked as they are
+// made, so a schema of large records cannot fill memory.
+func TestRecordsSizeCap(t *testing.T) {
+	defer generate.SetMaxRecordsBytes(4 << 10)()
+	g, _ := app.LocalGenerator("")
+	big := `name = "big"
+title = "x"
+
+[[fields]]
+name = "notes"
+list = { count = [20, 20] }
+
+  [[fields.fields]]
+  name = "text"
+  text = { paragraph = [2, 0] }
+`
+	_, err := g.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: 50, SchemaFiles: []string{big}})
+	if !errors.Is(err, apperr.ErrTooLarge) || !strings.Contains(err.Error(), "over 0 MiB after") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := g.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: 1, Schemas: []synth.RecordSchema{"contact"}}); err != nil {
+		t.Errorf("a small request: %v", err)
+	}
+}
+
+// Lists decoded from JSON keep their numbers' digits.
+func TestListsKeepNumbers(t *testing.T) {
+	var req generate.Request
+	if err := json.Unmarshal([]byte(`{"lists": {"owners": [{"id": 12345678901234567}, 3.5, "x"]}}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	owner := req.Lists["owners"][0].(map[string]any)["id"]
+	if owner != json.Number("12345678901234567") || req.Lists["owners"][1] != json.Number("3.5") {
+		t.Errorf("lists = %#v", req.Lists)
+	}
+	if err := json.Unmarshal([]byte(`{"lists": ["x"]}`), &req); err == nil {
+		t.Error("a list that is not an object decoded")
+	}
+}
+
+// A request that names no schemas makes every schema whose request lists
+// it gives, so a server schema that needs a target system's lists does not
+// fail requests that are not about it.
+func TestDefaultSchemasSkipThoseNeedingLists(t *testing.T) {
+	a := testutil.NewApp(t)
+	admin := testutil.Admin(t, a)
+	needs := "name = \"seeded\"\ntitle = \"x\"\nrequest_lists = [\"owners\"]\n\n[[fields]]\nname = \"owner\"\npick = \"@owners\"\n"
+	if _, err := a.RecordSchemas.Create(ctx, admin, needs); err != nil {
+		t.Fatal(err)
+	}
+	schemaOf := func(req generate.Request) map[string]int {
+		t.Helper()
+		res, err := a.Generate.Records(ctx, principal.Principal{}, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := map[string]int{}
+		for _, r := range res.Records {
+			var rec map[string]any
+			if err := json.Unmarshal(r, &rec); err != nil {
+				t.Fatal(err)
+			}
+			n[rec["schema"].(string)]++
+		}
+		return n
+	}
+	count := len(synth.BuiltinSchemas().Names()) + 1
+	if got := schemaOf(generate.Request{Kind: generate.KindRecords, Count: count, Seed: 3}); got["seeded"] != 0 || len(got) != count-1 {
+		t.Errorf("without lists = %v", got)
+	}
+	if got := schemaOf(generate.Request{Kind: generate.KindRecords, Count: count, Seed: 3, Lists: generate.Lists{"owners": {"Sam"}}}); got["seeded"] != 1 || len(got) != count {
+		t.Errorf("with lists = %v", got)
+	}
+	if _, err := a.Generate.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: 1, Schemas: []synth.RecordSchema{"seeded"}}); !errors.Is(err, apperr.ErrInvalid) {
+		t.Errorf("named without its list: %v", err)
+	}
+	// A request giving one of a schema's lists is meant for it: it is told
+	// which list is missing, not that the one it gave is unused.
+	both := "name = \"paired\"\ntitle = \"x\"\nrequest_lists = [\"owners\", \"users\"]\n\n[[fields]]\nname = \"owner\"\npick = \"@owners\"\n\n[[fields]]\nname = \"user\"\npick = \"@users\"\n"
+	if _, err := a.RecordSchemas.Create(ctx, admin, both); err != nil {
+		t.Fatal(err)
+	}
+	_, err := a.Generate.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: count, Lists: generate.Lists{"users": {"Kim"}}})
+	if !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), `paired needs list "owners"`) {
+		t.Errorf("one of two lists: %v", err)
+	}
+}
+
+// A request that names no schemas, where every schema needs lists it does
+// not give, is refused rather than left with none to make.
+func TestNoDefaultSchemaLeft(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range synth.BuiltinSchemas().Names() {
+		body := "name = \"" + string(n) + "\"\ntitle = \"x\"\nrequest_lists = [\"owners\"]\n\n[[fields]]\nname = \"owner\"\npick = \"@owners\"\n"
+		if err := os.WriteFile(filepath.Join(dir, string(n)+".toml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := app.LocalGenerator(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = g.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: 2})
+	if !errors.Is(err, apperr.ErrInvalid) || !strings.Contains(err.Error(), "every record schema needs lists") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := g.Records(ctx, principal.Principal{}, generate.Request{Kind: generate.KindRecords, Count: 2, Lists: generate.Lists{"owners": {"Sam"}}}); err != nil {
+		t.Errorf("with the list: %v", err)
 	}
 }

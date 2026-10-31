@@ -28,6 +28,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/generate"
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
+	"github.com/martinsuchenak/exemplar/internal/recordschema"
 	"github.com/martinsuchenak/exemplar/internal/scrub"
 	"github.com/martinsuchenak/exemplar/internal/synth"
 )
@@ -301,6 +302,36 @@ func (c *Client) GeneratePersons(ctx context.Context, in person.GenerateInput) (
 func (c *Client) RecordSchemas(ctx context.Context) ([]synth.Schema, error) {
 	var out []synth.Schema
 	return out, c.do(ctx, http.MethodGet, "/api/v1/record-schemas", nil, nil, &out)
+}
+
+// RecordSchema returns one record schema with its file; apiOnly asks for
+// the API schema of that name even when a server file has taken it.
+func (c *Client) RecordSchema(ctx context.Context, name string, apiOnly bool) (*recordschema.Definition, error) {
+	var q url.Values
+	if apiOnly {
+		q = url.Values{"source": {"api"}}
+	}
+	var out recordschema.Definition
+	return &out, c.do(ctx, http.MethodGet, "/api/v1/record-schemas/"+url.PathEscape(name), q, nil, &out)
+}
+
+// CreateRecordSchema adds a record schema from its file (admin key).
+func (c *Client) CreateRecordSchema(ctx context.Context, toml string) (*recordschema.Definition, error) {
+	var out recordschema.Definition
+	return &out, c.do(ctx, http.MethodPost, "/api/v1/record-schemas", nil, recordschema.Body{TOML: toml}, &out)
+}
+
+// UpdateRecordSchema replaces a record schema's file (admin key); version,
+// unless 0, must be its current version.
+func (c *Client) UpdateRecordSchema(ctx context.Context, name, toml string, version int) (*recordschema.Definition, error) {
+	var out recordschema.Definition
+	return &out, c.do(ctx, http.MethodPut, "/api/v1/record-schemas/"+url.PathEscape(name), nil, recordschema.Body{TOML: toml, Version: version}, &out)
+}
+
+// DeleteRecordSchema removes a record schema added through the API (admin
+// key).
+func (c *Client) DeleteRecordSchema(ctx context.Context, name string) error {
+	return c.do(ctx, http.MethodDelete, "/api/v1/record-schemas/"+url.PathEscape(name), nil, nil, nil)
 }
 
 // Generate fills a dataset with synthetic fixtures.

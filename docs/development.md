@@ -65,7 +65,11 @@ skip it.
   the matching page in `docs/` (architecture, security, data model, CLI, API).
 - A change to the `anonymise` command's flags, output or rules updates
   [`skills/exemplar-anonymise/SKILL.md`](../skills/exemplar-anonymise/SKILL.md)
-  too: users install it, and agents follow it as written.
+  too: users install it, and agents follow it as written. Likewise a change
+  to `generate --local`, its flags or the record schema format updates
+  [`skills/exemplar-seed/SKILL.md`](../skills/exemplar-seed/SKILL.md) and
+  [`docs/examples/crm-account.toml`](examples/crm-account.toml) (a test
+  generates from it).
 - `task check` passes before committing.
 
 ## Releasing

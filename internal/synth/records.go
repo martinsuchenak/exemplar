@@ -47,6 +47,9 @@ type RecordInput struct {
 	// Slot is the schema's place among the Slots schemas of the request, so
 	// each schema's records start at a different person.
 	Slot, Slots int
+	// Lists are lists the request gives, by name; each replaces the
+	// schema's list of that name (see CheckRequestLists).
+	Lists map[string][]any
 }
 
 // companyPerson returns the first person of the index-th distinct company

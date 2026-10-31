@@ -153,6 +153,32 @@ func (g *Gen) Person(company string) Person {
 	}
 }
 
+// PeoplePerCompany is roughly how many new people share a new company.
+const PeoplePerCompany = 3
+
+// People returns n new people, a few to a company, without IDs: the person
+// registry gives them stored IDs, local generation IDs from the generator.
+func (g *Gen) People(n int) []Person {
+	var companies []string
+	out := make([]Person, 0, n)
+	for range n {
+		if len(companies) == 0 || g.Chance(PeoplePerCompany) {
+			companies = append(companies, g.CompanyName())
+		}
+		out = append(out, g.Person(companies[g.Intn(len(companies))]))
+	}
+	return out
+}
+
+// ID returns a random ID shaped like a version 4 UUID, for people made
+// without the registry; the same seed gives the same IDs.
+func (g *Gen) ID() string {
+	hi, lo := g.r.Uint64(), g.r.Uint64()
+	hi = hi&^0xf000 | 0x4000     // version 4
+	lo = lo&^(0xc<<60) | 0x8<<60 // RFC 4122 variant
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", hi>>32, hi>>16&0xffff, hi&0xffff, lo>>48, lo&0xffffffffffff)
+}
+
 // Address returns a new Australian-style address.
 func (g *Gen) Address() Address {
 	s := suburbs[g.Intn(len(suburbs))]

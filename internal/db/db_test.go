@@ -104,12 +104,12 @@ func TestMigrationsRollBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrator: %v", err)
 	}
-	if _, err := m.Down(ctx, 4); err != nil {
+	if _, err := m.Down(ctx, len(migrations())); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	var n int
-	if err := conn.SQL.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'accounts'`).Scan(&n); err != nil || n != 0 {
-		t.Errorf("accounts table still present after rollback (n=%d, err=%v)", n, err)
+	if err := conn.SQL.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('accounts', 'record_schemas')`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("tables still present after rollback (n=%d, err=%v)", n, err)
 	}
 	if err := Migrate(ctx, conn, nil); err != nil {
 		t.Fatalf("migrate up again: %v", err)

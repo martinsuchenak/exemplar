@@ -377,6 +377,31 @@ func TestPersonsAndGenerate(t *testing.T) {
 		t.Errorf("record schemas = %+v, %v", schemas, err)
 	}
 
+	ticket := "name = \"ticket\"\ntitle = \"{reference}\"\n\n[[fields]]\nname = \"reference\"\nref = \"TK\"\n"
+	if _, err := alice.CreateRecordSchema(ctx, ticket); !errors.Is(err, apperr.ErrForbidden) {
+		t.Errorf("member add schema err = %v", err)
+	}
+	added, err := admin.CreateRecordSchema(ctx, ticket)
+	if err != nil || added.Version != 1 || added.Source != synth.SourceAPI {
+		t.Fatalf("add schema = %+v, %v", added, err)
+	}
+	if got, err := alice.RecordSchema(ctx, "ticket", false); err != nil || got.TOML != ticket {
+		t.Errorf("schema = %+v, %v", got, err)
+	}
+	changed := strings.Replace(ticket, "TK", "SR", 1)
+	if _, err := admin.UpdateRecordSchema(ctx, "ticket", changed, 9); !errors.Is(err, apperr.ErrConflict) {
+		t.Errorf("stale update err = %v", err)
+	}
+	if got, err := admin.UpdateRecordSchema(ctx, "ticket", changed, 1); err != nil || got.Version != 2 {
+		t.Errorf("update schema = %+v, %v", got, err)
+	}
+	if err := admin.DeleteRecordSchema(ctx, "ticket"); err != nil {
+		t.Errorf("remove schema: %v", err)
+	}
+	if _, err := alice.RecordSchema(ctx, "ticket", false); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("removed schema err = %v", err)
+	}
+
 	ds, err := alice.CreateDataset(ctx, dataset.CreateInput{Name: "gen"})
 	if err != nil {
 		t.Fatal(err)

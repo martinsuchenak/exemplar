@@ -51,6 +51,31 @@ Word documents a minute, against 1,300 and 660. PDFs are bound by exemplar's
 CPU instead (about 300 ms and most of a core each, about 800 a minute with
 4 runs).
 
+## Record schemas on a deployed server
+
+A team's own record schemas reach a running server in one of two ways:
+
+- **Through the API**, by an admin, from anywhere: `exemplar schemas add
+  ticket.toml` (`update`, `remove`, and `show` to fetch one back). The
+  server checks the file, keeps it in the database (so backups hold it) and
+  generates from it at once, with no restart. Use it for schemas that
+  change as a team works.
+- **As files on the server**, in a directory that `RECORD_SCHEMAS_DIR`
+  points at, read when the server starts: a restart picks up a change, and
+  a file with a mistake stops the server. Use it for schemas that belong
+  with the deployment, or to replace a built-in one, which the API cannot.
+  In Compose or Nomad, put the files in the data volume (for example
+  `/app/data/schemas`) and set `RECORD_SCHEMAS_DIR` to that path.
+
+Files come first: an API schema cannot take a built-in's or a file's name,
+and if a file later takes an API schema's name, the server starts with the
+file's, warns, and lists the API one with the reason it is not loaded until
+an admin removes it. See [generation.md](generation.md#schemas-added-through-the-api).
+
+Anyone can also send a schema with a single request
+(`exemplar generate --schema-file`) or generate with none
+(`exemplar generate --local`); neither needs an admin.
+
 ## Working with a deployed server
 
 Everything an admin does, reviewing included, goes through the API: the
@@ -137,7 +162,9 @@ published image with `cosign verify ghcr.io/martinsuchenak/exemplar:<version>
   `docker exec exemplar exemplar backup --output /app/data/backup.tar.gz`.
 - A health check polls `/health`.
 - Extra profiles or record schemas: mount a directory and point
-  `ANON_PROFILES_DIR` or `RECORD_SCHEMAS_DIR` at it.
+  `ANON_PROFILES_DIR` or `RECORD_SCHEMAS_DIR` at it, and restart. Record
+  schemas can instead be added through the API, with no restart; see
+  [Record schemas on a deployed server](#record-schemas-on-a-deployed-server).
 - `.dockerignore` keeps `tmp/`, `data/`, `.env` and key files out of the
   build, so no local data reaches an image.
 

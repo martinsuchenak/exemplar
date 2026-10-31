@@ -62,6 +62,14 @@ func migrations() []migrate.Migration {
 				return tx.ExecSQL(ctx, `ALTER TABLE fixtures DROP COLUMN imported_reviewer`)
 			},
 		},
+		{
+			Version: "20261031000001",
+			Name:    "record_schemas",
+			Up:      execFile("migrations/20261031000001_record_schemas.sql"),
+			Down: func(ctx context.Context, tx *migrate.Tx) error {
+				return tx.ExecSQL(ctx, `DROP TABLE record_schemas`)
+			},
+		},
 	}
 }
 

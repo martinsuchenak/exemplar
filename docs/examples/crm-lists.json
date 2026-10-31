@@ -1,0 +1,19 @@
+{
+  "users": [
+    {"id": 101, "name": "Sales One"},
+    {"id": 102, "name": "Sales Two"},
+    {"id": 103, "name": "Project Lead"}
+  ],
+  "opportunity_statuses": [
+    {"id": 1, "name": "Lead"},
+    {"id": 2, "name": "Qualified"},
+    {"id": 3, "name": "Proposal"},
+    {"id": 4, "name": "Won"},
+    {"id": 5, "name": "Lost"}
+  ],
+  "request_priorities": [
+    {"id": 1, "name": "Low"},
+    {"id": 2, "name": "Normal"},
+    {"id": 3, "name": "High"}
+  ]
+}
