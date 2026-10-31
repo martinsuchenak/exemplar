@@ -78,11 +78,11 @@ Only fixtures with source `anonymised` are derived from real data.
 - Unapproved real-derived content is served only to admins, so they can review it.
 - Every read of real-derived content is audit-logged (`fixture.download`).
 - Uploads through the API or CLI are declared as containing no real data; real data must come through ingest.
-- Ingest (admin key, quarantine datasets only) keeps raw input in memory for the request and stores only anonymised output. Dry-run reports hold original data: they are returned with `Cache-Control: no-store` and never stored or logged; the audit event records counts only. Ingest and the anonymise tool share a cap on how many runs the server holds at once (`storage.max_concurrent_runs`, default 2; `429` beyond it, before any upload is read), so concurrent uploads cannot exhaust the server's memory together.
+- Ingest (admin key, quarantine datasets only) keeps raw input in memory for the request and stores only anonymised output. Dry-run reports hold original data: they are returned with `Cache-Control: no-store` and never stored or logged; the audit event records counts only. Ingest and the anonymise tool share a cap on how many runs the server holds at once (`storage.max_concurrent_runs`, default 2; `429` beyond it, before any upload is read), so concurrent uploads cannot exhaust the server's memory together. Records generation has a cap of its own of the same size (`429` before any record is made), so a long anonymise batch never leaves generation busy.
 - The anonymisation key is read from a file that group and others cannot read (the server refuses otherwise) or from `EXEMPLAR_ANON_KEY`, never from the config file. The registry keeps real identities only as HMACs under that key (`identity_keys`, `name_tokens`).
 - Email attachments are replaced by generated files by default, so their content never survives. A profile with `attachments = "anonymise"` rewrites the ones in a format the anonymiser reads in place instead; they then keep their content, and are reviewed with the email in quarantine. Choosing that profile is a deliberate, per-ingest decision.
 - The anonymise tool (`POST /api/v1/anonymise`, `exemplar anonymise`) is open to any key that can read, and stores nothing. Its fakes come from a key made for each request and thrown away, so they match nothing in the library: a caller cannot test whether a real name is there by comparing fakes. Linked fakes, from the server's key and registry, need an admin key. The response never holds original data (`--report` exists only in `--local` mode, where the user owns the files; dropped document parts are listed by Office's names or keyed ones, never the sender's), each key runs one at a time, claimed before its upload is read so one key cannot hold several uploads in memory, and the audit event records counts only. Its output skips review, so the CLI warns that it is unreviewed.
-- Presidio receives email and document text in plain form; run it next to the server on a private network or loopback. When it fails, callers of ingest and the anonymise tool learn only that the detector is unavailable: the underlying error, which names Presidio's URL, host and network, is neither returned nor logged. See [anonymisation.md](anonymisation.md#presidio).
+- Presidio receives email and document text in plain form; run it next to the server on a private network or loopback. When it fails, callers of ingest and the anonymise tool learn only that the detector is unavailable: the underlying error, which names Presidio's URL, host and network, is never returned. The server logs it (the status, network error or timeout) for its operators, never the file, its name, or what Presidio said back. See [anonymisation.md](anonymisation.md#presidio).
 - Copies made by fork or promote keep the source's provenance (`ingest_batch`, review state, reviewer).
 - `exemplar purge <batch>` (admin) deletes a batch's fixtures from every dataset, frozen ones included, for removal on request. That includes emails generated from the batch's emails as templates, which keep its `ingest_batch`.
 - Export carries approved real-derived fixtures only. Importing them needs an admin key, because they arrive approved: the review made on the exporting instance is trusted, and its reviewer is recorded as `imported_reviewer`.
@@ -123,6 +123,21 @@ the built-in files (they are public) and API schemas' files, so an API
 schema should hold nothing a reader may not see. The server's own files
 (`--record-schemas-dir`) belong to the deployment: only their names, fields
 and list names are shown to every key, and their text to admin keys only.
+
+Generation from any schema is bounded before the work is done: a `lines`
+count is capped at 100 like a list's, every entry a `lines` field draws is
+charged to the record's own value cap (100000 values), and a records
+generation holds one of its own run slots (`storage.max_concurrent_runs` of them). A cancelled
+caller stops the build at the next record.
+
+Every parser is bounded by absolute budgets, not only by the size of its
+input: RTF and Office XML by token, node and expansion budgets, and PDFs,
+whose pages are rewritten in place, by how far a page's or form's content
+may decode and by how many grid cells its text objects may be bucketed
+into, with the same run-slot cap and deadlines over all of it. However well
+a file compresses, it cannot multiply into many times its size in the
+server's memory, and a file that takes too long is cut off mid-parse, not
+only between engine calls.
 
 ## Files on disk
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -180,8 +181,11 @@ func (e *Engine) detectTexts(ctx context.Context, texts []docText, f *found) err
 // way: by distinct values (at least two), or by cells (at least three), as
 // when one detected name fills most rows and the few others are missed.
 // A name learned in one column counts in the others,
-// so the rule runs until nothing changes: it only ever adds people, so the
-// result does not depend on the order columns are read in.
+// so the rule runs again until nothing changes, at most maxColumnPasses
+// times: each pass reads every cell, and a sheet of thousands of columns
+// that each learn a name for the next would otherwise be read once per
+// column. Real tables settle in two or three. Columns are read in name
+// order, so where the cap stops it the result is still the same every run.
 func (f *found) addColumnNames(texts []docText) {
 	columns := map[string]map[string]int{} // value -> cells, by column
 	for _, t := range texts {
@@ -194,9 +198,15 @@ func (f *found) addColumnNames(texts []docText) {
 		}
 		columns[t.column][v]++
 	}
-	for changed := true; changed; {
+	names := make([]string, 0, len(columns))
+	for c := range columns {
+		names = append(names, c)
+	}
+	sort.Strings(names)
+	for pass, changed := 0, true; changed && pass < maxColumnPasses; pass++ {
 		changed = false
-		for _, values := range columns {
+		for _, c := range names {
+			values := columns[c]
 			people, peopleCells, cells := 0, 0, 0
 			for v, n := range values {
 				cells += n
@@ -218,6 +228,9 @@ func (f *found) addColumnNames(texts []docText) {
 		}
 	}
 }
+
+// maxColumnPasses caps how often addColumnNames reads the columns again.
+const maxColumnPasses = 8
 
 // columnName reports whether a value in a column of people looks like a
 // name: two to five words with letters, no digits and nothing an address or

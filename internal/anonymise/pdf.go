@@ -53,6 +53,12 @@ const (
 	pdfMaxChars   = 4 << 20 // characters across the document
 	pdfMaxObjects = 1 << 20 // page objects across the document, forms included
 	pdfMaxDepth   = 16      // forms inside forms
+	// The grid own() buckets a page's objects into holds at most pdfMaxGrid
+	// entries on a page and pdfMaxGridDoc across the document: an object
+	// covering a page whole lands in every cell, and a page of them would
+	// otherwise multiply a small file into many times its size in memory.
+	pdfMaxGrid    = 1 << 16
+	pdfMaxGridDoc = 4 << 20
 	// A page whose images cover pdfScanArea of it is a scan when it has
 	// fewer than pdfScanText characters of visible text, or any invisible
 	// text (the layer OCR adds over a scanned image).
@@ -129,7 +135,7 @@ func (d *pdfDoc) rewrite(ctx context.Context, rep *replacer, redraw pdfRedraw, o
 	plans := make([]pdfPlan, len(d.pages))
 	var err error
 	for i := range d.pages {
-		if plans[i], err = d.pages[i].plan(rep, redraw[i]); err != nil {
+		if plans[i], err = d.pages[i].plan(ctx, rep, redraw[i]); err != nil {
 			return nil, fmt.Errorf("page %d: %w", i+1, err)
 		}
 	}
@@ -162,6 +168,9 @@ type pdfDoc struct {
 	doc     references.FPDF_DOCUMENT
 	secured bool // encrypted, though it needs no password to open
 	pages   []pdfPage
+	// grid is how many entries the pages' grids hold so far, against
+	// pdfMaxGridDoc.
+	grid int
 	// strings are the strings stored outside the drawing, read by pdfcpu
 	// from PDFium's copy of the file.
 	strings []pdfString
@@ -229,14 +238,14 @@ func readPDF(ctx context.Context, data []byte) (*pdfDoc, error) {
 		return nil, err
 	}
 	d := &pdfDoc{s: s}
-	if err := d.read(data); err != nil {
+	if err := d.read(ctx, data); err != nil {
 		s.close()
 		return nil, err
 	}
 	return d, nil
 }
 
-func (d *pdfDoc) read(data []byte) error {
+func (d *pdfDoc) read(ctx context.Context, data []byte) error {
 	p := d.s.p
 	doc, err := p.FPDF_LoadMemDocument64(&requests.FPDF_LoadMemDocument64{Data: &data})
 	if err != nil {
@@ -278,7 +287,7 @@ func (d *pdfDoc) read(data []byte) error {
 	}
 	chars, objects := 0, 0
 	for i := 0; i < count.PageCount; i++ {
-		page, err := d.readPage(i)
+		page, err := d.readPage(ctx, i)
 		if err != nil {
 			return fmt.Errorf("page %d: %w", i+1, d.s.fail(err))
 		}
@@ -371,7 +380,7 @@ func (d *pdfDoc) withPage(i int, fn func(requests.Page) error) error {
 	return fn(requests.Page{ByReference: &pg.Page})
 }
 
-func (d *pdfDoc) readPage(i int) (pdfPage, error) {
+func (d *pdfDoc) readPage(ctx context.Context, i int) (pdfPage, error) {
 	var page pdfPage
 	err := d.withPage(i, func(ref requests.Page) error {
 		p := d.s.p
@@ -407,7 +416,13 @@ func (d *pdfDoc) readPage(i int) (pdfPage, error) {
 		if err := d.walk(ref, tp.TextPage, "", nil, identity, &page, 0); err != nil {
 			return err
 		}
-		page.own(boxes)
+		entries, err := page.own(ctx, boxes)
+		if err != nil {
+			return err
+		}
+		if d.grid += entries; d.grid > pdfMaxGridDoc {
+			return fmt.Errorf("the PDF's text objects cover more than %d grid cells in total", pdfMaxGridDoc)
+		}
 		page.boxes = boxes
 		return d.checkScan(ref, &page)
 	})
@@ -560,8 +575,11 @@ func (d *pdfDoc) readMarks(obj references.FPDF_PAGEOBJECT, path []int, out *pdfP
 
 // own gives each character the smallest text object holding the centre of
 // its box. Objects are bucketed in a grid so a page of many objects is not
-// searched whole for every character.
-func (page *pdfPage) own(boxes []pdfRect) {
+// searched whole for every character. An object may cover the page whole,
+// so the grid's entries are capped, per page and across the document, while
+// they are inserted: a page of such objects must not multiply into many
+// times the file's size in memory.
+func (page *pdfPage) own(ctx context.Context, boxes []pdfRect) (entries int, err error) {
 	page.owner = make([]int, len(page.text))
 	const cells = 32
 	var all pdfRect
@@ -576,7 +594,7 @@ func (page *pdfPage) own(boxes []pdfRect) {
 		all = pdfRect{math.Min(all.left, o.box.left), math.Min(all.bottom, o.box.bottom), math.Max(all.right, o.box.right), math.Max(all.top, o.box.top)}
 	}
 	if first {
-		return
+		return 0, nil
 	}
 	w, h := math.Max(all.right-all.left, 1e-6), math.Max(all.top-all.bottom, 1e-6)
 	cell := func(x, y float64) (int, int) {
@@ -592,11 +610,19 @@ func (page *pdfPage) own(boxes []pdfRect) {
 		x1, y1 := cell(o.box.right, o.box.top)
 		for x := x0; x <= x1; x++ {
 			for y := y0; y <= y1; y++ {
+				if entries++; entries > pdfMaxGrid {
+					return entries, fmt.Errorf("its text objects cover more than %d grid cells", pdfMaxGrid)
+				}
 				grid[y*cells+x] = append(grid[y*cells+x], k)
 			}
 		}
 	}
 	for c, b := range boxes {
+		if c&63 == 0 {
+			if e := ctx.Err(); e != nil {
+				return entries, e
+			}
+		}
 		if b.right <= b.left && b.top <= b.bottom {
 			continue // a character PDFium added
 		}
@@ -620,6 +646,7 @@ func (page *pdfPage) own(boxes []pdfRect) {
 			page.owner[c] = page.owner[c-1]
 		}
 	}
+	return entries, nil
 }
 
 // checkScan refuses a scanned page: rewriting its text layer would leave
@@ -740,7 +767,7 @@ type pdfPlan struct {
 // in the object holding its first character, and the rest of it goes.
 // An object the page's text does not account for is rewritten from its own
 // text.
-func (page *pdfPage) plan(rep *replacer, redraw map[int]bool) (pdfPlan, error) {
+func (page *pdfPage) plan(ctx context.Context, rep *replacer, redraw map[int]bool) (pdfPlan, error) {
 	pl := pdfPlan{text: map[int]string{}, marks: map[int]string{}, room: map[int]pdfRect{}}
 	text := string(page.text)
 	runeAt := make([]int, len(text)+1) // byte offset -> character index
@@ -769,6 +796,24 @@ func (page *pdfPage) plan(rep *replacer, redraw map[int]bool) (pdfPlan, error) {
 	}
 	touched := map[int]*strings.Builder{}
 	room := map[int]pdfRect{}
+	// Each character's match, and whether it is the match's first drawn
+	// character, in one pass over the text: the matches do not overlap.
+	ownMatch := make([]int, len(page.text))  // match index + 1
+	ownFirst := make([]bool, len(page.text)) // the fake goes here
+	for mi := range spans {
+		for c := spans[mi][0]; c < spans[mi][1]; c++ {
+			ownMatch[c] = mi + 1
+			ownFirst[c] = c == firsts[mi]
+		}
+	}
+	// The part of each match an unaccounted object draws, gathered in one
+	// pass over the text rather than one walk of every match per object.
+	matchParts := map[int][]int{} // object index -> its characters, in order
+	for c, k := range page.owner {
+		if k > 0 && !accounted[k-1] && ownMatch[c] > 0 {
+			matchParts[k-1] = append(matchParts[k-1], c)
+		}
+	}
 	widen := func(k, c int) {
 		if c >= len(page.boxes) {
 			return
@@ -804,6 +849,11 @@ func (page *pdfPage) plan(rep *replacer, redraw map[int]bool) (pdfPlan, error) {
 		}
 	}
 	for k, o := range page.objs {
+		if k&63 == 0 {
+			if err := ctx.Err(); err != nil {
+				return pl, err
+			}
+		}
 		if o.image {
 			continue
 		}
@@ -820,21 +870,28 @@ func (page *pdfPage) plan(rep *replacer, redraw map[int]bool) (pdfPlan, error) {
 		// objects, goes from its own text: the fake, where the match's first
 		// character is here, or nothing.
 		v := o.text
-		for mi, sp := range spans {
-			var part []rune
-			first := false
-			for c := sp[0]; c < sp[1]; c++ {
-				if page.owner[c] == k+1 {
-					part = append(part, page.text[c])
-					first = first || c == firsts[mi]
-				}
+		ownChars := matchParts[k]
+		for i := 0; i < len(ownChars); {
+			mi := ownMatch[ownChars[i]] - 1
+			j := i + 1
+			for j < len(ownChars) && ownMatch[ownChars[j]] == mi+1 {
+				j++
 			}
-			if len(part) == 0 || len(part) == sp[1]-sp[0] || strings.TrimSpace(string(part)) == "" {
+			chars := ownChars[i:j] // all its characters of match mi, in order
+			i = j
+			part := make([]rune, len(chars))
+			for x, c := range chars {
+				part[x] = page.text[c]
+			}
+			full := spans[mi]
+			if len(part) == 0 || len(part) == full[1]-full[0] || strings.TrimSpace(string(part)) == "" {
 				continue // none of it, or all of it: rep.Apply below
 			}
 			to := ""
-			if first {
-				to = fakes[mi]
+			for _, c := range chars {
+				if ownFirst[c] {
+					to = fakes[mi]
+				}
 			}
 			if !strings.Contains(v, string(part)) {
 				return pl, fmt.Errorf("text object %d draws part of a match its own text does not hold", k)

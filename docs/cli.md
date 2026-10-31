@@ -54,7 +54,7 @@ flag, a bad value) a second line names the command's help, for example
 | `--max-fixture-mb` | `MAX_FIXTURE_MB` | `storage.max_fixture_mb` | `100` (0 for no limit) |
 | `--max-ingest-mb` | `MAX_INGEST_MB` | `storage.max_ingest_mb` | `200` (0 for no limit); `serve` only |
 | `--max-import-mb` | `MAX_IMPORT_MB` | `storage.max_import_mb` | `2048` (0 for no limit); `serve` only |
-| `--max-concurrent-runs` | `MAX_CONCURRENT_RUNS` | `storage.max_concurrent_runs` | `2` (0 for no limit); `serve` only |
+| `--max-concurrent-runs` | `MAX_CONCURRENT_RUNS` | `storage.max_concurrent_runs` | `2` (0 for no limit): ingest and anonymise runs together, and record generations apart, each at most this many; `serve` only |
 
 ### `serve`
 

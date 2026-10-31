@@ -22,6 +22,7 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/fixture"
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/runlimit"
 	"github.com/martinsuchenak/exemplar/internal/synth"
 )
 
@@ -134,16 +135,21 @@ type Service struct {
 	persons  *person.Service
 	audit    *audit.Service
 	schemas  SchemaSource
-	seed     func() uint64
+	// runs caps concurrent records generations, which hold the memory
+	// their records are built in; nil means no cap. It is generation's
+	// own, so a long anonymise batch never leaves generation busy.
+	runs *runlimit.Limiter
+	seed func() uint64
 }
 
 // NewService returns a generation service built on the other services,
-// generating records from schemas (nil for the built-in ones).
-func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, schemas SchemaSource) *Service {
+// generating records from schemas (nil for the built-in ones). runs caps
+// concurrent records generations (nil for no cap).
+func NewService(db xdal.DBInterface, datasets *dataset.Service, fixtures *fixture.Service, persons *person.Service, auditService *audit.Service, schemas SchemaSource, runs *runlimit.Limiter) *Service {
 	if schemas == nil {
 		schemas = synth.BuiltinSchemas()
 	}
-	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, schemas: schemas, seed: randomSeed}
+	return &Service{db: db, datasets: datasets, fixtures: fixtures, persons: persons, audit: auditService, schemas: schemas, runs: runs, seed: randomSeed}
 }
 
 // NewLocal returns a service that only makes records (Records), about
@@ -164,6 +170,10 @@ func (s *Service) Records(ctx context.Context, actor principal.Principal, req Re
 	if req.Kind != KindRecords {
 		return nil, fmt.Errorf("%w: only records are made without a server", apperr.ErrInvalid)
 	}
+	if !s.runs.Acquire() {
+		return nil, fmt.Errorf("%w: the server already has enough record generations in progress; try again later", apperr.ErrBusy)
+	}
+	defer s.runs.Release()
 	set, err := s.normalise(&req)
 	if err != nil {
 		return nil, err
@@ -177,7 +187,7 @@ func (s *Service) Records(ctx context.Context, actor principal.Principal, req Re
 	for i := range people {
 		people[i].ID = pg.ID()
 	}
-	items, err := s.build(synth.New(req.Seed^contentStream), req, people, set)
+	items, err := s.build(ctx, synth.New(req.Seed^contentStream), req, people, set)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +230,14 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 	if !actor.CanWrite() {
 		return nil, fmt.Errorf("%w: generating needs a write key", apperr.ErrForbidden)
 	}
+	if req.Kind == KindRecords && !s.runs.Acquire() {
+		return nil, fmt.Errorf("%w: the server already has enough record generations in progress; try again later", apperr.ErrBusy)
+	}
+	defer func() {
+		if req.Kind == KindRecords {
+			s.runs.Release()
+		}
+	}()
 	set, err := s.normalise(&req)
 	if err != nil {
 		return nil, err
@@ -258,7 +276,7 @@ func (s *Service) Generate(ctx context.Context, actor principal.Principal, datas
 	if templates != nil {
 		items, err = buildFromTemplates(g, req, templates, people)
 	} else {
-		items, err = s.build(g, req, people, set)
+		items, err = s.build(ctx, g, req, people, set)
 	}
 	if err != nil {
 		return nil, err
@@ -394,11 +412,14 @@ func (s *Service) normalise(req *Request) (*synth.SchemaSet, error) {
 
 // build generates every item. Names start with a short form of the seed, so
 // runs with different seeds never clash in one dataset.
-func (s *Service) build(g *synth.Gen, req Request, people []synth.Person, set *synth.SchemaSet) ([]item, error) {
+func (s *Service) build(ctx context.Context, g *synth.Gen, req Request, people []synth.Person, set *synth.SchemaSet) ([]item, error) {
 	prefix := fmt.Sprintf("g%06x", req.Seed&0xffffff)
 	var items []item
 	size := 0
 	for i := 0; i < req.Count; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		n := fmt.Sprintf("%s-%03d", prefix, i+1)
 		switch req.Kind {
 		case KindFiles:

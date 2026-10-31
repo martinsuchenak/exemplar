@@ -63,6 +63,28 @@ version without one); see [docs/development.md](docs/development.md#releasing).
   together, and Compose takes `PRESIDIO_WORKERS`. See
   docs/deployment.md.
 
+### Fixed
+
+- Bound PDF parsing as its formats' budgets do: a page whose text objects
+  cover too many grid cells, or a form or page whose content streams decode
+  past a total, is refused instead of multiplying into many times the
+  file's size in memory, and a page's rewriting stops at its deadline
+  rather than walking every match against every object. Small PDFs could
+  otherwise hold gigabytes of work.
+- Cap how deeply a formula's structured references may nest (8; Excel
+  writes none deeper than three) and stop rewriting a workbook whose caller
+  is gone. A workbook of nothing but nested brackets made the server burn a
+  core for hours inside one request and then die on a stack overflow.
+- Bound record generation before the work is done: a `lines` count is
+  capped at 100 like a list's, catalogue entries a `lines` field draws are
+  charged to the record's own value cap, records generation holds one of
+  `storage.max_concurrent_runs` run slots of its own, and a cancelled
+  caller stops the build at the next record. A small request could otherwise make
+  the server build gigabytes of records, and two together kill it.
+- Detecting a column of people reads a sheet's columns again at most 8
+  times: a sheet of tens of thousands of columns, each teaching the next a
+  name, was otherwise read once per column.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

@@ -41,7 +41,8 @@ type Config struct {
 	// MaxImportBytes caps one import archive; 0 means no limit.
 	MaxImportBytes int64
 	// MaxConcurrentRuns caps how many ingest and anonymise runs the
-	// server holds at once, together; 0 means no limit.
+	// server holds at once, together, and separately how many record
+	// generations; 0 means no limit.
 	MaxConcurrentRuns int
 	// AnonKey is the anonymisation secret; with PresidioURL (or
 	// AnonDetector) it enables ingest of real data, and linked fakes in the
@@ -130,13 +131,16 @@ func Open(ctx context.Context, log logger.Logger, cfg Config) (*App, error) {
 	}
 	runs := runlimit.New(cfg.MaxConcurrentRuns)
 	return &App{
-		conn:          conn,
-		Audit:         auditService,
-		Accounts:      account.NewService(conn.DB, auditService),
-		Datasets:      datasets,
-		Fixtures:      fixtures,
-		Persons:       persons,
-		Generate:      generate.NewService(conn.DB, datasets, fixtures, persons, auditService, recordSchemas),
+		conn:     conn,
+		Audit:    auditService,
+		Accounts: account.NewService(conn.DB, auditService),
+		Datasets: datasets,
+		Fixtures: fixtures,
+		Persons:  persons,
+		// Record generations get a cap of their own, the same size: sharing
+		// the anonymise runs' would leave generation busy for as long as a
+		// long anonymise batch runs.
+		Generate:      generate.NewService(conn.DB, datasets, fixtures, persons, auditService, recordSchemas, runlimit.New(cfg.MaxConcurrentRuns)),
 		RecordSchemas: recordSchemas,
 		Ingest:        ingest.NewService(conn.DB, datasets, fixtures, persons, auditService, ingestCfg, cfg.MaxIngestBytes, runs, log),
 		Scrub:         scrub.NewService(conn.DB, persons, auditService, scrubCfg, cfg.MaxIngestBytes, runs, log),

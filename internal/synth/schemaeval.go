@@ -41,6 +41,9 @@ const (
 	maxNesting = 4
 	// maxListItems caps the items one list field makes.
 	maxListItems = 100
+	// maxLineItems caps the entries one lines field draws, for the same
+	// reason as maxListItems.
+	maxLineItems = 100
 	// MaxRecordValues caps the values (fields, at any depth) one record
 	// makes, so a schema of lists inside lists cannot make an enormous
 	// record; generate caps a request's total size besides.
@@ -275,6 +278,9 @@ func compileField(fd fieldDef, cs *compileScope) (*field, error) {
 		}
 		if err == nil && f.lo < 1 {
 			err = fmt.Errorf("lines count must be at least 1")
+		}
+		if err == nil && f.hi > maxLineItems {
+			err = fmt.Errorf("lines count must be within 1-%d", maxLineItems)
 		}
 	case fd.Sum != nil:
 		f.kind = kindSum
@@ -813,7 +819,11 @@ func (g *Gen) Record(s *Schema, in RecordInput, index int) (Record, error) {
 	out := map[string]any{"schema": s.Name}
 	switch s.Step {
 	case StepCatalogue:
-		for name, v := range s.entry(in.Profile, index%s.catalogue.size) {
+		entry, err := s.entry(in.Profile, index%s.catalogue.size, c.values)
+		if err != nil {
+			return Record{}, err
+		}
+		for name, v := range entry {
 			c.vals[name] = v
 			if !s.catalogueField(name).hidden {
 				out[name] = v.json
@@ -899,21 +909,25 @@ func personIndex(slot, slots, index, n int) int {
 // profile and n only, never on a request's seed, so entry n is the same in
 // every request, dataset and instance, and a quote's lines always match the
 // catalogue's records.
-func (s *Schema) entry(profile Profile, n int) map[string]val {
+func (s *Schema) entry(profile Profile, n int, budget *int) (map[string]val, error) {
 	h := fnv.New64a()
 	_, _ = fmt.Fprintf(h, "catalogue\x00%s\x00%s\x00%d", s.Name, profile, n)
-	values := MaxRecordValues
-	c := &evalContext{g: New(h.Sum64()), profile: profile, schema: s, entryN: n, vals: map[string]val{}, values: &values}
+	// The entry draws from the caller's budget, so a record full of lines
+	// cannot make every entry's work invisible to the record's cap; nil
+	// (a caller outside a record) gives the entry its own.
+	if budget == nil {
+		own := MaxRecordValues
+		budget = &own
+	}
+	c := &evalContext{g: New(h.Sum64()), profile: profile, schema: s, entryN: n, vals: map[string]val{}, values: budget}
 	for _, f := range s.catalogue.fields {
 		v, err := c.eval(f)
 		if err != nil {
-			// Entry fields are checked at load and draw only from their
-			// own generator; an error is a broken field type.
-			panic(fmt.Sprintf("catalogue %s entry %d, field %s: %v", s.Name, n, f.name, err))
+			return nil, fmt.Errorf("catalogue %s entry %d, field %s: %w", s.Name, n, f.name, err)
 		}
 		c.vals[f.name] = v
 	}
-	return c.vals
+	return c.vals, nil
 }
 
 func (c *evalContext) eval(f *field) (val, error) {
@@ -975,7 +989,7 @@ func (c *evalContext) eval(f *field) (val, error) {
 		s := c.text(f.text, f.lo, f.hi)
 		return val{json: s, text: s}, nil
 	case kindLines:
-		return c.lines(f), nil
+		return c.lines(f)
 	case kindSum:
 		var cents int64
 		if rows, column, ok := strings.Cut(f.sums[0], "."); ok {
@@ -1079,8 +1093,9 @@ func anyVal(v any) val {
 }
 
 // lines picks distinct catalogue entries, each with a quantity and the
-// amount it comes to.
-func (c *evalContext) lines(f *field) val {
+// amount it comes to. Every entry's fields draw from the record's value
+// budget, so a lines field cannot make work the record's cap cannot see.
+func (c *evalContext) lines(f *field) (val, error) {
 	cat := f.catalogueSchema
 	n := min(c.g.Between(f.lo, f.hi), cat.catalogue.size)
 	used := map[int]bool{}
@@ -1088,12 +1103,18 @@ func (c *evalContext) lines(f *field) val {
 	var rows []map[string]val
 	var out []map[string]any
 	for len(rows) < n {
+		if len(cat.catalogue.fields) > *c.values {
+			return val{}, fmt.Errorf("lines needs %d values for another entry, of the %d the record may still make; ask for fewer lines", len(cat.catalogue.fields), *c.values)
+		}
 		i := c.g.Intn(cat.catalogue.size)
 		if used[i] {
 			continue
 		}
 		used[i] = true
-		row := cat.entry(c.profile, i)
+		row, err := cat.entry(c.profile, i, c.values)
+		if err != nil {
+			return val{}, err
+		}
 		qty := c.g.Between(f.qlo, f.qhi)
 		row["qty"] = val{json: qty, text: fmt.Sprint(qty)}
 		row["amount"] = moneyVal(row["unit_price"].cents*int64(qty), price.format)
@@ -1105,7 +1126,7 @@ func (c *evalContext) lines(f *field) val {
 		}
 		rows, out = append(rows, row), append(out, js)
 	}
-	return val{json: out, rows: rows}
+	return val{json: out, rows: rows}, nil
 }
 
 func (c *evalContext) text(kind string, lo, extra int) string {

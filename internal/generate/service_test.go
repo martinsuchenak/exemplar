@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/martinsuchenak/exemplar/internal/anonymise"
 	"github.com/martinsuchenak/exemplar/internal/anonymise/anonymisetest"
 	"github.com/martinsuchenak/exemplar/internal/app"
 	"github.com/martinsuchenak/exemplar/internal/apperr"
@@ -22,11 +24,27 @@ import (
 	"github.com/martinsuchenak/exemplar/internal/ingest"
 	"github.com/martinsuchenak/exemplar/internal/person"
 	"github.com/martinsuchenak/exemplar/internal/principal"
+	"github.com/martinsuchenak/exemplar/internal/runlimit"
+	"github.com/martinsuchenak/exemplar/internal/scrub"
 	"github.com/martinsuchenak/exemplar/internal/synth"
 	"github.com/martinsuchenak/exemplar/internal/testutil"
 )
 
 var ctx = context.Background()
+
+// blockingDetector holds every call until release is closed, so a test can
+// hold a run slot open.
+type blockingDetector struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (d *blockingDetector) Detect(context.Context, string, []string, float64) ([]anonymise.Span, error) {
+	d.once.Do(func() { close(d.started) })
+	<-d.release
+	return nil, nil
+}
 
 func setup(t *testing.T) (*app.App, principal.Principal, principal.Principal, *dataset.Dataset) {
 	t.Helper()
@@ -169,6 +187,99 @@ func TestGenerateRecordsShareThePeople(t *testing.T) {
 	p, err := a.Persons.Get(ctx, alice, contacts[0].People[0].PersonID)
 	if err != nil || !strings.Contains(string(body), p.Email) {
 		t.Errorf("contact record does not match the registry person: %s / %+v", body, p)
+	}
+}
+
+// A records generation holds the memory its records are built in, so it
+// takes a run slot: past the cap the caller is told the server is busy,
+// before any record is made. The slots are generation's own, so a long
+// anonymise run never makes generation busy.
+func TestGenerateRecordsTakeARunSlot(t *testing.T) {
+	d := &blockingDetector{started: make(chan struct{}), release: make(chan struct{})}
+	a := testutil.NewAppWith(t, func(c *app.Config) {
+		c.AnonDetector = d
+		c.MaxConcurrentRuns = 1
+	})
+	admin := testutil.Admin(t, a)
+	alice := testutil.Member(t, a, admin, "alice")
+	ds, err := a.Datasets.Create(ctx, alice, dataset.CreateInput{Name: "gen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := []anonymise.File{{Name: "a.txt", Data: []byte("text")}}
+	done := make(chan error)
+	go func() {
+		_, err := a.Scrub.Anonymise(ctx, admin, scrub.Request{}, doc)
+		done <- err
+	}()
+	<-d.started
+	defer func() {
+		close(d.release)
+		if err := <-done; err != nil {
+			t.Errorf("anonymise: %v", err)
+		}
+	}()
+	// The anonymise run holds the one anonymise slot; generation has its own.
+	if _, err := a.Generate.Generate(ctx, alice, ds.ID, generate.Request{Kind: generate.KindRecords, Count: 1, People: 2}); err != nil {
+		t.Errorf("records while an anonymise run holds its slot: %v", err)
+	}
+
+	// A generation holding generation's one slot makes the next busy.
+	src := &blockingSource{started: make(chan struct{}), release: make(chan struct{})}
+	g := generate.NewService(nil, nil, nil, nil, nil, src, runlimit.New(1))
+	req := generate.Request{Kind: generate.KindRecords, Count: 1, People: 2, Seed: 1}
+	first := make(chan error)
+	go func() {
+		_, err := g.Records(ctx, principal.Principal{}, req)
+		first <- err
+	}()
+	<-src.started
+	if _, err := g.Records(ctx, principal.Principal{}, req); !errors.Is(err, apperr.ErrBusy) {
+		t.Errorf("records over the run cap err = %v, want busy", err)
+	}
+	close(src.release)
+	if err := <-first; err != nil {
+		t.Errorf("first generation: %v", err)
+	}
+	if _, err := g.Records(ctx, principal.Principal{}, req); err != nil {
+		t.Errorf("records once the slot is free: %v", err)
+	}
+}
+
+// blockingSource holds the first generation that asks for the schemas
+// until release is closed, so a test can keep a generation's run slot.
+type blockingSource struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingSource) Current() *synth.SchemaSet {
+	b.once.Do(func() {
+		close(b.started)
+		<-b.release
+	})
+	return synth.BuiltinSchemas()
+}
+
+// A cancelled caller stops the build loop instead of generating on: the
+// ctx is checked once per item.
+func TestGenerateStopsWhenCancelled(t *testing.T) {
+	a, _, alice, d := setup(t)
+	cctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := a.Generate.Generate(cctx, alice, d.ID, generate.Request{Kind: generate.KindRecords, Count: 500, People: 2, Seed: 11})
+	if err == nil {
+		t.Error("a cancelled generate succeeded")
+	}
+	// Nothing was made: the build loop checks the ctx once per item, so a
+	// caller that goes away stops the work instead of paying for it.
+	fs, err := a.Fixtures.List(ctx, alice, d.ID, fixture.ListFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fs) != 0 {
+		t.Errorf("cancelled generate left %d fixtures", len(fs))
 	}
 }
 

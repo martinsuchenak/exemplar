@@ -255,6 +255,43 @@ func TestAddColumnNames(t *testing.T) {
 	}
 }
 
+// A chain of columns, each made a column of people by a name the one
+// before it learned, is read again at most maxColumnPasses times: the
+// chain's start is learned, its far end is not, and the same every run.
+func TestAddColumnNamesPassCap(t *testing.T) {
+	// Column "c<k>" holds three cells of link k and one of link k+1, so it
+	// learns link k+1 once link k is known. Read in name order, the columns
+	// run against the chain, so each pass learns one more link.
+	const links = 20
+	link := func(k int) string { return "Link " + string(rune('A'+k)) + "ay" }
+	run := func() *found {
+		f := newFound(defaultProfile(t))
+		f.add(link(0), EntityPerson)
+		var texts []docText
+		for k := 0; k < links; k++ {
+			c := fmt.Sprintf("c%02d", links-k)
+			for range 3 {
+				texts = append(texts, docText{value: link(k), column: c})
+			}
+			texts = append(texts, docText{value: link(k + 1), column: c})
+		}
+		f.addColumnNames(texts)
+		return f
+	}
+	f := run()
+	if f.entities[link(1)] != EntityPerson || f.entities[link(maxColumnPasses)] != EntityPerson {
+		t.Errorf("the chain's start was not learned: %v", f.entities)
+	}
+	if f.entities[link(links)] == EntityPerson {
+		t.Errorf("all %d links learned; the passes are not capped", links)
+	}
+	for range 5 {
+		if again := run(); fmt.Sprint(again.entities) != fmt.Sprint(f.entities) {
+			t.Fatal("a capped result changed between runs")
+		}
+	}
+}
+
 // Bank details are found by their labels; a number without one is not
 // taken for an account.
 func TestBankAccounts(t *testing.T) {

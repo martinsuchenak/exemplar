@@ -240,7 +240,7 @@ Any field can also take:
 | `money` | `money = [5000, 250000]` | Dollars, held in cents |
 | `date` | `date = { within_days = 60 }`, `date = { after = "issued", days = [14, 45] }` (or `months`) | A date near the generator's base date, or after a date field above |
 | `text` | `text = "sentence"`, `text = { paragraph = [1, 2] }` | Prose in the profile's words: `sentence`, `title`, `label`, `subject`, or a paragraph of min plus up to extra sentences |
-| `lines` | `lines = { catalogue = "product", count = [1, 6], qty = [1, 20] }` | Distinct catalogue entries, each with every entry field plus `qty` and `amount` |
+| `lines` | `lines = { catalogue = "product", count = [1, 6], qty = [1, 20] }` (count at most 100, like a list's) | Distinct catalogue entries, each with every entry field plus `qty` and `amount` |
 | `sum` | `sum = "items.amount"`, `sum = ["subtotal", "gst"]` | The total of money fields, or of a lines field's money column |
 | `percent` | `percent = { of = "subtotal", rate = 10 }` | A percentage of a money field, rounded to the cent |
 | `nth` | `nth = "@product"` | Catalogue entries only: the list's item for the entry's number, so entries take the list in order and never repeat one (the catalogue may not be longer than the list) |

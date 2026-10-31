@@ -411,7 +411,9 @@ func TestPDFOwners(t *testing.T) {
 			{image: true, box: box(0, 0, 1000, 1000)},
 		},
 	}
-	page.own([]pdfRect{box(0, 0, 10, 10), box(10, 0, 20, 10), {}, box(30, 0, 40, 10), box(40, 0, 50, 10)})
+	if _, err := page.own(ctx, []pdfRect{box(0, 0, 10, 10), box(10, 0, 20, 10), {}, box(30, 0, 40, 10), box(40, 0, 50, 10)}); err != nil {
+		t.Fatal(err)
+	}
 	if want := []int{1, 1, 0, 2, 2}; !slices.Equal(page.owner, want) {
 		t.Errorf("owners = %v, want %v", page.owner, want)
 	}
@@ -421,10 +423,90 @@ func TestPDFOwners(t *testing.T) {
 	page.text = []rune("ab c")
 	page.objs = page.objs[:1]
 	page.objs[0].text = "ab c"
-	page.own([]pdfRect{box(0, 0, 10, 10), box(10, 0, 20, 10), {}, box(30, 0, 40, 10)})
+	if _, err := page.own(ctx, []pdfRect{box(0, 0, 10, 10), box(10, 0, 20, 10), {}, box(30, 0, 40, 10)}); err != nil {
+		t.Fatal(err)
+	}
 	if want := []int{1, 1, 1, 1}; !slices.Equal(page.owner, want) {
 		t.Errorf("owners = %v, want %v: an added space between one object's characters is its", page.owner, want)
 	}
+}
+
+// A page of text objects that each cover it whole fills every cell of
+// own's grid, so the grid's entries are capped while they are inserted:
+// a small file of them must not multiply into many times its size.
+func TestPDFGridBudget(t *testing.T) {
+	big := pdfRect{0, 0, 612, 792}
+	objs := make([]pdfObj, pdfMaxGrid/100+2)
+	for k := range objs {
+		objs[k] = pdfObj{text: "x", box: big}
+	}
+	page := &pdfPage{text: []rune("x"), objs: objs}
+	_, err := page.own(ctx, []pdfRect{big})
+	if err == nil || !strings.Contains(err.Error(), "grid cells") {
+		t.Errorf("err = %v, want a grid budget error", err)
+	}
+	// A page of ordinary objects, each in one cell, is well inside it.
+	page = &pdfPage{text: []rune("ab"), objs: []pdfObj{
+		{text: "a", box: pdfRect{0, 0, 10, 10}},
+		{text: "b", box: pdfRect{20, 0, 30, 10}},
+	}}
+	if _, err := page.own(ctx, []pdfRect{{0, 0, 10, 10}, {20, 0, 30, 10}}); err != nil {
+		t.Errorf("ordinary page: %v", err)
+	}
+}
+
+// plan stops at its deadline rather than walking every match's characters
+// for every object the page's text does not account for, however long
+// that walk would take.
+func TestPDFPlanDeadline(t *testing.T) {
+	rep := testReplacer(t, map[string]string{"Ann Lee": "Jo Bloggs"})
+	text := []rune(strings.Repeat("Ann Lee ", 64)) // many matches
+	objs := make([]pdfObj, 64)
+	for k := range objs {
+		objs[k] = pdfObj{text: "Ann Lee"} // unaccounted: none of it is page text
+	}
+	page := &pdfPage{text: text, objs: objs}
+	page.owner = make([]int, len(text)) // no character owned
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := page.plan(cctx, rep, nil); err == nil {
+		t.Error("a cancelled context did not stop plan")
+	}
+}
+
+// A form whose /Contents is an array of streams may decode to many times
+// the file's size in total; the total is capped however many streams hold
+// it, and across forms, as one stream alone always was.
+func TestPDFFormContentBudget(t *testing.T) {
+	stream := func(dict string, raw []byte, filtered bool) string {
+		if filtered {
+			var b bytes.Buffer
+			w := zlib.NewWriter(&b)
+			_, _ = w.Write(raw)
+			_ = w.Close()
+			raw = b.Bytes()
+			dict += " /Filter /FlateDecode"
+		}
+		return fmt.Sprintf("<< %s /Length %d >>\nstream\n", dict, len(raw)) + string(raw) + "\nendstream"
+	}
+	one := make([]byte, pdfMaxFormContent/3+4096)
+	// Three streams, each just under pdfMaxDecoded and Flate-packed, exceed
+	// the per-form total once the third is appended.
+	refs := "5 0 R 6 0 R 7 0 R"
+	data := buildPDF("",
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+		pdfStreamObj("/Type /XObject /Subtype /Form /BBox [0 0 100 20] /Contents ["+refs+"]", ""),
+		stream("", one, true),
+		stream("", one, true),
+		stream("", one, true),
+	)
+	fixed, err := pdfFinish(ctx, data, testReplacer(t, nil), nil, &Output{})
+	if err == nil || !strings.Contains(err.Error(), "in total") {
+		t.Errorf("err = %v, want a form content budget error", err)
+	}
+	_ = fixed
 }
 
 // A match across two text objects puts its fake in the first and takes the
@@ -441,7 +523,7 @@ func TestPDFPlan(t *testing.T) {
 		},
 		marks: []pdfMark{{value: "photo of Ottoline Quaife"}, {value: "nothing"}},
 	}
-	pl, err := page.plan(rep, nil)
+	pl, err := page.plan(ctx, rep, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +544,7 @@ func TestPDFPlan(t *testing.T) {
 	page.text = []rune("Hi Ottoline Quaife!\r\nWe dy")
 	page.owner = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 0, 0, 4, 4, 4, 4, 4} // the space, as own gives it
 	page.objs[3].text = "Wedy"
-	pl, err = page.plan(rep, map[int]bool{3: true})
+	pl, err = page.plan(ctx, rep, map[int]bool{3: true})
 	if err != nil || pl.text[3] != "We dy" {
 		t.Errorf("redrawn as %q, %v", pl.text[3], err)
 	}
@@ -473,13 +555,13 @@ func TestPDFPlan(t *testing.T) {
 		owner: []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2},
 		objs:  []pdfObj{{text: "By Ottoline "}, {text: "Quaife!"}},
 	}
-	if pl, err := odd.plan(rep, nil); err != nil || pl.text[0] != "By Ann Lee" || pl.text[1] != "!" {
+	if pl, err := odd.plan(ctx, rep, nil); err != nil || pl.text[0] != "By Ann Lee" || pl.text[1] != "!" {
 		t.Errorf("text = %v, %v", pl.text, err)
 	}
 	page.objs[3].text = "Wendy Moss"
 	page.text = []rune("Hi Ottoline Quaife!\r\nWendy Moss")
 	page.owner = append(page.owner, 4, 4, 4, 4, 4)
-	if _, err := page.plan(rep, nil); err == nil || !strings.Contains(err.Error(), "U+674E") {
+	if _, err := page.plan(ctx, rep, nil); err == nil || !strings.Contains(err.Error(), "U+674E") {
 		t.Errorf("err = %v", err)
 	}
 }

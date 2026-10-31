@@ -182,8 +182,9 @@ type ooxmlUnit struct {
 	fake func(ctx context.Context, e *Engine, v string) (string, error)
 	// rewrite, when set, makes the new value from the replacer itself, for
 	// a value with syntax of its own (a formula keeps its references, a
-	// sheet name Excel's rules). The unit is one piece.
-	rewrite func(rep *replacer, v string) string
+	// sheet name Excel's rules). The unit is one piece. It fails the file
+	// when its syntax cannot be rewritten within the format's limits.
+	rewrite func(rep *replacer, v string) (string, error)
 	// search, when set, is the part of the value detection reads (a
 	// formula's strings, not its syntax); "" reads none of it.
 	search func(v string) string
@@ -483,6 +484,9 @@ func (pkg *ooxmlPackage) rewrite(ctx context.Context, e *Engine, rep *replacer, 
 	edits := map[*ooxmlPart][]xmlEdit{}
 	newText := make([]string, len(pkg.units))
 	for i := range pkg.units {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		u := &pkg.units[i]
 		old := u.text()
 		var values []string
@@ -500,7 +504,11 @@ func (pkg *ooxmlPackage) rewrite(ctx context.Context, e *Engine, rep *replacer, 
 			}
 			values = []string{v}
 		case u.rewrite != nil:
-			values = []string{u.rewrite(rep, old)}
+			v, err := u.rewrite(rep, old)
+			if err != nil {
+				return nil, err
+			}
+			values = []string{v}
 		default:
 			pieces := make([]string, len(u.pieces))
 			for j, p := range u.pieces {

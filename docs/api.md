@@ -184,6 +184,13 @@ uncompressed, or with a content entry over `storage.max_fixture_mb` gets
 See [generation.md](generation.md) for the request fields, email shapes and
 record schemas.
 
+- **Limits:** a records request past `storage.max_concurrent_runs` record
+  generations at once (a cap of their own, apart from ingest's and the
+  anonymise tool's) gets `429` before anything is made; a
+  schema whose lines count is over 100, or whose records would need more
+  values than one record may make (100000), gets `400` while the schema is
+  read, before its records are built.
+
 ### Audit log
 
 | Method and path | Who | Query | Response |

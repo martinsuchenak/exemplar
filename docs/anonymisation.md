@@ -296,7 +296,9 @@ be found to hold people; see [Columns of people](#documents).
 rewritten; functions, cells and names stay as written. A sheet named inside
 a string (`INDIRECT("'Sales'!A1")`) follows the sheet's new name, as a
 reference outside one does. A formula's cached result is rewritten like any
-other text, so it matches.
+other text, so it matches. A structured reference may nest at most 8 deep
+(`[[#This Row],[Name]]` is two); Excel writes none deeper than three, so a
+workbook holding one is a file made to be read slowly, and fails.
 
 **Sheet names.** A sheet named for a person is renamed, and every
 reference to it follows: formulas, defined names, links, data validations,
@@ -407,12 +409,17 @@ identifier PDFium would make at random is a hash of the content. An
 encrypted PDF that opens without a password comes back unencrypted.
 
 **Refused.** A password-protected PDF; a damaged one; one of more than 2000
-pages; and a scan: a page whose images cover half of it, with fewer than 50
+pages; a scan: a page whose images cover half of it, with fewer than 50
 characters of visible text, or with any invisible text (the layer OCR adds
-over a scanned image, which rewriting would leave the image under). A
-changed text object holding a character the standard fonts cannot show
-(Chinese, Arabic, Cyrillic) fails its page: the fakes cannot be drawn in its
-own font.
+over a scanned image, which rewriting would leave the image under); and a
+page whose text objects, bucketed for finding which object draws a
+character, cover more than 65536 grid cells on a page or 4194304 in the
+document, or a form whose content streams decode to more than 64 MiB, or
+pages whose content streams decode to more than 256 MiB together: however
+well a file compresses, it must not multiply into many times its size in
+the server's memory. A changed text object holding a character the
+standard fonts cannot show (Chinese, Arabic, Cyrillic) fails its page: the
+fakes cannot be drawn in its own font.
 
 **Not covered.** Text drawn as outlines, or inside an image, cannot be read.
 A form holding no match keeps its content as written, an image inline in

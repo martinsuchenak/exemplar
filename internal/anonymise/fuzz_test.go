@@ -2,6 +2,7 @@ package anonymise
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/martinsuchenak/exemplar/internal/textswap"
@@ -57,7 +58,8 @@ func FuzzScanXML(f *testing.F) {
 // Formulas and headers are parsed by hand. Whatever the text, they never
 // panic, and with nothing to replace they come back as they were.
 func FuzzXLSXFormula(f *testing.F) {
-	for _, s := range []string{`SUM('Sarah Lane'!A1:B2)&"x ""y"""`, `[1]Acme!A1+'[2]x''y'!B1`, `T[[#This Row],[a'#b]]+[@[c]]`, `IF(#REF!,"",Jo:Summary!$A$1)`, `'`, `"`, `[`, `[1]`, `x:`} {
+	for _, s := range []string{`SUM('Sarah Lane'!A1:B2)&"x ""y"""`, `[1]Acme!A1+'[2]x''y'!B1`, `T[[#This Row],[a'#b]]+[@[c]]`, `IF(#REF!,"",Jo:Summary!$A$1)`, `'`, `"`, `[`, `[1]`, `x:`,
+		`[[[[[[[[[[a]]]]]]]]]]`, strings.Repeat("[", 64) + strings.Repeat("]", 64)} {
 		f.Add(s)
 	}
 	none, err := textswap.New(nil)
@@ -70,14 +72,22 @@ func FuzzXLSXFormula(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		x := &xlsxBook{sheets: []string{"Sarah Lane", "Jo", "x"}}
-		if got := x.formula(none, s); got != s {
+		got, err := x.formula(none, s)
+		if err != nil && !strings.Contains(err.Error(), "nest more than") {
+			t.Fatalf("formula(%q): %v", s, err)
+		}
+		if err == nil && got != s {
 			t.Fatalf("formula(%q) = %q with nothing to replace", s, got)
 		}
-		if got := rewriteHeaderFooter(none, s); got != s {
+		got, err = rewriteHeaderFooter(none, s)
+		if err != nil {
+			t.Fatalf("rewriteHeaderFooter(%q): %v", s, err)
+		}
+		if got != s {
 			t.Fatalf("rewriteHeaderFooter(%q) = %q with nothing to replace", s, got)
 		}
-		_ = (&xlsxBook{sheets: []string{"Sarah Lane", "x"}}).formula(some, s)
-		_ = rewriteHeaderFooter(some, s)
+		_, _ = (&xlsxBook{sheets: []string{"Sarah Lane", "x"}}).formula(some, s)
+		_, _ = rewriteHeaderFooter(some, s)
 		_ = formulaStrings(s)
 		_ = headerFooterText(s)
 		_, _, _ = parseCellRef(s)

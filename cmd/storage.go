@@ -96,7 +96,7 @@ func serverFlags() []cli.Flag {
 		&cli.IntFlag{
 			Name:         "max-concurrent-runs",
 			DefaultValue: 2,
-			Usage:        "Most ingest and anonymise runs held at once, together (0 for no limit)",
+			Usage:        "Most ingest and anonymise runs held at once, together, and record generations apart (0 for no limit)",
 			ConfigPath:   []string{"storage.max_concurrent_runs"},
 			EnvVars:      []string{"MAX_CONCURRENT_RUNS"},
 		},

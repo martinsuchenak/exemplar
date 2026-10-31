@@ -57,8 +57,17 @@ var pdfNameDrops = map[string]string{
 	"JavaScript":    "JavaScript",
 }
 
-// pdfMaxDecoded is the most a form's content may decode to.
-const pdfMaxDecoded = 64 << 20
+const (
+	// pdfMaxDecoded is the most one content stream may decode to.
+	pdfMaxDecoded = 64 << 20
+	// pdfMaxFormContent is the most a form's /Contents may decode to in
+	// total, however many streams hold it, and pdfMaxContentTotal the most
+	// every page's content may decode to while the pages are read: a file
+	// of many large streams must not multiply into many times its size in
+	// memory.
+	pdfMaxFormContent  = 64 << 20
+	pdfMaxContentTotal = 256 << 20
+)
 
 // pdfID matches a file identifier as PDFium writes it.
 var pdfID = regexp.MustCompile(`/ID\s*\[\s*<([0-9A-Fa-f]*)>\s*<([0-9A-Fa-f]*)>\s*\]`)
@@ -138,6 +147,7 @@ func inlineImages(c context.Context, ctx *model.Context) ([]bool, error) {
 	}
 	x := ctx.XRefTable
 	out := make([]bool, x.PageCount)
+	decoded := 0
 	for i := range out {
 		d, _, _, err := x.PageDict(c, i+1, false)
 		if err != nil || d == nil {
@@ -166,6 +176,10 @@ func inlineImages(c context.Context, ctx *model.Context) ([]bool, error) {
 			}
 			if err := sd.DecodeWithLimit(pdfMaxDecoded); err != nil {
 				return nil, fmt.Errorf("reading page %d: %w", i+1, err)
+			}
+			decoded += len(sd.Content)
+			if decoded > pdfMaxContentTotal {
+				return nil, fmt.Errorf("the PDF's content expands past %d MiB in total", pdfMaxContentTotal>>20)
 			}
 			if pdfInlineImage.Match(sd.Content) {
 				out[i] = true
@@ -241,6 +255,7 @@ func pdfFinish(c context.Context, data []byte, rep *replacer, links [][]pdfLink,
 // do not have, and leaves the old content (the text removed) in the form
 // itself. The new content replaces the old.
 func repairForms(x *model.XRefTable) error {
+	total := 0
 	for _, nr := range sortedObjects(x) {
 		e := x.Table[nr]
 		sd, ok := e.Object.(types.StreamDict)
@@ -268,8 +283,15 @@ func repairForms(x *model.XRefTable) error {
 			if err := cs.DecodeWithLimit(pdfMaxDecoded); err != nil {
 				return fmt.Errorf("repairing a form: %w", err)
 			}
+			if len(content)+len(cs.Content)+1 > pdfMaxFormContent {
+				return fmt.Errorf("repairing a form: its content expands past %d MiB in total", pdfMaxFormContent>>20)
+			}
 			content = append(content, cs.Content...)
 			content = append(content, '\n')
+		}
+		total += len(content)
+		if total > pdfMaxContentTotal {
+			return fmt.Errorf("repairing the PDF's forms: their content expands past %d MiB in total", pdfMaxContentTotal>>20)
 		}
 		sd.Delete("Contents")
 		sd.Content = content

@@ -36,9 +36,11 @@ its whole upload in memory while it works, and parsing a document takes
 several times more, so a large upload can need hundreds of MiB, and a PDF
 is read by an engine of its own that may use up to 512 MiB more. At most
 `storage.max_concurrent_runs` runs (`MAX_CONCURRENT_RUNS`, default 2) are
-held at once; the rest get `429` before their upload is read. Keep
-`max_ingest_mb` and `max_concurrent_runs` small enough for the memory you
-give exemplar, or give it more.
+held at once; the rest get `429` before their upload is read. Record
+generations have as many slots of their own; each holds at most 32 MiB of
+records with what they are built from. Keep `max_ingest_mb` and
+`max_concurrent_runs` small enough for the memory you give exemplar, or
+give it more.
 
 Give Presidio one worker per run. A run sends one detector call at a time,
 and one Presidio worker answers one call at a time, so with a single worker

@@ -2,6 +2,7 @@ package synth
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -355,15 +356,25 @@ func refRe(s string) bool {
 // are derived (which would break agreement with existing quotes) shows up.
 func TestCatalogueEntriesAreFixed(t *testing.T) {
 	product, _ := BuiltinSchemas().Get(SchemaProduct)
-	a := product.entry(ProfileManufacturing, 0)
-	b := product.entry(ProfileManufacturing, 0)
+	a, err := product.entry(ProfileManufacturing, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := product.entry(ProfileManufacturing, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if a["sku"].text != b["sku"].text || a["unit_price"].cents != b["unit_price"].cents {
 		t.Error("an entry changed between calls")
 	}
 	if a["name"].text != "Laser-cut steel bracket" || a["unit"].text != "each" || a["category"].text != "Fabrication" {
 		t.Errorf("entry 0 = %v %v %v", a["name"].text, a["unit"].text, a["category"].text)
 	}
-	if other := product.entry(ProfileInsurance, 0); other["name"].text != "Public liability cover" || other["sku"].text == a["sku"].text {
+	other, err := product.entry(ProfileInsurance, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other["name"].text != "Public liability cover" || other["sku"].text == a["sku"].text {
 		t.Errorf("insurance entry 0 = %v %v", other["name"].text, other["sku"].text)
 	}
 	if a["sku"].text != "PRD-"+pinnedSKU {
@@ -374,6 +385,51 @@ func TestCatalogueEntriesAreFixed(t *testing.T) {
 	r, _ := g.Record(product, RecordInput{Profile: ProfileManufacturing}, 24)
 	if !strings.Contains(string(r.Data), "Laser-cut steel bracket") || len(r.People) != 0 {
 		t.Errorf("record 24 = %s", r.Data)
+	}
+}
+
+// TestLinesCountCap checks a lines count over maxLineItems is refused at
+// compile time, like a list's count.
+func TestLinesCountCap(t *testing.T) {
+	dir := t.TempDir()
+	writeSchema(t, dir, "order", strings.Replace(minimal, `"ticket"`, `"order"`, 1)+
+		"\n[[fields]]\nname = \"items\"\nlines = { catalogue = \"product\", count = [1, 101], qty = [1, 2] }\n")
+	if _, _, err := LoadSchemas(dir); err == nil || !strings.Contains(err.Error(), "within 1-100") {
+		t.Errorf("lines over the cap err = %v", err)
+	}
+}
+
+// TestLinesShareTheRecordBudget checks a lines field's entries draw from the
+// record's value budget, so many lines over wide catalogue entries is
+// refused instead of multiplying work past the record's cap.
+func TestLinesShareTheRecordBudget(t *testing.T) {
+	var fields strings.Builder
+	fields.WriteString("[[catalogue.fields]]\nname = \"unit_price\"\nmoney = [1, 9]\n")
+	for i := 0; i < 1500; i++ {
+		fmt.Fprintf(&fields, "[[catalogue.fields]]\nname = \"note%d\"\ntext = \"label\"\n", i)
+	}
+	cat := "name = \"part\"\nstep = \"catalogue\"\ntitle = \"{unit_price}\"\n\n[catalogue]\nsize = 200\n\n" + fields.String()
+	order := "name = \"order\"\ntitle = \"{record.number}\"\n\n[[links]]\nrole = \"buyer\"\nvalue = \"person.id\"\n\n[[fields]]\nname = \"items\"\nlines = { catalogue = \"part\", count = [100, 100], qty = [1, 2] }\n"
+	dir := t.TempDir()
+	writeSchema(t, dir, "part", cat)
+	writeSchema(t, dir, "order", order)
+	set, _, err := LoadSchemas(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orderSchema, _ := set.Get("order")
+	g := New(1)
+	ps := g.People(2)
+	if _, err := g.Record(orderSchema, RecordInput{People: ps}, 0); err == nil {
+		t.Fatal("record built 100 wide lines with no budget to see it")
+	} else if !strings.Contains(err.Error(), "values") {
+		t.Errorf("err = %v, want the value budget", err)
+	}
+	// The builtin quote, with its 1-6 lines of 12 entry fields, still
+	// builds: the cap is the record's, not a small fixed one.
+	quote, _ := BuiltinSchemas().Get(SchemaQuote)
+	if _, err := g.Record(quote, RecordInput{People: ps}, 0); err != nil {
+		t.Errorf("builtin quote no longer builds: %v", err)
 	}
 }
 

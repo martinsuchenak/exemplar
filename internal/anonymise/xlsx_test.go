@@ -427,12 +427,39 @@ func TestXLSXFormulas(t *testing.T) {
 		`"Hi Sarah Lane! See Summary!A1, not Jo2!A1"`:   `"Hi Ann O'Hara! See Summary!A1, not Jo2!A1"`,
 		`"Lane!"`: `"Lane!"`,
 	} {
-		if got := x.formula(rep, in); got != want {
-			t.Errorf("formula(%s) = %s, want %s", in, got, want)
+		if got, err := x.formula(rep, in); err != nil || got != want {
+			t.Errorf("formula(%s) = %s, want %s (%v)", in, got, want, err)
 		}
 	}
 	if got := formulaStrings(`"Dear "&'Sarah Lane'!A1&"Jo ""Kim"""&T[Acme]`); got != "Dear \n\nJo \"Kim\"" {
 		t.Errorf("formulaStrings = %q", got)
+	}
+}
+
+func TestXLSXFormulaDepth(t *testing.T) {
+	rep := testReplacer(t, map[string]string{"Sarah Lane": "Ann O'Hara"})
+	x := &xlsxBook{sheets: []string{"Sheet1"}}
+	// Legitimate nesting stays: three deep is the most Excel writes.
+	const ok = `T[[[#All],[Sarah Lane]],[x]]`
+	if got, err := x.formula(rep, ok); err != nil || got != `T[[[#All],[Ann O''Hara]],[x]]` {
+		t.Errorf("formula(%s) = %q, %v", ok, got, err)
+	}
+	// Deeper than xlsxMaxRefDepth fails the file instead of recursing on:
+	// a formula of nothing but brackets is a file made to be read slowly.
+	deep := strings.Repeat("[", xlsxMaxRefDepth+1) + strings.Repeat("]", xlsxMaxRefDepth+1)
+	if _, err := x.formula(rep, deep); err == nil || !strings.Contains(err.Error(), "nest more than") {
+		t.Errorf("formula of depth %d = no depth error (err %v)", xlsxMaxRefDepth+1, err)
+	}
+	// The same bytes spread wide, not deep, still work.
+	wide := ""
+	for i := 0; i < xlsxMaxRefDepth+2; i++ {
+		if i > 0 {
+			wide += "+"
+		}
+		wide += `T[[#This Row],[Sarah Lane]]`
+	}
+	if got, err := x.formula(rep, wide); err != nil || !strings.Contains(got, "Ann O''Hara") {
+		t.Errorf("wide formula failed: %q, %v", got, err)
 	}
 }
 
@@ -453,12 +480,12 @@ func TestXLSXSheetNames(t *testing.T) {
 		"Summary":    "Summary",
 		"SARAH LANE": "Ann Lee", // Excel compares sheet names without case
 	} {
-		if got := x.sheetName(rep, old); got != want {
-			t.Errorf("sheetName(%s) = %q, want %q", old, got, want)
+		if got, err := x.sheetName(rep, old); err != nil || got != want {
+			t.Errorf("sheetName(%s) = %q, want %q (%v)", old, got, want, err)
 		}
 	}
-	if got := x.externalSheetName(rep, "Jo"); got != "Ann Lee" {
-		t.Errorf("externalSheetName = %q", got)
+	if got, err := x.externalSheetName(rep, "Jo"); err != nil || got != "Ann Lee" {
+		t.Errorf("externalSheetName = %q (%v)", got, err)
 	}
 }
 
@@ -470,8 +497,8 @@ func TestXLSXHeaderFooter(t *testing.T) {
 		`&&Sarah Lane&`:                       `&&Smith && Co&`,
 		`Sarah Lane`:                          `Smith && Co`,
 	} {
-		if got := rewriteHeaderFooter(rep, in); got != want {
-			t.Errorf("rewriteHeaderFooter(%s) = %s, want %s", in, got, want)
+		if got, err := rewriteHeaderFooter(rep, in); err != nil || got != want {
+			t.Errorf("rewriteHeaderFooter(%s) = %s, want %s (%v)", in, got, want, err)
 		}
 	}
 	if got := headerFooterText(`&LSarah Lane&C&"Arial,Bold"Jo&RPage &P`); got != "Sarah Lane\n\nJo\n\nPage " {

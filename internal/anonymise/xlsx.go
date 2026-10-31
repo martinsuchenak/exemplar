@@ -473,7 +473,7 @@ func attrOf(n *xmlNode, local string) string {
 func noSearch(string) string { return "" }
 
 // applyReplacements makes the replacements found elsewhere in the file.
-func applyReplacements(rep *replacer, v string) string { return rep.Apply(v) }
+func applyReplacements(rep *replacer, v string) (string, error) { return rep.Apply(v), nil }
 
 // addFormula adds a formula held in an attribute.
 func (x *xlsxBook) addFormula(pkg *ooxmlPackage, p *ooxmlPart, a *xmlAttr) {
@@ -721,25 +721,30 @@ func (x *xlsxBook) renames(rep *replacer) map[string]string {
 }
 
 // sheetName returns a sheet's new name.
-func (x *xlsxBook) sheetName(rep *replacer, old string) string {
+func (x *xlsxBook) sheetName(rep *replacer, old string) (string, error) {
 	if n, ok := x.renames(rep)[strings.ToLower(old)]; ok {
-		return n
+		return n, nil
 	}
-	return old
+	return old, nil
 }
 
 // externalSheetName returns the new name of a sheet in another workbook:
 // fitted, but with no other names to be unique among.
-func (x *xlsxBook) externalSheetName(rep *replacer, old string) string {
-	return fitSheetName(rep, old)
+func (x *xlsxBook) externalSheetName(rep *replacer, old string) (string, error) {
+	return fitSheetName(rep, old), nil
 }
 
 // Formulas. Only their strings ("Dear " & A1) and the sheets and table
 // columns they refer to change; functions, cells and names stay as written.
 
+// xlsxMaxRefDepth caps how deeply a formula's structured references may
+// nest. Excel's own references nest at most three deep; a deeper one is a
+// file made to be read slowly, and fails instead.
+const xlsxMaxRefDepth = 8
+
 // formula returns a formula with the replacements made in its strings, and
 // its references following the sheets and table columns they name.
-func (x *xlsxBook) formula(rep *replacer, f string) string {
+func (x *xlsxBook) formula(rep *replacer, f string) (string, error) {
 	var b strings.Builder
 	for i := 0; i < len(f); {
 		c := f[i]
@@ -774,7 +779,11 @@ func (x *xlsxBook) formula(rep *replacer, f string) string {
 				continue
 			}
 			j := bracketEnd(f, i)
-			b.WriteString(structuredRef(rep, f[i:j]))
+			w, err := structuredRef(rep, f[i:j], 1)
+			if err != nil {
+				return "", err
+			}
+			b.WriteString(w)
 			i = j
 		case isNameByte(c):
 			j := i
@@ -809,7 +818,7 @@ func (x *xlsxBook) formula(rep *replacer, f string) string {
 			i++
 		}
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // literal returns a formula's string with the replacements made. A
@@ -937,7 +946,7 @@ func (x *xlsxBook) mapSheets(rep *replacer, names string, external bool) string 
 	parts := strings.Split(names, ":")
 	for i, p := range parts {
 		if external {
-			parts[i] = x.externalSheetName(rep, p)
+			parts[i] = fitSheetName(rep, p)
 		} else if n, ok := x.renames(rep)[strings.ToLower(p)]; ok {
 			parts[i] = n
 		}
@@ -949,9 +958,12 @@ func (x *xlsxBook) mapSheets(rep *replacer, names string, external bool) string 
 // [@Email], [[#This Row],[Full name]]), given with its brackets: a column
 // name follows the header cell and the table column it names. Special items
 // (#Headers) and another workbook's index ([1]) stay.
-func structuredRef(rep *replacer, s string) string {
+func structuredRef(rep *replacer, s string, depth int) (string, error) {
+	if depth > xlsxMaxRefDepth {
+		return "", fmt.Errorf("structured references nest more than %d deep", xlsxMaxRefDepth)
+	}
 	if len(s) < 2 || s[len(s)-1] != ']' {
-		return s
+		return s, nil
 	}
 	inner := s[1 : len(s)-1]
 	if strings.Contains(inner, "[") {
@@ -961,7 +973,11 @@ func structuredRef(rep *replacer, s string) string {
 			switch inner[i] {
 			case '[':
 				j := bracketEnd(inner, i)
-				b.WriteString(structuredRef(rep, inner[i:j]))
+				w, err := structuredRef(rep, inner[i:j], depth+1)
+				if err != nil {
+					return "", err
+				}
+				b.WriteString(w)
 				i = j
 			case '\'':
 				b.WriteString(inner[i:min(i+2, len(inner))])
@@ -972,21 +988,21 @@ func structuredRef(rep *replacer, s string) string {
 			}
 		}
 		b.WriteByte(']')
-		return b.String()
+		return b.String(), nil
 	}
 	at := ""
 	if strings.HasPrefix(inner, "@") {
 		at, inner = "@", inner[1:]
 	}
 	if inner == "" || strings.HasPrefix(inner, "#") || isDigits(inner) {
-		return s
+		return s, nil
 	}
 	name := unescapeColumn(inner)
 	n := rep.Apply(name)
 	if n == name {
-		return s
+		return s, nil
 	}
-	return "[" + at + escapeColumn(n) + "]"
+	return "[" + at + escapeColumn(n) + "]", nil
 }
 
 // columnEscaper and its reverse write the characters a table column name
@@ -1078,7 +1094,7 @@ func headerFooterText(v string) string {
 	return strings.Join(out, "\n\n")
 }
 
-func rewriteHeaderFooter(rep *replacer, v string) string {
+func rewriteHeaderFooter(rep *replacer, v string) (string, error) {
 	segs, code := headerFooterSegments(v)
 	var b strings.Builder
 	for i, s := range segs {
@@ -1088,5 +1104,5 @@ func rewriteHeaderFooter(rep *replacer, v string) string {
 			b.WriteString(strings.ReplaceAll(rep.Apply(s), "&", "&&"))
 		}
 	}
-	return b.String()
+	return b.String(), nil
 }
