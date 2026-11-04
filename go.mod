@@ -12,7 +12,7 @@ require (
 	github.com/paularlott/mcp v0.33.1
 	github.com/pdfcpu/pdfcpu v0.16.4
 	github.com/tetratelabs/wazero v1.12.0
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (
