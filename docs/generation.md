@@ -394,8 +394,9 @@ records only on a build from before the change.
 
 ## Into a mailbox
 
-`exemplar push-mailpit <dataset>` sends the generated emails to Mailpit,
-tagged with a run ID; see [cli.md](cli.md).
+`exemplar push-smtp <dataset>` sends the generated emails to a test SMTP
+server such as Mailpit or smtp4dev, marked with a run ID; see
+[cli.md](cli.md#push-smtp).
 
 ## Limits and failures
 

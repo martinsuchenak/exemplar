@@ -27,6 +27,7 @@ enabled = true
 [client]
 server = "http://localhost:8080"
 
-[mailpit]
-smtp = "localhost:1025"
+[smtp]
+# Where push-smtp sends emails: Mailpit (1025) or smtp4dev (25).
+addr = "localhost:1025"
 # go-scaffolder:config-sections

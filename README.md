@@ -64,7 +64,7 @@ through its API or UI, install the
 - **Three interfaces** over the same services: REST, MCP (read-only) and
   the CLI.
 - **Moving data:** export and import of datasets, backups and restores,
-  and pushing fixtures to Mailpit.
+  and pushing fixtures to a test SMTP server (Mailpit, smtp4dev).
 
 ## Install
 
@@ -95,7 +95,7 @@ export EXEMPLAR_API_KEY=exm_...
 go run . datasets create --name replies
 go run . upload replies ./samples --scenario outlook-reply
 go run . generate replies --kind emails --count 24
-go run . push-mailpit replies --run my-test
+go run . push-smtp replies --run my-test
 go run . fixtures list replies
 
 # Or the API
@@ -132,7 +132,7 @@ Configuration is loaded from `exemplar-config.toml`, in the current directory or
 | `anonymiser.profiles_dir` | `ANON_PROFILES_DIR` | | Extra anonymisation profiles (`*.toml`) |
 | `mcp.enabled` | `MCP_ENABLED` | `true` | Read-only MCP endpoint at `/mcp` on the server port |
 | `client.server` | `EXEMPLAR_SERVER` | `http://localhost:8080` | Server the remote CLI commands call |
-| `mailpit.smtp` | `MAILPIT_SMTP` | `localhost:1025` | Where `push-mailpit` sends emails |
+| `smtp.addr` | `EXEMPLAR_SMTP` | `localhost:1025` | Where `push-smtp` sends emails (`mailpit.smtp` and `MAILPIT_SMTP` still work) |
 | (none) | `EXEMPLAR_API_KEY` | | API key for remote CLI commands |
 
 ## Dependencies

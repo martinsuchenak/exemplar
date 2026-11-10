@@ -27,6 +27,21 @@ task test:mailpit
 It sets `EXEMPLAR_TEST_MAILPIT_SMTP` and `EXEMPLAR_TEST_MAILPIT_API`; without
 them `TestRealMailpit` is skipped, so `task test` needs no Docker.
 
+The same against smtp4dev (a pinned `rnwood/smtp4dev` container):
+
+```bash
+task test:smtp4dev
+```
+
+It sets `EXEMPLAR_TEST_SMTP4DEV_SMTP` and `EXEMPLAR_TEST_SMTP4DEV_API`. Set
+them yourself to run `TestRealSMTP4Dev` against an smtp4dev you already
+have; it deletes the messages it sent, so a shared one is fine:
+
+```bash
+EXEMPLAR_TEST_SMTP4DEV_SMTP=smtp4dev:25 EXEMPLAR_TEST_SMTP4DEV_API=http://smtp4dev \
+  go test ./internal/smtppush/ -run TestRealSMTP4Dev -count=1 -v
+```
+
 Integration test of the anonymiser against a real Presidio Analyzer (needs
 Docker; the image is about 1 GB):
 
@@ -232,7 +247,7 @@ spctl --assess --type open --context context:primary-signature --verbose=2 exemp
   makes slow (a few runs a minute); `FuzzPDFObjects` fuzzes the Go part
   (pdfcpu) quickly.
 
-- **SMTP tests** use `internal/mailpit/mailpittest`, an in-process SMTP server
+- **SMTP tests** use `internal/smtppush/smtptest`, an in-process SMTP server
   that records envelopes and data, can require AUTH PLAIN and can reject a
   recipient.
 

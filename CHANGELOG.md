@@ -9,6 +9,17 @@ version without one); see [docs/development.md](docs/development.md#releasing).
 
 ## [Unreleased]
 
+### Changed
+
+- `push-mailpit` is now `push-smtp`: it speaks plain SMTP, so it sends to
+  smtp4dev or any other test server as well as Mailpit. Its config moves to
+  `[smtp] addr` and its env vars to `EXEMPLAR_SMTP`, `EXEMPLAR_SMTP_USER` and
+  `EXEMPLAR_SMTP_PASSWORD`. The old command name, `[mailpit] smtp` and the
+  `MAILPIT_SMTP*` env vars still work. A new name beats an old one of the
+  same kind, and as usual any env var beats the config file.
+  The summary line names the `X-Exemplar-Run` header as well as the Mailpit
+  tag, since smtp4dev has no tags.
+
 ## [0.5.2] - 2026-10-31
 
 ### Fixed

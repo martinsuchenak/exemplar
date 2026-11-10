@@ -32,7 +32,7 @@ func runCLIWith(t *testing.T, input string, args ...string) (string, string, err
 		bootstrapCmd(), completionCmd(), initCmd(), serveCmd(),
 		accountsCmd(), keysCmd(), datasetsCmd(), fixturesCmd(),
 		uploadCmd(), forkCmd(), promoteCmd(), purgeCmd(),
-		generateCmd(), personsCmd(), pushMailpitCmd(),
+		generateCmd(), personsCmd(), pushSMTPCmd(),
 		ingestCmd(), approveCmd(), rejectCmd(), schemasCmd(),
 		exportCmd(), importCmd(), backupCmd(), restoreCmd(), anonymiseCmd(),
 		reviewWalkCmd(),

@@ -143,7 +143,7 @@ services make every access decision.
 exemplar upload ─> internal/client ─HTTP─> cmd/routes ─> fixture.Handler ─> fixture.Service
 ```
 
-`push-mailpit` downloads emails the same way, then `internal/mailpit` sends the
+`push-smtp` downloads emails the same way, then `internal/smtppush` sends the
 bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
 
 ## Packages
@@ -175,7 +175,7 @@ bytes over SMTP. That package only talks SMTP: no storage, no access decisions.
 | `internal/emailtemplate` | Renders an email as a template: swaps its people and companies, renews Message-IDs, keeps everything else. No database. |
 | `internal/textswap` | One-pass, word-boundary, case-insensitive replacement of many strings; shared by the anonymiser and templates. |
 | `internal/mimetree` | Parses and re-serialises MIME messages losslessly enough to rewrite parts in place; charsets and transfer encodings. |
-| `internal/mailpit` | Sends email bytes over SMTP with run tags; `mailpittest` is a fake SMTP server for tests. |
+| `internal/smtppush` | Sends email bytes over SMTP with run headers, to Mailpit, smtp4dev or any SMTP server; `smtptest` is a fake SMTP server for tests. |
 | `internal/testutil` | Builds a real app in a temp directory plus admin and member principals for tests. |
 
 ## Errors

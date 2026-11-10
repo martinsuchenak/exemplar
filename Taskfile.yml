@@ -87,7 +87,17 @@ tasks:
       - docker run -d --rm --name exemplar-test-mailpit -p 127.0.0.1:11025:1025 -p 127.0.0.1:18025:8025 {{.MAILPIT_IMAGE}}
       - defer: docker stop exemplar-test-mailpit
       - for i in $(seq 1 50); do curl -sf -o /dev/null http://127.0.0.1:18025/api/v1/info && break; sleep 0.2; done
-      - EXEMPLAR_TEST_MAILPIT_SMTP=127.0.0.1:11025 EXEMPLAR_TEST_MAILPIT_API=http://127.0.0.1:18025 go test ./internal/mailpit/ -run TestRealMailpit -count=1 -v
+      - EXEMPLAR_TEST_MAILPIT_SMTP=127.0.0.1:11025 EXEMPLAR_TEST_MAILPIT_API=http://127.0.0.1:18025 go test ./internal/smtppush/ -run TestRealMailpit -count=1 -v
+
+  test:smtp4dev:
+    desc: Run the smtp4dev integration test against a throwaway smtp4dev container (needs Docker)
+    vars:
+      SMTP4DEV_IMAGE: rnwood/smtp4dev:3.16.1
+    cmds:
+      - docker run -d --rm --name exemplar-test-smtp4dev -p 127.0.0.1:12525:25 -p 127.0.0.1:15080:80 {{.SMTP4DEV_IMAGE}}
+      - defer: docker stop exemplar-test-smtp4dev
+      - for i in $(seq 1 100); do curl -sf -o /dev/null http://127.0.0.1:15080/api/server && break; sleep 0.2; done
+      - EXEMPLAR_TEST_SMTP4DEV_SMTP=127.0.0.1:12525 EXEMPLAR_TEST_SMTP4DEV_API=http://127.0.0.1:15080 go test ./internal/smtppush/ -run TestRealSMTP4Dev -count=1 -v
 
   sample-data:
     desc: Fill a server (EXEMPLAR_SERVER, default localhost:8080) with sample emails, documents, records, quotes and tasks about 20 people

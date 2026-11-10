@@ -64,8 +64,9 @@ enabled = true
 [client]
 server = "http://localhost:8080"
 
-[mailpit]
-smtp = "localhost:1025"
+[smtp]
+# Where push-smtp sends emails: Mailpit (1025) or smtp4dev (25).
+addr = "localhost:1025"
 `
 			if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
 				return fmt.Errorf("writing config file: %w", err)

@@ -247,25 +247,33 @@ regular files directly inside it (not subdirectories), in name order. If some
 files fail, the rest still upload; the failures are printed to stderr and the
 command exits non-zero. Uploading declares the files hold no real data.
 
-### `push-mailpit`
+### `push-smtp`
 
 ```bash
-exemplar push-mailpit <dataset> [--smtp localhost:1025] [--run ID] [--to a@x.test,b@x.test] [--scenario S] [--tag T] [--limit N] [--raw] [--dry-run]
+exemplar push-smtp <dataset> [--smtp localhost:1025] [--run ID] [--to a@x.test,b@x.test] [--scenario S] [--tag T] [--limit N] [--raw] [--dry-run]
 ```
 
-Sends a dataset's `.eml` fixtures to Mailpit (or any SMTP server) for a test
-run. The messages are downloaded through the REST API, so the key's access
-rules apply, and their stored bytes are sent unchanged except for three
-headers added at the top:
+Sends a dataset's `.eml` fixtures to a test SMTP server such as Mailpit or
+smtp4dev for a test run. It speaks plain SMTP, so any server that accepts
+mail without TLS works. The messages are downloaded through the REST API, so
+the key's access rules apply, and their stored bytes are sent unchanged
+except for three headers added at the top:
 
-- `X-Tags: exemplar-run-<run>`, which Mailpit turns into a tag, so a test finds
-  its own messages with the search `tag:exemplar-run-<run>`;
-- `X-Exemplar-Run: <run>` and `X-Exemplar-Fixture: <fixture-id>`.
+- `X-Exemplar-Run: <run>`, which ties every message to the run;
+- `X-Tags: exemplar-run-<run>`, which Mailpit turns into a tag (other servers
+  keep it as an ordinary header);
+- `X-Exemplar-Fixture: <fixture-id>`.
+
+The command used to be called `push-mailpit`. That name still works, as do
+the `[mailpit] smtp` config key and the `MAILPIT_SMTP*` env vars. A new name
+beats an old one of the same kind (`EXEMPLAR_SMTP` over `MAILPIT_SMTP`,
+`smtp.addr` over `mailpit.smtp`); as with every flag, any env var beats the
+config file, so an old `MAILPIT_SMTP` still overrides `smtp.addr`.
 
 | Flag | Env var | Config | Description |
 |------|---------|--------|-------------|
-| `--smtp` | `MAILPIT_SMTP` | `mailpit.smtp` | SMTP address, default `localhost:1025` |
-| `--smtp-user`, `--smtp-password` | `MAILPIT_SMTP_USER`, `MAILPIT_SMTP_PASSWORD` | | AUTH PLAIN, if Mailpit requires it. Sent without TLS, also to a non-local server such as `mailpit:1025` in CI (Mailpit needs `MP_SMTP_AUTH_ALLOW_INSECURE=true` for that); use test credentials only |
+| `--smtp` | `EXEMPLAR_SMTP` | `smtp.addr` | SMTP address, default `localhost:1025` (Mailpit). smtp4dev listens on 25 |
+| `--smtp-user`, `--smtp-password` | `EXEMPLAR_SMTP_USER`, `EXEMPLAR_SMTP_PASSWORD` | | AUTH PLAIN, if the server requires it. Sent without TLS, also to a non-local server such as `mailpit:1025` in CI (Mailpit needs `MP_SMTP_AUTH_ALLOW_INSECURE=true` for that); use test credentials only |
 | `--run` | | | Run ID, 1–64 letters, digits, `.`, `_` or `-`; default a new one such as `20261027-091502-3fa1`, printed |
 | `--to` | | | Deliver every message to these addresses instead of its own To, Cc and Bcc. Headers are unchanged; Mailpit lists the address as Bcc |
 | `--scenario`, `--tag`, `--limit` | | | Which emails to send |
@@ -277,13 +285,27 @@ own connection; failures are listed per message and make the command exit
 non-zero. Only `.eml` fixtures are sent (`.msg` cannot be sent over SMTP).
 Real-derived emails that are not approved are never sent, even with an admin
 key (which may read them only to review them); the command says how many it
-skipped.
+skipped. STARTTLS is not used, so a server set to require TLS refuses the
+messages.
+
+Finding a run's messages in a test:
 
 ```bash
 exemplar generate <dataset> --kind emails --count 24
-exemplar push-mailpit <dataset> --run "$CI_JOB_ID"
-# then in the test: GET http://mailpit:8025/api/v1/search?query=tag:exemplar-run-$CI_JOB_ID
+exemplar push-smtp <dataset> --run "$CI_JOB_ID"
 ```
+
+- **Mailpit** searches tags:
+  `GET http://mailpit:8025/api/v1/search?query=tag:exemplar-run-$CI_JOB_ID`.
+- **smtp4dev** has no tags, and its search covers only subject, sender and
+  recipients. List the newest messages with
+  `GET http://smtp4dev/api/messages?sortColumn=receivedDate&sortIsDescending=true`,
+  then read each one's `headers` from `GET http://smtp4dev/api/messages/<id>`
+  and keep those whose `X-Exemplar-Run` is the run. `TestRealSMTP4Dev` in
+  `internal/smtppush/integration_test.go` does exactly this. If a test only
+  needs the messages and not their real recipients, `--to
+  run-$CI_JOB_ID@exemplar.test` puts the run in the recipient, which smtp4dev
+  can search.
 
 ### `fork`
 

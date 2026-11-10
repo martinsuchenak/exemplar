@@ -1,4 +1,4 @@
-package mailpit
+package smtppush
 
 import (
 	"context"

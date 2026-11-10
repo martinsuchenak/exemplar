@@ -1,7 +1,9 @@
-// Package mailpit sends stored email fixtures to a test SMTP server such as
-// Mailpit. It works on message bytes the caller already fetched through the
-// REST API, so it needs no storage access and makes no access decisions.
-package mailpit
+// Package smtppush sends stored email fixtures to a test SMTP server such as
+// Mailpit or smtp4dev. It speaks plain SMTP, so any server works; the run
+// headers it adds are what tie a test to its messages (see Prepare). It works
+// on message bytes the caller already fetched through the REST API, so it
+// needs no storage access and makes no access decisions.
+package smtppush
 
 import (
 	"bytes"
@@ -21,6 +23,13 @@ import (
 // DefaultFrom is the envelope sender when a message has no usable From.
 const DefaultFrom = "exemplar@exemplar.test"
 
+// RunHeader and FixtureHeader are the headers Prepare adds: the run ID and
+// the fixture the message came from.
+const (
+	RunHeader     = "X-Exemplar-Run"
+	FixtureHeader = "X-Exemplar-Fixture"
+)
+
 // Message is one email to push.
 type Message struct {
 	FixtureID string
@@ -33,8 +42,9 @@ type Message struct {
 type Options struct {
 	// Addr is the SMTP server, host:port.
 	Addr string
-	// Run tags every message of one push (X-Tags: exemplar-run-<Run>), so a
-	// test can find its own messages; NewRunID makes one.
+	// Run marks every message of one push with X-Exemplar-Run: <Run> and the
+	// Mailpit tag X-Tags: exemplar-run-<Run>, so a test can find its own
+	// messages; NewRunID makes one.
 	Run string
 	// To, when set, replaces every message's envelope recipients, delivering
 	// the whole run to one mailbox. Headers are left as they are.
@@ -73,7 +83,8 @@ func ValidRun(run string) bool {
 	return runRe.MatchString(run)
 }
 
-// Tag is the Mailpit tag a run's messages carry.
+// Tag is the Mailpit tag a run's messages carry. Servers without tags, such
+// as smtp4dev, keep it as an ordinary header next to X-Exemplar-Run.
 func Tag(run string) string {
 	return "exemplar-run-" + run
 }
@@ -113,7 +124,10 @@ func Push(ctx context.Context, opts Options, msgs []Message) ([]Result, error) {
 	return results, nil
 }
 
-// Prepare works out a message's envelope and the bytes to send.
+// Prepare works out a message's envelope and the bytes to send. Unless
+// opts.Raw is set it puts, above the stored headers, X-Tags (Mailpit's tag),
+// RunHeader and FixtureHeader. Servers without tags or header search, such as
+// smtp4dev, still show the last two on every message.
 func Prepare(m Message, opts Options) (from string, to []string, data []byte, err error) {
 	msg, err := mail.ReadMessage(bytes.NewReader(m.Data))
 	if err != nil {
@@ -145,9 +159,9 @@ func Prepare(m Message, opts Options) (from string, to []string, data []byte, er
 	if !opts.Raw {
 		var b bytes.Buffer
 		if opts.Run != "" {
-			fmt.Fprintf(&b, "X-Tags: %s\r\nX-Exemplar-Run: %s\r\n", Tag(opts.Run), opts.Run)
+			fmt.Fprintf(&b, "X-Tags: %s\r\n%s: %s\r\n", Tag(opts.Run), RunHeader, opts.Run)
 		}
-		fmt.Fprintf(&b, "X-Exemplar-Fixture: %s\r\n", headerValue(m.FixtureID))
+		fmt.Fprintf(&b, "%s: %s\r\n", FixtureHeader, headerValue(m.FixtureID))
 		b.Write(m.Data)
 		data = b.Bytes()
 	}
@@ -200,9 +214,9 @@ func send(ctx context.Context, opts Options, from string, to []string, data []by
 }
 
 // plainAuth is AUTH PLAIN without net/smtp's refusal to send credentials
-// over an unencrypted connection to anything but localhost. Mailpit in CI is
-// typically a container (mailpit:1025) without TLS; its credentials are a
-// test server's, passed explicitly with --smtp-user.
+// over an unencrypted connection to anything but localhost. A test server in
+// CI is typically a container (mailpit:1025, smtp4dev:25) without TLS; its
+// credentials are a test server's, passed explicitly with --smtp-user.
 type plainAuth struct {
 	username, password string
 }

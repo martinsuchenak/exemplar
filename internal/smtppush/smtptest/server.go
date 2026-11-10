@@ -1,6 +1,7 @@
-// Package mailpittest is a minimal in-process SMTP server for tests: it
-// accepts every message and records the envelope and data, like Mailpit.
-package mailpittest
+// Package smtptest is a minimal in-process SMTP server for tests: it
+// accepts every message and records the envelope and data, like Mailpit or
+// smtp4dev.
+package smtptest
 
 import (
 	"bufio"
@@ -72,7 +73,7 @@ func (s *Server) handle(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	r := bufio.NewReader(conn)
 	reply := func(line string) { _, _ = conn.Write([]byte(line + "\r\n")) }
-	reply("220 mailpittest ESMTP")
+	reply("220 smtptest ESMTP")
 	var cur Received
 	authed := !s.RequireAuth
 	for {
@@ -85,10 +86,10 @@ func (s *Server) handle(conn net.Conn) {
 		switch {
 		case strings.HasPrefix(cmd, "EHLO"), strings.HasPrefix(cmd, "HELO"):
 			if s.RequireAuth {
-				reply("250-mailpittest")
+				reply("250-smtptest")
 				reply("250 AUTH PLAIN")
 			} else {
-				reply("250 mailpittest")
+				reply("250 smtptest")
 			}
 		case strings.HasPrefix(cmd, "AUTH PLAIN"):
 			raw, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(line[len("AUTH PLAIN"):]))

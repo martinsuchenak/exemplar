@@ -112,8 +112,8 @@ exemplar promote inbox-2025 --name inbox --description "Reviewed anonymised emai
 `review` keeps its copies in a private temporary directory and deletes
 them as it goes. A fixture you download yourself (`fixtures download`) is
 anonymised but not yet reviewed: keep it on your machine and delete it once
-reviewed. There is no web UI, and Mailpit is no
-preview either, since unreviewed real-derived emails are never sent. The
+reviewed. There is no web UI, and a test mail server (Mailpit, smtp4dev) is
+no preview either, since unreviewed real-derived emails are never sent. The
 workflow is in [anonymisation.md](anonymisation.md).
 
 Reach the server over HTTPS, through a proxy of your choice (see
