@@ -9,10 +9,10 @@ require (
 	github.com/martinsuchenak/xdal v0.1.0
 	github.com/paularlott/cli v0.10.2
 	github.com/paularlott/logger v0.4.0
-	github.com/paularlott/mcp v0.33.1
+	github.com/paularlott/mcp v0.34.0
 	github.com/pdfcpu/pdfcpu v0.16.4
 	github.com/tetratelabs/wazero v1.12.0
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.62.0
 )
 
 require (
@@ -24,7 +24,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
-	github.com/paularlott/jsonrpc v0.2.0 // indirect
+	github.com/paularlott/jsonrpc v0.4.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
@@ -34,7 +34,7 @@ require (
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
