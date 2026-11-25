@@ -6,7 +6,7 @@
 #   docker build --build-arg VERSION=$(git describe --tags --always) --build-arg COMMIT=$(git rev-parse --short HEAD) -t exemplar .
 
 # Build stage
-FROM golang:1.27.3-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 
 ARG VERSION=dev
 ARG COMMIT=unknown
